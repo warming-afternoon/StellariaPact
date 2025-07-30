@@ -18,10 +18,18 @@ class Tasks(commands.Cog):
         self.announcement_channel_id = self.bot.config['channels']['discussion']
         self.in_progress_tag_id = self.bot.config['tags']['announcement_in_progress']
         self.finished_tag_id = self.bot.config['tags']['announcement_finished']
-        self.check_announcements.start()
+        self.management_role_id = self.bot.config['roles']['management']
 
     def cog_unload(self):
         self.check_announcements.cancel()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """
+        当 Cog 加载完毕且 Bot 准备就绪后，启动后台任务。
+        """
+        logger.info("后台任务模块已就绪，启动定时检查。")
+        self.check_announcements.start()
 
     @tasks.loop(minutes=5)
     async def check_announcements(self):
@@ -69,8 +77,17 @@ class Tasks(commands.Cog):
                     )
 
                 # 发送通知
+                embed = discord.Embed(
+                    title=f"公示结束: {announcement.title}",
+                    description="本次公示已到期，标签已自动更新。",
+                    color=discord.Color.orange()
+                )
+                embed.set_footer(text="请管理组及时跟进后续事宜。")
+                
+                role_mention = f"<@&{self.management_role_id}>"
+
                 await self.bot.api_scheduler.submit(
-                    coro=thread.send("【公示期结束】\n本次公示已到期\n@管理组"),
+                    coro=thread.send(content=role_mention, embed=embed),
                     priority=8 # 后台任务使用较低优先级
                 )
 

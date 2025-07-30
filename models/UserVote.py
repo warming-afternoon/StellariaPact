@@ -16,7 +16,7 @@ class UserVote(BaseModel, table=True):
         UniqueConstraint("sessionId", "userId", name="unique_user_vote_per_session"),
     )
 
-    sessionId: int = Field(description="关联的投票会话ID")
+    sessionId: int = Field(foreign_key="votesession.id", description="关联的投票会话ID")
     userId: int = Field(index=True, description="投票用户的Discord ID")
     choice: int = Field(description="用户的选项: 0-反对, 1-赞成")
     votedAt: datetime = Field(

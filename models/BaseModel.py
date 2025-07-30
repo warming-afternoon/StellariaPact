@@ -16,10 +16,10 @@ class BaseModel(SQLModel):
     class Config:
         """
         Pydantic 的共享配置
-        - orm_mode: 允许从 ORM 对象创建 Pydantic 模型
-        - allow_population_by_field_name: 允许使用字段名填充
+        - from_attributes: 允许从 ORM 对象创建 Pydantic 模型
+        - validate_by_name: 允许使用字段名填充
         - alias_generator: 自动将驼峰字段名转换为蛇形数据库列名
         """
-        orm_mode = True
-        allow_population_by_field_name = True
+        from_attributes = True
+        validate_by_name = True
         alias_generator = to_snake_case

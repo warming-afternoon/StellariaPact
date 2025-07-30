@@ -6,23 +6,29 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 
+# --- .env 和 日志配置 ---
+# 1. 首先加载环境变量
+load_dotenv()
+
+# 2. 强力配置根日志记录器
+log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+log_level = getattr(logging, log_level_str, logging.INFO)
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+root_logger = logging.getLogger()
+root_logger.setLevel(log_level)
+if root_logger.hasHandlers():
+    root_logger.handlers.clear()
+root_logger.addHandler(stream_handler)
+
+logger = logging.getLogger('stellaria_pact')
+# --- 日志配置结束 ---
+
+# 3. 现在再导入我们自己的模块
 from share.StellariaPactBot import StellariaPactBot
 from share.ApiScheduler import APIScheduler
 from share.DatabaseHandler import db_handler
-
-# --- .env 和 日志配置 ---
-load_dotenv()
-
-# 日志配置代码
-log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
-log_level = getattr(logging, log_level_str, logging.INFO)
-logger = logging.getLogger('stellaria_pact')
-stream_handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')
-stream_handler.setFormatter(formatter)
-if not logger.handlers:
-    logger.addHandler(stream_handler)
-# --- 配置结束 ---
 
 # 这里是 Bot 的实例化和运行逻辑
 def main():
@@ -31,13 +37,15 @@ def main():
     intents.message_content = True
     intents.members = True
     
-    bot = StellariaPactBot(command_prefix="!", intents=intents)
+    with open('config.json', 'r', encoding='utf-8') as f:
+        config = json.load(f)
+
+    proxy = config.get("proxy") or None
+    bot = StellariaPactBot(command_prefix="!", intents=intents, proxy=proxy)
     
-    # 将核心服务附加到 bot 实例上
     bot.api_scheduler = APIScheduler()
     bot.db_handler = db_handler
-    with open('config.json', 'r', encoding='utf-8') as f:
-        bot.config = json.load(f)
+    bot.config = config
 
     @bot.event
     async def setup_hook():
@@ -45,7 +53,6 @@ def main():
         await db_handler.init_db()
         
         logger.info("正在加载 Cogs...")
-        # 自动发现并加载 cogs
         cogs_path = Path("cogs")
         for cog_dir in cogs_path.iterdir():
             if cog_dir.is_dir():
@@ -68,12 +75,6 @@ def main():
         logger.info(f'以 {bot.user} 的身份登录')
         logger.info('------ Bot 已准备就绪 ------')
 
-    @bot.event
-    async def close():
-        logger.info("正在关闭 Bot...")
-        await bot.api_scheduler.stop()
-        logger.info("Bot 已成功关闭。")
-
     token = os.getenv("DISCORD_TOKEN")
     if not token or token == "YOUR_BOT_TOKEN_HERE":
         logger.error("错误: 未找到或未配置 DISCORD_TOKEN。")
@@ -83,9 +84,8 @@ def main():
         asyncio.run(bot.start(token, reconnect=True))
     except KeyboardInterrupt:
         logger.info("检测到手动中断，正在关闭 Bot...")
-        asyncio.run(bot.close())
     except Exception:
-        logger.exception("Bot 运行时发生未捕获的异常: {e}")
+        logger.exception("Bot 运行时发生未捕获的异常")
 
 if __name__ == "__main__":
     main()

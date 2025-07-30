@@ -1,6 +1,10 @@
 from datetime import datetime
-from sqlmodel import Field, text
+from typing import List, TYPE_CHECKING
+from sqlmodel import Field, text, Relationship
 from models.BaseModel import BaseModel
+
+if TYPE_CHECKING:
+    from .Objection import Objection
 
 class Proposal(BaseModel, table=True):
     """
@@ -22,3 +26,6 @@ class Proposal(BaseModel, table=True):
         },
         description="最后更新时间"
     )
+
+    # --- 关系定义 ---
+    objections: List["Objection"] = Relationship(back_populates="proposal")

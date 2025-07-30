@@ -10,5 +10,6 @@
   "tags": {
     "announcement_in_progress": 112233445566778899,
     "announcement_finished": 123456789012345678
-  }
+  },
+  "proxy": ""
 }

@@ -1,8 +1,11 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from datetime import datetime
 from sqlmodel import Field, text, Relationship
 from models.BaseModel import BaseModel
 from models.Proposal import Proposal
+
+if TYPE_CHECKING:
+    from .VoteSession import VoteSession
 
 class Objection(BaseModel, table=True):
     """
@@ -20,4 +23,5 @@ class Objection(BaseModel, table=True):
     )
 
     # --- 关系定义 ---
-    proposal: Optional[Proposal] = Relationship(back_populates="objection")
+    proposal: Optional[Proposal] = Relationship(back_populates="objections")
+    vote_session: Optional["VoteSession"] = Relationship(back_populates="objection")
