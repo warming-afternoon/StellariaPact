@@ -180,6 +180,7 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# 运行文件
 .roo/
 data/
 config.json

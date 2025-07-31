@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "StellariaPact"
+version = "0.1.0"
+description = "A Discord bot for StellariaPact."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+dependencies = [
+    "discord.py",
+    "sqlmodel",
+    "aiosqlite",
+    "orjson",
+    "python-dotenv",
+    "pyhumps",
+    "tzdata"
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+]
+
+[project.scripts]
+stellaria-pact = "StellariaPact.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/StellariaPact"]
+
+[tool.ruff]
+line-length = 99
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "F",  # Pyflakes
+    "W",  # pycodestyle warnings
+    "I",  # isort
+]
+
+[tool.ruff.format]
+quote-style = "double"
