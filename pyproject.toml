@@ -16,7 +16,9 @@ dependencies = [
     "orjson",
     "python-dotenv",
     "pyhumps",
-    "tzdata"
+    "tzdata",
+    "aiohttp",
+    "regex"
 ]
 
 [project.optional-dependencies]

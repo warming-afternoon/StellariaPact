@@ -1,14 +1,15 @@
+import asyncio
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import ui
-from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import (
-    CreateAnnouncementQo,
-)
+from StellariaPact.cogs.Notification.AnnouncementService import \
+    AnnouncementService
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
+    CreateAnnouncementQo
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger("stellaria_pact.notification")
@@ -116,7 +117,10 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
             )
             thread = thread_creation_result.thread
 
-            # 5. 在数据库中创建记录
+            # --- 数据库创建和广播 ---
+            tasks = []
+
+            # 任务1: 在数据库中创建记录
             qo = CreateAnnouncementQo(
                 discussionThreadId=thread.id,
                 announcerId=interaction.user.id,
@@ -125,30 +129,69 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
                 endTime=end_time,
             )
 
-            async with self.bot.db_handler.get_session() as session:
-                announcement_dto = await self.announcement_service.create_announcement(session, qo)
+            async def create_in_db():
+                async with self.bot.db_handler.get_session() as session:
+                    return await self.announcement_service.create_announcement(session, qo)
 
-            # 6. 转发到广播频道
+            db_creation_task = asyncio.create_task(create_in_db())
+            tasks.append(db_creation_task)
+
+            # 任务2: 转发到广播频道
             embed = discord.Embed(
-                title=f"📢 新公示: {announcement_dto.title}",
-                description=f"{announcement_dto.content}\n\n[点击此处参与讨论]({thread.jump_url})",
+                title=f"📢 新公示: {title}",
+                description=f"{content}\n\n[点击此处参与讨论]({thread.jump_url})",
                 color=discord.Color.blue(),
-                timestamp=start_time_utc,  # 使用我们之前记录的、准确的开始时间
+                timestamp=start_time_utc,
             )
-            embed.set_footer(text=f"公示发起人: {interaction.user.display_name}")
+            embed.set_footer(
+                text=f"公示发起人: {interaction.user.display_name}",
+                icon_url=interaction.user.display_avatar.url,
+            )
             embed.add_field(name="公示截止时间", value=discord_timestamp, inline=False)
 
             for channel_id in self.broadcast_channel_ids:
                 channel = self.bot.get_channel(channel_id)
                 if isinstance(channel, discord.TextChannel):
-                    await self.bot.api_scheduler.submit(coro=channel.send(embed=embed), priority=5)
+                    tasks.append(
+                        self.bot.api_scheduler.submit(coro=channel.send(embed=embed), priority=5)
+                    )
 
+            # 并行执行所有任务
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 检查结果并发送最终反馈
+            failed_tasks_details = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    task_name = "数据库创建" if i == 0 else f"广播到频道 {self.broadcast_channel_ids[i-1]}"
+                    user_friendly_error = ""
+                    if isinstance(result, discord.Forbidden):
+                        user_friendly_error = "机器人缺少发送消息的权限。"
+                    else:
+                        user_friendly_error = f"发生未知错误: `{type(result).__name__}`"
+
+                    failed_tasks_details.append(f"- {task_name}失败: {user_friendly_error}")
+                    logger.error(f"发布公示时，任务 {task_name} 失败", exc_info=result)
+
+            if not failed_tasks_details:
+                await interaction.followup.send(
+                    f"✅ 公示 **{title}** 已成功发布！"
+                    f"\n讨论帖已在 {thread.mention} 创建。",
+                    ephemeral=True,
+                )
+            else:
+                error_summary = "\n".join(failed_tasks_details)
+                await interaction.followup.send(
+                    f"公示 **{title}** 发布过程中出现问题：\n{error_summary}\n"
+                    f"讨论帖已在 {thread.mention} 创建，但部分操作未成功，请联系技术员。",
+                    ephemeral=True,
+                )
+
+        except discord.Forbidden:
+            logger.exception("通过 Modal 发布公示时发生权限错误")
             await interaction.followup.send(
-                f"✅ 公示 **{announcement_dto.title}** 已成功发布！"
-                f"讨论帖已在 {thread.mention} 创建。",
-                ephemeral=True,
+                "发布公示时发生权限错误：机器人可能缺少创建帖子或应用标签的权限。请检查频道设置。", ephemeral=True
             )
-
         except Exception as e:
             logger.exception("通过 Modal 发布公示时发生错误")
             await interaction.followup.send(

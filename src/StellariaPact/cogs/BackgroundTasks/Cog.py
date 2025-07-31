@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import discord
@@ -52,75 +53,92 @@ class Tasks(commands.Cog):
             return
 
         logger.info(f"发现 {len(expired_announcements)} 个到期公示，正在处理...")
-        for announcement in expired_announcements:
-            try:
-                # 2. 更新数据库状态
-                async with self.bot.db_handler.get_session() as session:
-                    await self.announcement_service.mark_announcement_as_finished(
-                        session, announcement.id
-                    )
+        tasks = [
+            self._process_expired_announcement(announcement)
+            for announcement in expired_announcements
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # 3. 发送通知
-                thread = self.bot.get_channel(
-                    announcement.discussionThreadId
-                ) or await self.bot.fetch_channel(announcement.discussionThreadId)
-
-                if not isinstance(thread, discord.Thread):
-                    logger.error(
-                        f"无法为公示 {announcement.id} 找到有效的讨论帖 "
-                        f"(ID: {announcement.discussionThreadId})。"
-                    )
-                    continue
-
-                # 修改标签
-                forum_channel = thread.parent
-                if isinstance(forum_channel, discord.ForumChannel):
-                    finished_tag = discord.utils.get(
-                        forum_channel.available_tags, id=self.finished_tag_id
-                    )
-
-                    # 从现有标签中移除"公示中"，添加"公示结束"
-                    new_tags = [
-                        tag for tag in thread.applied_tags if tag.id != self.in_progress_tag_id
-                    ]
-                    if finished_tag:
-                        new_tags.append(finished_tag)
-
-                    await self.bot.api_scheduler.submit(
-                        coro=thread.edit(applied_tags=new_tags), priority=7
-                    )
-
-                # 发送通知
-                embed = discord.Embed(
-                    title=f"公示结束: {announcement.title}",
-                    description="本次公示已到期，标签已自动更新。",
-                    color=discord.Color.orange(),
+        for result, announcement in zip(results, expired_announcements):
+            if isinstance(result, Exception):
+                logger.exception(
+                    f"处理公示 {announcement.id} ({announcement.title}) 时发生错误"
                 )
-                # 从数据库获取的 endTime 是一个不带时区信息的(naive)datetime对象，
-                # 其数值上等于UTC时间。
-                # 在调用 .timestamp() 之前，我们必须先为其附加正确的UTC时区信息，
-                # 否则Python会假定它是本地时间，从而导致错误的计算。
-                utc_end_time = announcement.endTime.replace(tzinfo=ZoneInfo("UTC"))
-                discord_timestamp = f"<t:{int(utc_end_time.timestamp())}:F>"
-
-                embed.add_field(name="公示截止时间", value=discord_timestamp)
-                # embed.set_footer(text="请管理组及时跟进后续事宜。")
-
-                role_mention = f"<@&{self.stewards_role_id}>"
-
-                await self.bot.api_scheduler.submit(
-                    coro=thread.send(content=role_mention, embed=embed),
-                    priority=8,  # 后台任务使用较低优先级
-                )
-
-            except discord.NotFound:
-                logger.error(
-                    f"讨论帖 (ID: {announcement.discussionThreadId}) 未找到，可能已被删除。"
-                )
-            except Exception:
-                logger.exception(f"处理公示 {announcement.id} 时发生未知错误。")
 
         logger.info("所有到期公示处理完毕。")
+
+    async def _process_expired_announcement(self, announcement):
+        """处理单个到期公示的全部逻辑"""
+        try:
+            # 2. 更新数据库状态
+            async with self.bot.db_handler.get_session() as session:
+                await self.announcement_service.mark_announcement_as_finished(
+                    session, announcement.id
+                )
+
+            # 3. 发送通知
+            thread = self.bot.get_channel(
+                announcement.discussionThreadId
+            ) or await self.bot.fetch_channel(announcement.discussionThreadId)
+
+            if not isinstance(thread, discord.Thread):
+                logger.error(
+                    f"无法为公示 {announcement.id} 找到有效的讨论帖 "
+                    f"(ID: {announcement.discussionThreadId})。"
+                )
+                return
+
+            # 修改标签
+            forum_channel = thread.parent
+            if isinstance(forum_channel, discord.ForumChannel):
+                finished_tag = discord.utils.get(
+                    forum_channel.available_tags, id=self.finished_tag_id
+                )
+
+                # 从现有标签中移除"公示中"，添加"公示结束"
+                new_tags = [
+                    tag for tag in thread.applied_tags if tag.id != self.in_progress_tag_id
+                ]
+                if finished_tag:
+                    new_tags.append(finished_tag)
+
+                await self.bot.api_scheduler.submit(
+                    coro=thread.edit(applied_tags=new_tags), priority=7
+                )
+
+            # 发送通知
+            embed = discord.Embed(
+                title=f"公示结束: {announcement.title}",
+                description="本次公示已到期，标签已自动更新。",
+                color=discord.Color.orange(),
+            )
+            # 从数据库获取的 endTime 是一个不带时区信息的(naive)datetime对象，
+            # 其数值上等于UTC时间。
+            # 在调用 .timestamp() 之前，我们必须先为其附加正确的UTC时区信息，
+            # 否则Python会假定它是本地时间，从而导致错误的计算。
+            utc_end_time = announcement.endTime.replace(tzinfo=ZoneInfo("UTC"))
+            discord_timestamp = f"<t:{int(utc_end_time.timestamp())}:F>"
+
+            embed.add_field(name="公示截止时间", value=discord_timestamp)
+            # embed.set_footer(text="请管理组及时跟进后续事宜。")
+
+            role_mention = f"<@&{self.stewards_role_id}>"
+
+            await self.bot.api_scheduler.submit(
+                coro=thread.send(content=role_mention, embed=embed),
+                priority=8,  # 后台任务使用较低优先级
+            )
+
+        except discord.NotFound:
+            logger.error(
+                f"讨论帖 (ID: {announcement.discussionThreadId}) 未找到，可能已被删除。"
+            )
+            # 将异常向上抛出，由 gather 的调用方统一处理
+            raise
+        except Exception:
+            logger.exception(f"处理公示 {announcement.id} 时发生未知错误。")
+            # 将异常向上抛出，由 gather 的调用方统一处理
+            raise
 
     @check_announcements.before_loop
     async def before_check_announcements(self):
