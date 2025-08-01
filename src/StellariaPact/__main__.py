@@ -76,12 +76,12 @@ def main():
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 检查任务执行结果
-        cog_names = [f"Cog {cog.name}" for cog in cogs_path.glob("*/Cog.py")]
+        cog_names = [f"{cog.parent.name} 模块" for cog in cogs_path.glob("*/Cog.py")]
         for result, task_name in zip(results, ["DB Init"] + cog_names):
             if isinstance(result, Exception):
-                logger.exception(f"初始化任务 '{task_name}' 失败: {result}")
+                logger.exception(f"初始化 '{task_name}' 失败: {result}")
             else:
-                logger.info(f"初始化任务 '{task_name}' 成功完成。")
+                logger.info(f"初始化 '{task_name}' 成功")
 
         logger.info("Cogs 和数据库初始化完成。")
 
@@ -92,19 +92,7 @@ def main():
     @bot.event
     async def on_ready():
         logger.info(f"以 {bot.user} 的身份登录")
-        
-        # --- 重新注册持久化视图 ---
-        from StellariaPact.cogs.Voting.views.VoteView import VoteView
-        from StellariaPact.cogs.Voting.VotingService import VotingService
-        
-        logger.info("正在重新注册持久化视图...")
-        try:
-            voting_service = VotingService()
-            bot.add_view(VoteView(bot, voting_service))
-            logger.info("VoteView 已成功重新注册。")
-        except Exception as e:
-            logger.error(f"重新注册 VoteView 时出错: {e}", exc_info=True)
-        
+
         logger.info("------ Bot 已准备就绪 ------")
 
     token = os.getenv("DISCORD_TOKEN")

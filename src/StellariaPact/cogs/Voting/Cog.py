@@ -5,6 +5,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
+from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.cogs.Voting.VotingService import VotingService
 from StellariaPact.share.auth.MissingRole import MissingRole
@@ -34,9 +36,7 @@ class Voting(commands.Cog):
         if isinstance(original_error, MissingRole):
             if not interaction.response.is_done():
                 await self.bot.api_scheduler.submit(
-                    coro=interaction.response.send_message(
-                        str(original_error), ephemeral=True
-                    ),
+                    coro=interaction.response.send_message(str(original_error), ephemeral=True),
                     priority=1,
                 )
         else:
@@ -44,23 +44,43 @@ class Voting(commands.Cog):
             if not interaction.response.is_done():
                 await self.bot.api_scheduler.submit(
                     coro=interaction.response.send_message(
-                        "发生了一个未知错误，请联系管理员。", ephemeral=True
+                        "发生了一个未知错误，请联系技术员", ephemeral=True
                     ),
                     priority=1,
                 )
 
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """
+        当 bot 准备就绪时，重新注册持久化视图。
+        """
+        try:
+            self.bot.add_view(VoteView(self.bot, self.voting_service))
+            logger.info("VoteView 已成功重新注册。")
+        except Exception as e:
+            logger.error(f"重新注册 VoteView 时出错: {e}", exc_info=True)
+
     @app_commands.command(name="启动投票", description="在当前帖子中启动投票")
-    @app_commands.describe(topic="投票的主题")
+    @app_commands.rename(realtime="是否实时", anonymous="是否匿名")
+    @app_commands.describe(
+        topic="投票的主题",
+        realtime="是否实时显示投票结果 (默认: 否)",
+        anonymous="是否匿名投票 (默认: 是)",
+    )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
-    async def start_vote(self, interaction: discord.Interaction, topic: str):
+    async def start_vote(
+        self,
+        interaction: discord.Interaction,
+        topic: str,
+        realtime: bool = False,
+        anonymous: bool = True,
+    ):
         """
         手动启动一个投票。
         """
         await self.bot.api_scheduler.submit(safeDefer(interaction), priority=1)
 
-        if not interaction.channel or not isinstance(
-            interaction.channel, discord.Thread
-        ):
+        if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
             await self.bot.api_scheduler.submit(
                 interaction.followup.send("此命令只能在帖子（Thread）内使用。", ephemeral=True),
                 priority=1,
@@ -73,37 +93,45 @@ class Voting(commands.Cog):
             discussion_channel_id
         ):
             await self.bot.api_scheduler.submit(
-                interaction.followup.send(
-                    "此命令只能在指定的讨论区帖子内使用。", ephemeral=True
-                ),
+                interaction.followup.send("此命令只能在指定的讨论区帖子内使用。", ephemeral=True),
                 priority=1,
             )
             return
 
         try:
-            async with self.bot.db_handler.get_session() as session:
-                await self.voting_service.create_vote_session(
-                    session, interaction.channel.id
-                )
-
+            # 使用 Builder 构建 Embed 和 View
             view = VoteView(self.bot, self.voting_service)
-            embed = discord.Embed(
-                title=f"议题：{topic}",
-                description=f"由 {interaction.user.mention} 发起的投票已开始！请点击下方按钮参与。",
-                color=discord.Color.blue(),
+            embed = VoteEmbedBuilder.create_initial_vote_embed(
+                topic=topic,
+                author=interaction.user,
+                realtime=realtime,
+                anonymous=anonymous,
             )
-            embed.set_footer(text="投票资格：在本帖内有效发言数 ≥ 3")
 
-            await self.bot.api_scheduler.submit(
+            # 通过调度器发送消息并获取返回的 message 对象
+            message = await self.bot.api_scheduler.submit(
                 interaction.channel.send(embed=embed, view=view), priority=2
             )
+
+            # 存入数据库
+            async with self.bot.db_handler.get_session() as session:
+                qo = CreateVoteSessionQo(
+                    thread_id=interaction.channel.id,
+                    context_message_id=message.id,
+                    realtime=realtime,
+                    anonymous=anonymous,
+                )
+                await self.voting_service.create_vote_session(session, qo)
 
             await self.bot.api_scheduler.submit(
                 interaction.followup.send(f"投票 '{topic}' 已成功启动！", ephemeral=True),
                 priority=1,
             )
             logger.info(
-                f"用户 {interaction.user.id} 在帖子 {interaction.channel.id} 中手动启动了投票 '{topic}'"
+                (
+                    f"用户 {interaction.user.id} 在帖子 {interaction.channel.id} 中"
+                    f"手动启动了投票 '{topic}'"
+                )
             )
 
         except Exception as e:
@@ -111,8 +139,6 @@ class Voting(commands.Cog):
             logger.error(f"启动投票时发生命令特定错误: {e}", exc_info=True)
             # 抛出异常以确保它被全局错误处理器捕获
             raise e
-
-
 
 
 async def setup(bot: StellariaPactBot):
@@ -131,7 +157,7 @@ async def setup(bot: StellariaPactBot):
         Voting(bot, voting_service),
         ThreadListener(bot, voting_service),
         MessageListener(bot, voting_service),
-        VoteCloser(bot, voting_service)
+        VoteCloser(bot, voting_service),
     ]
 
     # 3. 使用 asyncio.gather 并行加载所有 Cogs

@@ -19,7 +19,11 @@ class VoteSession(BaseModel, table=True):
     objectionId: Optional[int] = Field(
         default=None, foreign_key="objection.id", description="关联的异议ID"
     )
+    contextMessageId: Optional[int] = Field(
+        default=None, index=True, description="投票面板消息的ID"
+    )
     anonymousFlag: bool = Field(default=True, description="是否为匿名投票")
+    realtimeFlag: bool = Field(default=False, description="是否实时展示投票进度")
     status: int = Field(default=1, index=True, description="投票状态: 0-已结束, 1-进行中")
     endTime: Optional[datetime] = Field(default=None, description="投票截止时间")
     createdAt: datetime = Field(

@@ -15,6 +15,8 @@ from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
 
+from .BackgroundTasks import BackgroundTasks
+
 logger = logging.getLogger("stellaria_pact.notification")
 
 
@@ -93,9 +95,7 @@ class Notification(commands.Cog):
         target_tz = self.bot.config.get("timezone", "UTC")
 
         async with self.bot.db_handler.get_session() as session:
-            announcement = await self.announcement_service.get_by_thread_id(
-                session, thread_id
-            )
+            announcement = await self.announcement_service.get_by_thread_id(session, thread_id)
 
             if not announcement:
                 await self.bot.api_scheduler.submit(
@@ -117,14 +117,15 @@ class Notification(commands.Cog):
                 time_change_hours, target_tz, start_time=old_end_time_utc
             )
 
-
             db_update_task = self.announcement_service.update_end_time(
                 session, announcement.id, new_end_time
             )
 
             embed = discord.Embed(
                 title="公示时间已更新",
-                description=f"{interaction.user.mention} 将公示截止时间 **{operation}** 了 {hours} 小时",
+                description=(
+                    f"{interaction.user.mention} 将公示截止时间 **{operation}** 了 {hours} 小时"
+                ),
                 color=discord.Color.blue(),
             )
             embed.add_field(
@@ -145,7 +146,10 @@ class Notification(commands.Cog):
                 )
             else:
                 logger.warning(
-                    f"无法在频道 {interaction.channel_id} (类型: {type(interaction.channel)}) 中发送消息，因为它不是文本频道或帖子。"
+                    (
+                        f"无法在频道 {interaction.channel_id} (类型: {type(interaction.channel)}) "
+                        "中发送消息，因为它不是文本频道或帖子。"
+                    )
                 )
 
             tasks_to_run = [db_update_task]
@@ -165,13 +169,17 @@ class Notification(commands.Cog):
                 notification_result = results[1]
                 if isinstance(notification_result, Exception):
                     error_messages.append("公开通知发送失败。")
-                    logger.error(f"修改公示时间时，公开通知发送失败: {notification_result}", exc_info=True)
+                    logger.error(
+                        f"修改公示时间时，公开通知发送失败: {notification_result}", exc_info=True
+                    )
 
             # 发送最终的用户反馈
             if not error_messages:
                 feedback_message = "公示时间已成功修改。"
             else:
-                feedback_message = "操作出现问题：\n- " + "\n- ".join(error_messages) + "\n请联系技术员。"
+                feedback_message = (
+                    "操作出现问题：\n- " + "\n- ".join(error_messages) + "\n请联系技术员。"
+                )
 
             await self.bot.api_scheduler.submit(
                 interaction.followup.send(feedback_message, ephemeral=True), priority=1
@@ -180,3 +188,4 @@ class Notification(commands.Cog):
 
 async def setup(bot: StellariaPactBot):
     await bot.add_cog(Notification(bot))
+    await bot.add_cog(BackgroundTasks(bot))

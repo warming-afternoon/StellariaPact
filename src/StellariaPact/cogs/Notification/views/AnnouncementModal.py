@@ -1,15 +1,13 @@
 import asyncio
 import logging
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import discord
 from discord import ui
+from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.AnnouncementService import \
-    AnnouncementService
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
-    CreateAnnouncementQo
+from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger("stellaria_pact.notification")
@@ -106,10 +104,8 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
             # 4. 创建讨论帖并应用标签
             thread_name = f"【公示】{title}"
             thread_content = (
-                f"**公示标题:** {title}\n\n"
-                f"**具体内容:**\n{content}\n\n"
-                f"**公示截止时间:** {discord_timestamp}\n\n"
-                f"*请在此帖内进行讨论。*"
+                f"{content}\n\n**公示截止时间:** {discord_timestamp}\n\n*请在此帖内进行讨论*"
+                + f"\n公示发起人: {interaction.user.mention}"
             )
 
             thread_creation_result = await discussion_channel.create_thread(
@@ -163,7 +159,11 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
             failed_tasks_details = []
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    task_name = "数据库创建" if i == 0 else f"广播到频道 {self.broadcast_channel_ids[i-1]}"
+                    task_name = (
+                        "数据库创建"
+                        if i == 0
+                        else f"广播到频道 {self.broadcast_channel_ids[i - 1]}"
+                    )
                     user_friendly_error = ""
                     if isinstance(result, discord.Forbidden):
                         user_friendly_error = "机器人缺少发送消息的权限。"
@@ -175,8 +175,7 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
 
             if not failed_tasks_details:
                 await interaction.followup.send(
-                    f"✅ 公示 **{title}** 已成功发布！"
-                    f"\n讨论帖已在 {thread.mention} 创建。",
+                    f"✅ 公示 **{title}** 已成功发布！\n讨论帖已在 {thread.mention} 创建。",
                     ephemeral=True,
                 )
             else:
@@ -190,7 +189,8 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
         except discord.Forbidden:
             logger.exception("通过 Modal 发布公示时发生权限错误")
             await interaction.followup.send(
-                "发布公示时发生权限错误：机器人可能缺少创建帖子或应用标签的权限。请检查频道设置。", ephemeral=True
+                "发布公示时发生权限错误：机器人可能缺少创建帖子或应用标签的权限。请检查频道设置。",
+                ephemeral=True,
             )
         except Exception as e:
             logger.exception("通过 Modal 发布公示时发生错误")

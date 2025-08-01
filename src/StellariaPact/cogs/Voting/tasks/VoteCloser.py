@@ -18,17 +18,15 @@ class VoteCloser(commands.Cog):
     def cog_unload(self):
         self.close_expired_votes.cancel()
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=2)
     async def close_expired_votes(self):
         """
-        每5分钟检查一次并关闭已到期的投票。
+        每2分钟检查一次并关闭已到期的投票。
         """
         logger.info("开始检查已到期的投票...")
         try:
             async with self.bot.db_handler.get_session() as session:
-                expired_sessions = await self.voting_service.get_expired_sessions(
-                    session
-                )
+                expired_sessions = await self.voting_service.get_expired_sessions(session)
                 for vote_session in expired_sessions:
                     logger.info(f"正在处理已到期的投票会话: {vote_session.id}")
                     result_dto = await self.voting_service.tally_and_close_session(

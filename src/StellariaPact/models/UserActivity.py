@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import UniqueConstraint
+from sqlalchemy.ext.declarative import declared_attr
 from sqlmodel import Field, text
 
 from StellariaPact.models.BaseModel import BaseModel
@@ -10,11 +11,6 @@ class UserActivity(BaseModel, table=True):
     """
     用户投票资格表模型
     """
-
-    # 定义复合唯一约束
-    __table_args__ = (
-        UniqueConstraint("userId", "contextThreadId", name="unique_user_activity_per_thread"),
-    )
 
     userId: int = Field(description="用户的Discord ID")
     contextThreadId: int = Field(description="上下文的帖子ID")
@@ -28,3 +24,11 @@ class UserActivity(BaseModel, table=True):
         },
         description="最后更新时间",
     )
+
+    @declared_attr
+    def __table_args__(cls):
+        return (
+            UniqueConstraint(
+                cls.userId, cls.contextThreadId, name="unique_user_activity_per_thread"
+            ),
+        )
