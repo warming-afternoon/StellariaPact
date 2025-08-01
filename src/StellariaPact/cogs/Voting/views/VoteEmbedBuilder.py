@@ -35,7 +35,7 @@ class VoteEmbedBuilder:
             color=discord.Color.blue(),
         )
         embed.add_field(name="是否匿名", value="✅ 是" if anonymous else "❌ 否", inline=True)
-        embed.add_field(name="实时进度", value="✅ 是" if realtime else "❌ 否", inline=True)
+        embed.add_field(name="实时票数", value="✅ 是" if realtime else "❌ 否", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=True)
 
         if realtime:
@@ -56,41 +56,37 @@ class VoteEmbedBuilder:
         return embed
 
     @staticmethod
-    def create_main_vote_embed(
-        vote_session, vote_details: Optional[VoteDetailDto] = None
+    def create_vote_panel_embed(
+        topic: str,
+        anonymous_flag: bool,
+        realtime_flag: bool,
+        end_time: Optional[datetime],
+        vote_details: Optional[VoteDetailDto] = None,
     ) -> discord.Embed:
         """
-        根据 VoteSession 和可选的 VoteDetailDto 从头开始构建主投票 Embed。
+        根据明确的数据构建主投票面板 Embed，实现视图和数据的解耦。
         """
         description = "点击下方按钮，对本提案进行投票。"
         embed = discord.Embed(
-            title=f"议题：{vote_session.topic}",
+            title=f"议题：{topic}",
             description=description,
             color=discord.Color.blue(),
         )
-        embed.add_field(
-            name="是否匿名",
-            value="✅ 是" if vote_session.anonymous_flag else "❌ 否",
-            inline=True,
-        )
-        embed.add_field(
-            name="实时进度",
-            value="✅ 是" if vote_session.realtime_flag else "❌ 否",
-            inline=True,
-        )
+        embed.add_field(name="是否匿名", value="✅ 是" if anonymous_flag else "❌ 否", inline=True)
+        embed.add_field(name="实时票数", value="✅ 是" if realtime_flag else "❌ 否", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
 
-        if vote_session.realtime_flag:
+        if realtime_flag:
             approve_votes = vote_details.approve_votes if vote_details else 0
             reject_votes = vote_details.reject_votes if vote_details else 0
             embed.add_field(name="赞成", value=str(approve_votes), inline=True)
             embed.add_field(name="反对", value=str(reject_votes), inline=True)
             embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
 
-        if vote_session.end_time:
+        if end_time:
             embed.add_field(
                 name="截止时间",
-                value=f"<t:{int(vote_session.end_time.replace(tzinfo=ZoneInfo('UTC')).timestamp())}:F>",
+                value=f"<t:{int(end_time.replace(tzinfo=ZoneInfo('UTC')).timestamp())}:F>",
                 inline=False,
             )
 
@@ -161,7 +157,6 @@ class VoteEmbedBuilder:
             value=f"<t:{int(new_time.timestamp())}:F>",
             inline=False,
         )
-        embed.set_footer(text=f"操作人: {operator.display_name}")
 
         return embed
 
@@ -186,5 +181,4 @@ class VoteEmbedBuilder:
             description=f"**{setting_name}** 已被 {changed_by.mention} 切换为 **{new_status}**。",
             color=discord.Color.blue(),
         )
-        embed.set_footer(text=f"操作人: {changed_by.display_name}")
         return embed

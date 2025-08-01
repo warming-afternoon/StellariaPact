@@ -5,8 +5,10 @@ import discord
 from discord.ext import commands, tasks
 from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
+from StellariaPact.cogs.Notification.AnnouncementMonitorService import AnnouncementMonitorService
+from StellariaPact.cogs.Notification.RepostService import RepostService
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 logger = logging.getLogger("stellaria_pact.notification.tasks")
 
@@ -18,7 +20,6 @@ class BackgroundTasks(commands.Cog):
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
-        self.announcement_service = AnnouncementService()
         self.announcement_channel_id = self.bot.config["channels"]["discussion"]
         self.in_progress_tag_id = self.bot.config["tags"]["announcement_in_progress"]
         self.finished_tag_id = self.bot.config["tags"]["announcement_finished"]
@@ -26,6 +27,7 @@ class BackgroundTasks(commands.Cog):
 
     def cog_unload(self):
         self.check_announcements.cancel()
+        self.check_reposts.cancel()  # type: ignore
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -34,46 +36,103 @@ class BackgroundTasks(commands.Cog):
         """
         logger.info("后台任务模块已就绪，启动定时检查。")
         self.check_announcements.start()
+        self.check_reposts.start()  # type: ignore
+
+    @tasks.loop(minutes=1)
+    async def check_reposts(self):
+        """
+        每分钟检查一次需要重复播报的公示。
+        """
+        logger.debug("正在执行定时任务: 检查需要重复播报的公示...")
+        try:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                monitor_service = AnnouncementMonitorService(uow.session)
+                repost_service = RepostService(self.bot, uow.session)
+
+                pending_monitors = await monitor_service.get_pending_reposts()
+
+                if not pending_monitors:
+                    logger.debug("没有找到需要重复播报的公示。")
+                    return
+
+                logger.info(
+                    f"发现 {len(pending_monitors)} 个待处理的重复播报: "
+                    f"{[m.id for m in pending_monitors]}"
+                )
+
+                for monitor in pending_monitors:
+                    monitor_id = monitor.id  # 在事务提交前回显ID，避免惰性加载问题
+                    try:
+                        logger.debug(f"正在处理监控器 ID: {monitor_id}...")
+                        await repost_service.process_single_repost(monitor)
+                        await uow.commit()  # 为每个成功的播报提交事务
+                        logger.info(f"成功处理并提交了监控器 ID: {monitor_id}")
+                    except Exception as e:
+                        logger.error(f"处理监控器 ID {monitor_id} 时发生错误: {e}", exc_info=True)
+                        await uow.rollback()  # 如果出错则回滚当前监控器的更改
+
+        except Exception as e:
+            logger.error(f"检查重复播报任务时发生严重错误: {e}", exc_info=True)
 
     @tasks.loop(minutes=2)
     async def check_announcements(self):
         """
-        每5分钟检查一次到期的公示。
+        每2分钟检查一次到期的公示。
         """
         logger.info("正在执行定时任务: 检查到期公示...")
+        processed_announcements = []
 
-        async with self.bot.db_handler.get_session() as session:
-            expired_announcements = await self.announcement_service.get_expired_announcements(
-                session
-            )
+        try:
+            # --- 步骤 1: 数据库操作 ---
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                expired_announcements = await uow.announcements.get_expired_announcements()
+                if not expired_announcements:
+                    logger.debug("没有找到需要处理的到期公示。")
+                    return
 
-        if not expired_announcements:
-            logger.info("没有找到需要处理的到期公示。")
+                logger.info(f"发现 {len(expired_announcements)} 个到期公示，正在更新数据库状态...")
+                monitor_service = AnnouncementMonitorService(uow.session)
+                for announcement in expired_announcements:
+                    try:
+                        await uow.announcements.mark_announcement_as_finished(announcement.id)
+                        await monitor_service.delete_monitors_for_announcement(announcement.id)
+                        processed_announcements.append(announcement)
+                    except Exception:
+                        logger.exception(
+                            f"更新公示 {announcement.id} ({announcement.title}) 数据库状态时出错"
+                        )
+
+                if processed_announcements:
+                    logger.info(
+                        f"成功在数据库中将 {len(processed_announcements)} 个公示标记为已完成。"
+                    )
+
+        except Exception as e:
+            logger.error(f"检查到期公示的数据库操作阶段发生严重错误: {e}", exc_info=True)
+            return  # 如果数据库出错，则不继续执行 API 调用
+
+        # --- 步骤 2: Discord API 调用 ---
+        if not processed_announcements:
             return
 
-        logger.info(f"发现 {len(expired_announcements)} 个到期公示，正在处理...")
-        tasks = [
-            self._process_expired_announcement(announcement)
-            for announcement in expired_announcements
+        logger.info(f"正在为 {len(processed_announcements)} 个已完成的公示执行 API 调用...")
+        api_tasks = [
+            self._notify_announcement_finished(announcement)
+            for announcement in processed_announcements
         ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*api_tasks, return_exceptions=True)
 
-        for result, announcement in zip(results, expired_announcements):
+        for result, announcement in zip(results, processed_announcements):
             if isinstance(result, Exception):
-                logger.exception(f"处理公示 {announcement.id} ({announcement.title}) 时发生错误")
+                logger.exception(
+                    f"为公示 {announcement.id} ({announcement.title}) 执行 API 调用时发生错误"
+                )
 
         logger.info("所有到期公示处理完毕。")
 
-    async def _process_expired_announcement(self, announcement):
-        """处理单个到期公示的全部逻辑"""
+    async def _notify_announcement_finished(self, announcement):
+        """为单个已完成的公示发送通知并更新标签"""
         try:
-            # 2. 更新数据库状态
-            async with self.bot.db_handler.get_session() as session:
-                await self.announcement_service.mark_announcement_as_finished(
-                    session, announcement.id
-                )
-
-            # 3. 发送通知
             thread = self.bot.get_channel(
                 announcement.discussionThreadId
             ) or await self.bot.fetch_channel(announcement.discussionThreadId)
@@ -91,14 +150,11 @@ class BackgroundTasks(commands.Cog):
                 finished_tag = discord.utils.get(
                     forum_channel.available_tags, id=self.finished_tag_id
                 )
-
-                # 从现有标签中移除"公示中"，添加"公示结束"
                 new_tags = [
                     tag for tag in thread.applied_tags if tag.id != self.in_progress_tag_id
                 ]
                 if finished_tag:
                     new_tags.append(finished_tag)
-
                 await self.bot.api_scheduler.submit(
                     coro=thread.edit(applied_tags=new_tags), priority=7
                 )
@@ -106,35 +162,29 @@ class BackgroundTasks(commands.Cog):
             # 发送通知
             embed = discord.Embed(
                 title=f"公示结束: {announcement.title}",
-                description="本次公示已到期，标签已自动更新。",
+                description="本次公示已到期",
                 color=discord.Color.orange(),
             )
-            # 从数据库获取的 endTime 是一个不带时区信息的(naive)datetime对象，
-            # 其数值上等于UTC时间。
-            # 在调用 .timestamp() 之前，我们必须先为其附加正确的UTC时区信息，
-            # 否则Python会假定它是本地时间，从而导致错误的计算。
             utc_end_time = announcement.endTime.replace(tzinfo=ZoneInfo("UTC"))
             discord_timestamp = f"<t:{int(utc_end_time.timestamp())}:F>"
-
             embed.add_field(name="公示截止时间", value=discord_timestamp)
-            # embed.set_footer(text="请管理组及时跟进后续事宜。")
-
             role_mention = f"<@&{self.stewards_role_id}>"
-
             await self.bot.api_scheduler.submit(
                 coro=thread.send(content=role_mention, embed=embed),
-                priority=8,  # 后台任务使用较低优先级
+                priority=8,
             )
-
         except discord.NotFound:
-            logger.error(f"讨论帖 (ID: {announcement.discussionThreadId}) 未找到，可能已被删除。")
-            # 将异常向上抛出，由 gather 的调用方统一处理
-            raise
+            logger.error(
+                f"讨论帖 (ID: {announcement.discussionThreadId}) 未找到，可能已被删除。跳过API通知"
+            )
         except Exception:
-            logger.exception(f"处理公示 {announcement.id} 时发生未知错误。")
-            # 将异常向上抛出，由 gather 的调用方统一处理
+            # 异常将在 gather 中被捕获和记录
             raise
 
     @check_announcements.before_loop
     async def before_check_announcements(self):
+        await self.bot.wait_until_ready()
+
+    @check_reposts.before_loop
+    async def before_check_reposts(self):
         await self.bot.wait_until_ready()

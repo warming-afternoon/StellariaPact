@@ -8,7 +8,7 @@ import discord
 from dotenv import load_dotenv
 
 from StellariaPact.share.ApiScheduler import APIScheduler
-from StellariaPact.share.DatabaseHandler import db_handler
+from StellariaPact.share.DatabaseHandler import get_db_handler, initialize_db_handler
 from StellariaPact.share.HttpClient import HttpClient
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
@@ -28,6 +28,15 @@ if root_logger.hasHandlers():
     root_logger.handlers.clear()
 root_logger.addHandler(stream_handler)
 
+# --- SQLAlchemy 日志配置 ---
+# 获取 sqlalchemy.engine 日志记录器
+sql_logger = logging.getLogger("sqlalchemy.engine")
+# 设置其日志级别，使其与根日志级别一致
+sql_logger.setLevel(log_level)
+# 禁止它将日志向上传播到根日志记录器，以避免重复记录
+sql_logger.propagate = False
+# --- SQLAlchemy 日志配置结束 ---
+
 logger = logging.getLogger("stellaria_pact")
 # --- 日志配置结束 ---
 
@@ -46,42 +55,55 @@ def main():
     bot = StellariaPactBot(command_prefix="!", intents=intents, proxy=proxy)
 
     bot.api_scheduler = APIScheduler()
-    bot.db_handler = db_handler
+    # db_handler 将在 setup_hook 中被初始化和分配
+    bot.db_handler = None
     bot.config = config
     bot.time_utils = TimeUtils()
 
     @bot.event
     async def setup_hook():
+        logger.info("正在显式加载所有数据模型...")
+        import StellariaPact.models  # noqa: F401
+
+        logger.info("数据模型加载完成。")
         bot.api_scheduler.start()
 
-        # --- 并行化启动任务 ---
-        logger.info("正在加载 Cogs 和初始化数据库...")
-
-        # 收集所有需要并行执行的异步任务
-        tasks = []
-
-        # 1. 添加数据库初始化任务
-        tasks.append(db_handler.init_db())
-
-        # 2. 添加所有 Cogs 的加载任务
+        logger.info("正在加载所有 Cogs...")
         cogs_path = Path(__file__).parent / "cogs"
+        cog_load_tasks = []
         for cog_dir in cogs_path.iterdir():
-            if cog_dir.is_dir():
-                cog_main_file = cog_dir / "Cog.py"
-                if cog_main_file.exists():
-                    extension_path = f"StellariaPact.cogs.{cog_dir.name}.Cog"
-                    tasks.append(bot.load_extension(extension_path))
+            if cog_dir.is_dir() and (cog_dir / "__init__.py").exists():
+                extension_path = f"StellariaPact.cogs.{cog_dir.name}"
+                cog_load_tasks.append(bot.load_extension(extension_path))
 
-        # 使用 asyncio.gather 并行执行所有任务
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        if cog_load_tasks:
+            results = await asyncio.gather(*cog_load_tasks, return_exceptions=True)
+            # 检查 Cogs 加载结果
+            cog_names = [
+                cog.name
+                for cog in cogs_path.iterdir()
+                if cog.is_dir() and (cog / "__init__.py").exists()
+            ]
+            for result, name in zip(results, cog_names):
+                if isinstance(result, Exception):
+                    logger.exception(f"加载 Cog '{name}' 失败: {result}")
+                else:
+                    logger.info(f"成功加载 Cog: {name}")
+        logger.info("所有 Cogs 加载完成。")
 
-        # 检查任务执行结果
-        cog_names = [f"{cog.parent.name} 模块" for cog in cogs_path.glob("*/Cog.py")]
-        for result, task_name in zip(results, ["DB Init"] + cog_names):
-            if isinstance(result, Exception):
-                logger.exception(f"初始化 '{task_name}' 失败: {result}")
-            else:
-                logger.info(f"初始化 '{task_name}' 成功")
+        # 1. 初始化 DatabaseHandler 并将其分配给 Bot
+        # logger.info("正在初始化 DatabaseHandler...")
+        initialize_db_handler()
+        bot.db_handler = get_db_handler()
+        # logger.info("DatabaseHandler 初始化并分配给 Bot。")
+
+        # 2. 使用 Bot 上的句柄初始化数据库
+        logger.info("正在初始化数据库...")
+        try:
+            await bot.db_handler.init_db()
+            logger.info("数据库初始化成功。")
+        except Exception as e:
+            logger.exception(f"数据库初始化失败: {e}")
 
         logger.info("Cogs 和数据库初始化完成。")
 

@@ -181,6 +181,7 @@ cython_debug/
 .cursorindexingignore
 
 # 运行文件
+.vscode/
 .roo/
 data/
 config.json

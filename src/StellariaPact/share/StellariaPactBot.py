@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from discord.ext import commands
 
@@ -15,6 +15,6 @@ class StellariaPactBot(commands.Bot):
     """
 
     api_scheduler: APIScheduler
-    db_handler: DatabaseHandler
+    db_handler: Optional[DatabaseHandler]
     config: Dict[str, Any]
     time_utils: TimeUtils

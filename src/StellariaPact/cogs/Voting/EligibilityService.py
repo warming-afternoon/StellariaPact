@@ -1,6 +1,6 @@
 from typing import Optional
 
-from StellariaPact.models.UserActivity import UserActivity
+from StellariaPact.cogs.Voting.dto.UserActivityDto import UserActivityDto
 
 
 class EligibilityService:
@@ -11,7 +11,7 @@ class EligibilityService:
     REQUIRED_MESSAGES = 3
 
     @staticmethod
-    def is_eligible(user_activity: Optional[UserActivity]) -> bool:
+    def is_eligible(user_activity: Optional[UserActivityDto]) -> bool:
         """
         根据用户活动记录判断其是否有投票资格。
 

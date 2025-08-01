@@ -7,17 +7,16 @@ from discord.ext import commands
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
-from StellariaPact.cogs.Voting.VotingService import VotingService
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
 
 class ThreadListener(commands.Cog):
-    def __init__(self, bot: StellariaPactBot, voting_service: VotingService):
+    def __init__(self, bot: StellariaPactBot):
         self.bot = bot
-        self.voting_service = voting_service
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
@@ -35,27 +34,27 @@ class ThreadListener(commands.Cog):
         logger.info(f"在新帖子 '{thread.name}' (ID: {thread.id}) 中创建投票面板。")
 
         try:
-            # 准备参数和 View
-            target_tz = self.bot.config.get("timezone", "UTC")
-            end_time = TimeUtils.get_utc_end_time(duration_hours=72, target_tz=target_tz)
-            view = VoteView(self.bot, self.voting_service)
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                # 准备参数和 View
+                target_tz = self.bot.config.get("timezone", "UTC")
+                end_time = TimeUtils.get_utc_end_time(duration_hours=72, target_tz=target_tz)
+                view = VoteView(self.bot)
 
-            # 使用 Builder 构建 Embed
-            embed = VoteEmbedBuilder.create_initial_vote_embed(
-                topic=thread.name,
-                author=None,  # 自动创建的投票没有明确的发起人
-                realtime=True,
-                anonymous=True,
-                end_time=end_time,
-            )
+                # 使用 Builder 构建 Embed
+                embed = VoteEmbedBuilder.create_initial_vote_embed(
+                    topic=thread.name,
+                    author=None,  # 自动创建的投票没有明确的发起人
+                    realtime=True,
+                    anonymous=True,
+                    end_time=end_time,
+                )
 
-            # 发送消息并获取返回的 message 对象
-            message = await self.bot.api_scheduler.submit(
-                thread.send(embed=embed, view=view), priority=5
-            )
+                # 发送消息并获取返回的 message 对象
+                message = await self.bot.api_scheduler.submit(
+                    thread.send(embed=embed, view=view), priority=5
+                )
 
-            # 存入数据库
-            async with self.bot.db_handler.get_session() as session:
+                # 存入数据库
                 qo = CreateVoteSessionQo(
                     thread_id=thread.id,
                     context_message_id=message.id,
@@ -63,6 +62,7 @@ class ThreadListener(commands.Cog):
                     anonymous=True,
                     end_time=end_time,
                 )
-                await self.voting_service.create_vote_session(session, qo)
+                await uow.voting.create_vote_session(qo)
+                await uow.commit()
         except Exception as e:
             logger.error(f"无法在帖子 {thread.id} 中创建投票面板: {e}", exc_info=True)

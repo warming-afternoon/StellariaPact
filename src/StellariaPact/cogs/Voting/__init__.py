@@ -1,20 +1,25 @@
+import asyncio
+import logging
+
 from StellariaPact.cogs.Voting.Cog import Voting
-from StellariaPact.cogs.Voting.listeners.MessageListener import MessageListener
 from StellariaPact.cogs.Voting.listeners.ThreadListener import ThreadListener
+from StellariaPact.cogs.Voting.listeners.VotingMessageListener import VotingMessageListener
 from StellariaPact.cogs.Voting.tasks.VoteCloser import VoteCloser
-from StellariaPact.cogs.Voting.VotingService import VotingService
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+
+logger = logging.getLogger(__name__)
 
 
 async def setup(bot: StellariaPactBot):
     """
     设置并加载所有与投票相关的 Cogs。
     """
-    # 创建一个共享的 VotingService 实例
-    voting_service = VotingService()
+    cogs_to_load = [
+        Voting(bot),
+        VotingMessageListener(bot),
+        ThreadListener(bot),
+        VoteCloser(bot),
+    ]
 
-    # 将所有相关的 Cogs 添加到 bot 中，并注入 service
-    await bot.add_cog(Voting(bot, voting_service))
-    await bot.add_cog(MessageListener(bot, voting_service))
-    await bot.add_cog(ThreadListener(bot, voting_service))
-    await bot.add_cog(VoteCloser(bot, voting_service))
+    await asyncio.gather(*[bot.add_cog(cog) for cog in cogs_to_load])
+    logger.info(f"成功为 Voting 模块加载了 {len(cogs_to_load)} 个 Cogs。")

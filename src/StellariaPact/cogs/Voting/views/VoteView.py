@@ -4,10 +4,10 @@ import discord
 
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.views.VotingChoiceView import VotingChoiceView
-from StellariaPact.cogs.Voting.VotingService import VotingService
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 
 class VoteView(discord.ui.View):
@@ -15,10 +15,9 @@ class VoteView(discord.ui.View):
     投票面板的视图，包含投票按钮。
     """
 
-    def __init__(self, bot: StellariaPactBot, voting_service: VotingService):
+    def __init__(self, bot: StellariaPactBot):
         super().__init__(timeout=None)  # 持久化视图
         self.bot = bot
-        self.voting_service = voting_service
 
     @discord.ui.button(
         label="管理投票", style=discord.ButtonStyle.primary, custom_id="manage_vote_button"
@@ -44,69 +43,66 @@ class VoteView(discord.ui.View):
             )
             return
 
-        # 获取用户的投票资格和当前投票状态
-        async with self.bot.db_handler.get_session() as session:
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 获取用户的投票资格和当前投票状态
             user_activity, user_vote, vote_session = await asyncio.gather(
-                self.voting_service.check_user_eligibility(
-                    session, user_id=interaction.user.id, thread_id=interaction.channel.id
+                uow.voting.check_user_eligibility(
+                    user_id=interaction.user.id, thread_id=interaction.channel.id
                 ),
-                self.voting_service.get_user_vote(
-                    session, user_id=interaction.user.id, thread_id=interaction.channel.id
+                uow.voting.get_user_vote(
+                    user_id=interaction.user.id, thread_id=interaction.channel.id
                 ),
-                self.voting_service.get_vote_session_by_thread_id(
-                    session, thread_id=interaction.channel.id
-                ),
+                uow.voting.get_vote_session_by_thread_id(thread_id=interaction.channel.id),
             )
 
-        message_count = user_activity.messageCount if user_activity else 0
-        is_eligible = EligibilityService.is_eligible(user_activity)
+            message_count = user_activity.messageCount if user_activity else 0
+            is_eligible = EligibilityService.is_eligible(user_activity)
 
-        if user_vote is None:
-            current_vote_status = "未投票"
-        elif user_vote.choice == 1:
-            current_vote_status = "✅ 赞成"
-        else:
-            current_vote_status = "❌ 反对"
+            if user_vote is None:
+                current_vote_status = "未投票"
+            elif user_vote.choice == 1:
+                current_vote_status = "✅ 赞成"
+            else:
+                current_vote_status = "❌ 反对"
 
-        # 创建统一的 Embed
-        embed = discord.Embed(
-            title="投票管理",
-            color=discord.Color.green() if is_eligible else discord.Color.red(),
-        )
-        embed.add_field(name="当前发言数", value=f"{message_count}", inline=True)
-        embed.add_field(
-            name="要求发言数",
-            value=f"≥ {EligibilityService.REQUIRED_MESSAGES}",
-            inline=True,
-        )
-        embed.add_field(
-            name="资格状态", value="✅ 合格" if is_eligible else "❌ 不合格", inline=True
-        )
-        embed.add_field(name="当前投票", value=current_vote_status, inline=False)
-        if user_activity and not user_activity.validation:
-            embed.description = "注意：您的投票资格已被管理员撤销。"
+            embed = discord.Embed(
+                title="投票管理",
+                color=discord.Color.green() if is_eligible else discord.Color.red(),
+            )
+            embed.add_field(name="当前发言数", value=f"{message_count}", inline=True)
+            embed.add_field(
+                name="要求发言数",
+                value=f"≥ {EligibilityService.REQUIRED_MESSAGES}",
+                inline=True,
+            )
+            embed.add_field(
+                name="资格状态", value="✅ 合格" if is_eligible else "❌ 不合格", inline=True
+            )
+            embed.add_field(name="当前投票", value=current_vote_status, inline=False)
+            if user_activity and not user_activity.validation:
+                embed.description = "注意：您的投票资格已被管理员撤销。"
 
-        is_vote_active = vote_session.status == 1 if vote_session else False
-        if not is_vote_active:
-            embed.add_field(name="投票状态", value="**已结束**", inline=False)
-            embed.color = discord.Color.dark_grey()
+            is_vote_active = vote_session.status == 1 if vote_session else False
+            if not is_vote_active:
+                embed.add_field(name="投票状态", value="**已结束**", inline=False)
+                embed.color = discord.Color.dark_grey()
 
-        is_admin = RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor")
-        # 如果用户不合格且不是管理员，则只显示状态，不显示任何按钮
-        if not is_eligible and not is_admin:
+            is_admin = RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor")
+            # 如果用户不合格且不是管理员，则只显示状态，不显示任何按钮
+            if not is_eligible and not is_admin:
+                await self.bot.api_scheduler.submit(
+                    interaction.followup.send(embed=embed, ephemeral=True), priority=1
+                )
+                return
+
+            # 对于合格用户或管理员，创建并发送带有相应按钮的视图
+            view_to_send = VotingChoiceView(
+                interaction,
+                interaction.message.id,
+                is_eligible=is_eligible,
+                is_vote_active=is_vote_active,
+            )
             await self.bot.api_scheduler.submit(
-                interaction.followup.send(embed=embed, ephemeral=True), priority=1
+                interaction.followup.send(embed=embed, view=view_to_send, ephemeral=True),
+                priority=1,
             )
-            return
-
-        # 对于合格用户或管理员，创建并发送带有相应按钮的视图
-        view_to_send = VotingChoiceView(
-            interaction,
-            interaction.message.id,
-            is_eligible=is_eligible,
-            is_vote_active=is_vote_active,
-        )
-        await self.bot.api_scheduler.submit(
-            interaction.followup.send(embed=embed, view=view_to_send, ephemeral=True),
-            priority=1,
-        )

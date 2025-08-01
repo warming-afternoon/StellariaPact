@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 import discord
@@ -8,11 +7,11 @@ from discord.ext import commands
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
-from StellariaPact.cogs.Voting.VotingService import VotingService
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 logger = logging.getLogger("stellaria_pact.voting")
 
@@ -22,9 +21,8 @@ class Voting(commands.Cog):
     处理所有与投票相关的命令和交互。
     """
 
-    def __init__(self, bot: StellariaPactBot, voting_service: VotingService):
+    def __init__(self, bot: StellariaPactBot):
         self.bot = bot
-        self.voting_service = voting_service
 
     async def cog_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
@@ -55,7 +53,8 @@ class Voting(commands.Cog):
         当 bot 准备就绪时，重新注册持久化视图。
         """
         try:
-            self.bot.add_view(VoteView(self.bot, self.voting_service))
+            # VoteView 的实例化现在将在其自身内部处理数据库交互
+            self.bot.add_view(VoteView(self.bot))
             logger.info("VoteView 已成功重新注册。")
         except Exception as e:
             logger.error(f"重新注册 VoteView 时出错: {e}", exc_info=True)
@@ -78,89 +77,51 @@ class Voting(commands.Cog):
         """
         手动启动一个投票。
         """
-        await self.bot.api_scheduler.submit(safeDefer(interaction), priority=1)
+        await safeDefer(interaction)
 
         if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("此命令只能在帖子（Thread）内使用。", ephemeral=True),
-                priority=1,
-            )
+            await interaction.followup.send("此命令只能在帖子（Thread）内使用。", ephemeral=True)
             return
 
-        # 检查是否在指定的讨论区
         discussion_channel_id = self.bot.config.get("channels", {}).get("discussion")
         if not discussion_channel_id or interaction.channel.parent_id != int(
             discussion_channel_id
         ):
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("此命令只能在指定的讨论区帖子内使用。", ephemeral=True),
-                priority=1,
-            )
+            await interaction.followup.send("此命令只能在指定的讨论区帖子内使用。", ephemeral=True)
             return
 
         try:
-            # 使用 Builder 构建 Embed 和 View
-            view = VoteView(self.bot, self.voting_service)
-            embed = VoteEmbedBuilder.create_initial_vote_embed(
-                topic=topic,
-                author=interaction.user,
-                realtime=realtime,
-                anonymous=anonymous,
-            )
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                # 1. 构建 UI
+                view = VoteView(self.bot)
+                embed = VoteEmbedBuilder.create_initial_vote_embed(
+                    topic=topic,
+                    author=interaction.user,
+                    realtime=realtime,
+                    anonymous=anonymous,
+                )
 
-            # 通过调度器发送消息并获取返回的 message 对象
-            message = await self.bot.api_scheduler.submit(
-                interaction.channel.send(embed=embed, view=view), priority=2
-            )
+                # 2. 发送 API 请求
+                message = await self.bot.api_scheduler.submit(
+                    interaction.channel.send(embed=embed, view=view), priority=2
+                )
 
-            # 存入数据库
-            async with self.bot.db_handler.get_session() as session:
+                # 3. 执行数据库操作
                 qo = CreateVoteSessionQo(
                     thread_id=interaction.channel.id,
                     context_message_id=message.id,
                     realtime=realtime,
                     anonymous=anonymous,
                 )
-                await self.voting_service.create_vote_session(session, qo)
+                await uow.voting.create_vote_session(qo)
 
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send(f"投票 '{topic}' 已成功启动！", ephemeral=True),
-                priority=1,
-            )
+            # 4. 发送最终确认
+            await interaction.followup.send(f"投票 '{topic}' 已成功启动！", ephemeral=True)
             logger.info(
-                (
-                    f"用户 {interaction.user.id} 在帖子 {interaction.channel.id} 中"
-                    f"手动启动了投票 '{topic}'"
-                )
+                f"用户 {interaction.user.id} 在帖子 {interaction.channel.id} 中 "
+                f"手动启动了投票 '{topic}'"
             )
 
         except Exception as e:
-            # 错误将由 cog_app_command_error 捕获和处理
             logger.error(f"启动投票时发生命令特定错误: {e}", exc_info=True)
-            # 抛出异常以确保它被全局错误处理器捕获
             raise e
-
-
-async def setup(bot: StellariaPactBot):
-    """
-    设置并加载 Voting 模块的所有相关 Cogs。
-    """
-    from .listeners.MessageListener import MessageListener
-    from .listeners.ThreadListener import ThreadListener
-    from .tasks.VoteCloser import VoteCloser
-
-    # 创建共享的 Service 实例
-    voting_service = VotingService()
-
-    # 创建所有 Cogs 并注入依赖
-    cogs_to_load = [
-        Voting(bot, voting_service),
-        ThreadListener(bot, voting_service),
-        MessageListener(bot, voting_service),
-        VoteCloser(bot, voting_service),
-    ]
-
-    # 3. 使用 asyncio.gather 并行加载所有 Cogs
-    await asyncio.gather(*[bot.add_cog(cog) for cog in cogs_to_load])
-
-    logger.info(f"成功为 Voting 模块加载了 {len(cogs_to_load)} 个 Cogs。")

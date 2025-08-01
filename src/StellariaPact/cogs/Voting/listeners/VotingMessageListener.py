@@ -8,16 +8,15 @@ from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo.GetVoteDetailsQo import GetVoteDetailsQo
 from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
-from StellariaPact.cogs.Voting.VotingService import VotingService
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
 
-class MessageListener(commands.Cog):
-    def __init__(self, bot: StellariaPactBot, voting_service: VotingService):
+class VotingMessageListener(commands.Cog):
+    def __init__(self, bot: StellariaPactBot):
         self.bot = bot
-        self.voting_service = voting_service
         # 移除纯表情的正则表达式
         self.emoji_pattern = re.compile(
             "^(<a?:\\w+:\\d+>|\\p{Emoji_Presentation}|\\p{Emoji_Modifier_Base}|\\p{Emoji_Component}|\\p{So}|\\p{Cn})+$"
@@ -68,13 +67,15 @@ class MessageListener(commands.Cog):
             return
 
         try:
-            async with self.bot.db_handler.get_session() as session:
-                await self.voting_service.update_user_activity(
-                    session,
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                await uow.voting.update_user_activity(
                     UpdateUserActivityQo(
-                        user_id=message.author.id, thread_id=message.channel.id, change=1
-                    ),
+                        user_id=message.author.id,
+                        thread_id=message.channel.id,
+                        change=1,
+                    )
                 )
+                await uow.commit()
         except Exception as e:
             logger.error(
                 f"更新用户 {message.author.id} 在帖子 {message.channel.id} 的活动时出错: {e}",
@@ -99,60 +100,69 @@ class MessageListener(commands.Cog):
             return
 
         try:
-            async with self.bot.db_handler.get_session() as session:
+            async with UnitOfWork(self.bot.db_handler) as uow:
                 # 更新用户活动计数
-                user_activity = await self.voting_service.update_user_activity(
-                    session,
+                user_activity = await uow.voting.update_user_activity(
                     UpdateUserActivityQo(
-                        user_id=message.author.id, thread_id=message.channel.id, change=-1
-                    ),
+                        user_id=message.author.id,
+                        thread_id=message.channel.id,
+                        change=-1,
+                    )
                 )
 
                 # 检查用户是否还有投票资格
                 if EligibilityService.is_eligible(user_activity):
+                    await uow.commit()  # 即使资格没变，也要提交活动计数的变化
                     return
 
                 # 如果没有资格，则尝试删除他们的投票
-                vote_deleted = await self.voting_service.delete_user_vote(
-                    session, user_id=message.author.id, thread_id=message.channel.id
+                vote_deleted = await uow.voting.delete_user_vote(
+                    user_id=message.author.id, thread_id=message.channel.id
                 )
 
-                # 如果确实删除了投票（意味着他们之前投过票），则更新公共面板
-                if vote_deleted:
-                    vote_session = await self.voting_service.get_vote_session_by_thread_id(
-                        session, message.channel.id
-                    )
-                    if not vote_session or not vote_session.realtimeFlag:
-                        return
+                # 如果没有实际删除投票（因为他们本来就没投），则无需更新面板
+                if not vote_deleted:
+                    await uow.commit()
+                    return
 
-                    # 获取最新的投票详情
-                    vote_details = await self.voting_service.get_vote_details(
-                        session, GetVoteDetailsQo(thread_id=message.channel.id)
-                    )
+                # --- 从这里开始，用户的投票被确实删除了 ---
+                vote_session = await uow.voting.get_vote_session_by_thread_id(message.channel.id)
+                if not vote_session or not vote_session.realtimeFlag:
+                    await uow.commit()
+                    return
 
-                    # 获取公共投票消息并更新它
-                    try:
-                        thread = self.bot.get_channel(
-                            message.channel.id
-                        ) or await self.bot.fetch_channel(message.channel.id)
-                        if not isinstance(thread, discord.Thread):
-                            return
+                # 获取最新的投票详情
+                vote_details = await uow.voting.get_vote_details(
+                    GetVoteDetailsQo(thread_id=message.channel.id)
+                )
 
-                        public_message = await thread.fetch_message(vote_session.contextMessageId)
-                        new_embed = VoteEmbedBuilder.update_vote_counts_embed(
-                            public_message.embeds[0], vote_details
-                        )
-                        await self.bot.api_scheduler.submit(
-                            public_message.edit(embed=new_embed), priority=2
-                        )
-                        logger.info(
-                            f"用户 {message.author.id} 因资格失效，"
-                            f"其在帖子 {message.channel.id} 的投票已被撤销。"
-                        )
-                    except discord.NotFound:
-                        logger.warning(
-                            f"在帖子 {message.channel.id} 中未找到原始投票消息，无法更新面板。"
-                        )
+                # 提交数据库事务，确保后续 API 调用失败时数据也能保存
+                await uow.commit()
+
+            # --- 数据库事务已提交，现在开始与 Discord API 交互 ---
+            try:
+                if not vote_session.contextMessageId:
+                    return
+
+                thread = self.bot.get_channel(message.channel.id) or await self.bot.fetch_channel(
+                    message.channel.id
+                )
+                if not isinstance(thread, discord.Thread):
+                    return
+
+                public_message = await thread.fetch_message(vote_session.contextMessageId)
+                new_embed = VoteEmbedBuilder.update_vote_counts_embed(
+                    public_message.embeds[0], vote_details
+                )
+                await self.bot.api_scheduler.submit(
+                    public_message.edit(embed=new_embed), priority=2
+                )
+                logger.info(
+                    f"用户 {message.author.id} 因资格失效，"
+                    f"其在帖子 {message.channel.id} 的投票已被撤销并更新面板。"
+                )
+            except discord.NotFound:
+                logger.warning(f"在帖子 {message.channel.id} 中未找到原始投票消息，无法更新面板。")
 
         except Exception as e:
             logger.error(
