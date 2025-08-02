@@ -4,7 +4,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from StellariaPact.cogs.Notification.dto.AnnouncementDto import AnnouncementDto
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
+    CreateAnnouncementQo
 from StellariaPact.models.Announcement import Announcement
 
 
@@ -38,7 +39,7 @@ class AnnouncementService:
         self.session.add(new_announcement)
         await self.session.flush()
 
-        return AnnouncementDto.from_orm(new_announcement)
+        return AnnouncementDto.model_validate(new_announcement)
 
     async def get_by_thread_id(self, thread_id: int) -> AnnouncementDto | None:
         """
@@ -54,7 +55,7 @@ class AnnouncementService:
             select(Announcement).where(Announcement.discussionThreadId == thread_id)
         )
         announcement = result.one_or_none()
-        return AnnouncementDto.from_orm(announcement) if announcement else None
+        return AnnouncementDto.model_validate(announcement) if announcement else None
 
     async def get_expired_announcements(self) -> list[AnnouncementDto]:
         """
@@ -68,7 +69,7 @@ class AnnouncementService:
             select(Announcement).where(Announcement.endTime <= now, Announcement.status == 1)
         )
         expired = result.all()
-        return [AnnouncementDto.from_orm(ann) for ann in expired]
+        return [AnnouncementDto.model_validate(ann) for ann in expired]
 
     async def update_end_time(self, announcement_id: int, new_end_time: datetime):
         """
@@ -94,4 +95,5 @@ class AnnouncementService:
         if announcement:
             announcement.status = 0  # 0: 已结束
             self.session.add(announcement)
-            self.session.add(announcement)
+
+

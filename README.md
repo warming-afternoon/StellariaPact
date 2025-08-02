@@ -2,13 +2,13 @@
 
 A Discord bot for StellariaPact.
 
-## ⚡ 快速开始 (Quick Start)
+## ⚡ 快速开始
 
 **要求**: [Python 3.8+](https://www.python.org/downloads/)
 
 1.  **下载项目代码**
     ```bash
-    git clone https://github.com/your-username/StellariaPact.git
+    git clone https://github.com/warming-afternoon/StellariaPact.git
     cd StellariaPact
     ```
 
@@ -42,7 +42,7 @@ A Discord bot for StellariaPact.
 
 ### 日常开发命令
 
-所有命令都通过 `uv run` 执行，**无需手动激活虚拟环境**。
+所有命令都通过 `uv run` 执行，无需手动激活虚拟环境
 
 *   **运行机器人**:
     ```bash

@@ -24,18 +24,20 @@ class AnnouncementEmbedBuilder:
         )
 
     @staticmethod
-    def create_broadcast_embed(
+    def create_announcement_embed(
         title: str,
         content: str,
         thread_url: str,
         discord_timestamp: str,
         author: discord.User | discord.Member,
         start_time_utc: datetime,
+        is_repost: bool = False,
     ) -> discord.Embed:
-        """创建用于广播到其他频道的 Embed。"""
+        """创建用于广播或重复播报的 Embed。"""
+        embed_title = "📢 公示宣传" if is_repost else "📢 新公示"
         embed = discord.Embed(
-            title=f"📢 新公示: {title}",
-            description=f"{content}\n\n[点击此处参与讨论]({thread_url})",
+            title=embed_title,
+            description=f"> ## {title}\n\n{content}\n\n",
             color=discord.Color.blue(),
             timestamp=start_time_utc,
         )
@@ -43,27 +45,7 @@ class AnnouncementEmbedBuilder:
             text=f"公示发起人: {author.display_name}",
             icon_url=author.display_avatar.url,
         )
-        embed.add_field(name="公示截止时间", value=discord_timestamp, inline=False)
-        return embed
-
-    @staticmethod
-    def create_repost_embed(
-        title: str,
-        content: str,
-        thread_url: str,
-        discord_timestamp: str,
-        author: discord.User | discord.Member,
-    ) -> discord.Embed:
-        """创建用于重复播报的 Embed。"""
-        embed = discord.Embed(
-            title=f"【公示】 {title}",
-            description=f"{content}\n\n[点击此处参与讨论]({thread_url})",
-            color=discord.Color.blue(),
-        )
-        embed.set_footer(
-            text=f"公示发起人: {author.display_name}",
-            icon_url=author.display_avatar.url,
-        )
+        embed.add_field(name="讨论帖链接", value=f"[点击此处参与讨论]({thread_url})", inline=False)
         embed.add_field(name="公示截止时间", value=discord_timestamp, inline=False)
         return embed
 

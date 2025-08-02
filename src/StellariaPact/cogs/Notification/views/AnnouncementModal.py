@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import ui
-from zoneinfo import ZoneInfo
 
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
@@ -65,7 +65,9 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
         当用户提交模态窗口时被调用。
         职责: 验证输入，构建视图元素，然后将所有数据传递给 Cog 中的工作流方法进行处理。
         """
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await self.bot.api_scheduler.submit(
+            coro=interaction.response.defer(ephemeral=True, thinking=True), priority=1
+        )
 
         try:
             # 1. 数据验证
@@ -76,8 +78,11 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
                 if duration_hours <= 0:
                     raise ValueError
             except ValueError:
-                await interaction.followup.send(
-                    "错误：公示持续小时数必须是一个正整数。", ephemeral=True
+                await self.bot.api_scheduler.submit(
+                    coro=interaction.followup.send(
+                        "错误：公示持续小时数必须是一个正整数。", ephemeral=True
+                    ),
+                    priority=1,
                 )
                 return
 
@@ -114,6 +119,9 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
 
         except Exception as e:
             logger.exception("在 Modal on_submit 期间发生意外错误")
-            await interaction.followup.send(
-                f"处理表单时发生未知错误，请联系技术员。\n`{e}`", ephemeral=True
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send(
+                    f"处理表单时发生未知错误，请联系技术员。\n`{e}`", ephemeral=True
+                ),
+                priority=1,
             )

@@ -87,7 +87,7 @@ class VoteView(discord.ui.View):
                 embed.add_field(name="投票状态", value="**已结束**", inline=False)
                 embed.color = discord.Color.dark_grey()
 
-            is_admin = RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor")
+            is_admin = RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor","stewards")
             # 如果用户不合格且不是管理员，则只显示状态，不显示任何按钮
             if not is_eligible and not is_admin:
                 await self.bot.api_scheduler.submit(

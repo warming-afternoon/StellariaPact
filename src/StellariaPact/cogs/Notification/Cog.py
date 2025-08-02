@@ -2,15 +2,18 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
-from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
-from StellariaPact.cogs.Notification.views.AnnouncementModal import AnnouncementModal
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
+    CreateAnnouncementQo
+from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import \
+    AnnouncementEmbedBuilder
+from StellariaPact.cogs.Notification.views.AnnouncementModal import \
+    AnnouncementModal
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
@@ -58,21 +61,21 @@ class Notification(commands.Cog):
     @app_commands.command(name="发布公示", description="通过表单发布一个新的社区公示")
     @RoleGuard.requireRoles("stewards")
     @app_commands.rename(
-        enable_reposting="开启重复公示",
         message_threshold="消息数阈值",
-        time_interval_minutes="时间间隔分钟数",
+        time_interval_minutes="时间间隔阈值",
+        enable_reposting="开启公示宣传",
     )
     @app_commands.describe(
-        enable_reposting="是否开启到期前反复宣传的功能 (默认: 开启)",
         message_threshold="触发重复公示的消息数量 (默认: 1000)",
         time_interval_minutes="触发重复公示的时间间隔分钟数 (默认: 60)",
+        enable_reposting="是否开启到期前反复宣传的功能 (默认: 开启)",
     )
     async def publish_announcement(
         self,
         interaction: discord.Interaction,
-        enable_reposting: bool = True,
         message_threshold: int = 1000,
         time_interval_minutes: int = 60,
+        enable_reposting: bool = True,
     ):
         """
         处理 /发布公示 命令, 弹出一个模态窗口来收集信息。
@@ -84,7 +87,9 @@ class Notification(commands.Cog):
             message_threshold=message_threshold,
             time_interval_minutes=time_interval_minutes,
         )
-        await interaction.response.send_modal(modal)
+        await self.bot.api_scheduler.submit(
+            coro=interaction.response.send_modal(modal), priority=1
+        )
 
     async def create_announcement_workflow(
         self,
@@ -104,7 +109,7 @@ class Notification(commands.Cog):
         """
         thread = None
         try:
-            # --- 步骤 1: API 调用 - 创建讨论帖 ---
+            # --- 创建讨论帖 ---
             discussion_channel = self.bot.get_channel(self.discussion_channel_id)
             if not isinstance(discussion_channel, discord.ForumChannel):
                 raise TypeError("配置的讨论区频道不是有效的论坛频道。")
@@ -116,12 +121,15 @@ class Notification(commands.Cog):
                 raise ValueError("在论坛频道中找不到配置的“公示中”标签。")
 
             thread_name = f"【公示】{title}"
-            thread_creation_result = await discussion_channel.create_thread(
-                name=thread_name, content=thread_content, applied_tags=[target_tag]
+            thread_creation_result = await self.bot.api_scheduler.submit(
+                coro=discussion_channel.create_thread(
+                    name=thread_name, content=thread_content, applied_tags=[target_tag]
+                ),
+                priority=5,
             )
             thread = thread_creation_result.thread
 
-            # --- 步骤 2: 数据库操作 ---
+            # --- 数据库操作 ---
             async with UnitOfWork(self.bot.db_handler) as uow:
                 qo = CreateAnnouncementQo(
                     discussionThreadId=thread.id,
@@ -141,14 +149,15 @@ class Notification(commands.Cog):
                         time_interval_minutes=time_interval_minutes,
                     )
 
-            # --- 步骤 3: API 调用 - 广播 ---
-            broadcast_embed = AnnouncementEmbedBuilder.create_broadcast_embed(
+            # --- 广播 ---
+            broadcast_embed = AnnouncementEmbedBuilder.create_announcement_embed(
                 title=title,
                 content=content,
                 thread_url=thread.jump_url,
                 discord_timestamp=discord_timestamp,
                 author=interaction.user,
                 start_time_utc=start_time_utc,
+                is_repost=False,
             )
             broadcast_tasks = [
                 self.bot.api_scheduler.submit(coro=channel.send(embed=broadcast_embed), priority=5)
@@ -157,10 +166,13 @@ class Notification(commands.Cog):
             ]
             await asyncio.gather(*broadcast_tasks, return_exceptions=True)  # 忽略广播的个别错误
 
-            # --- 步骤 4: 最终确认 ---
-            await interaction.followup.send(
-                f"✅ 公示 **{title}** 已成功发布！\n讨论帖已在 {thread.mention} 创建。",
-                ephemeral=True,
+            # --- 最终确认 ---
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send(
+                    f"✅ 公示 **{title}** 已成功发布！\n讨论帖已在 {thread.mention} 创建。",
+                    ephemeral=True,
+                ),
+                priority=1,
             )
 
         except Exception as e:
@@ -174,7 +186,9 @@ class Notification(commands.Cog):
             if thread:
                 error_message += f"\n\n讨论帖 {thread.mention} 已创建，但后续操作失败。"
 
-            await interaction.followup.send(error_message, ephemeral=True)
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send(error_message, ephemeral=True), priority=1
+            )
 
     @app_commands.command(name="修改公示时间", description="修改当前公示的持续时间")
     @app_commands.rename(operation="操作", hours="小时数")
@@ -186,13 +200,19 @@ class Notification(commands.Cog):
         operation: Literal["延长", "缩短"],
         hours: int,
     ):
-        await safeDefer(interaction)
+        await self.bot.api_scheduler.submit(coro=safeDefer(interaction), priority=1)
 
         if hours <= 0:
-            await interaction.followup.send("小时数必须是正整数。", ephemeral=True)
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send("小时数必须是正整数。", ephemeral=True),
+                priority=1,
+            )
             return
         if not interaction.channel:
-            await interaction.followup.send("此命令必须在频道内使用。", ephemeral=True)
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send("此命令必须在频道内使用。", ephemeral=True),
+                priority=1,
+            )
             return
 
         try:
@@ -200,12 +220,20 @@ class Notification(commands.Cog):
             async with UnitOfWork(self.bot.db_handler) as uow:
                 announcement = await uow.announcements.get_by_thread_id(interaction.channel.id)
                 if not announcement:
-                    await interaction.followup.send(
-                        "此频道不是一个有效的公示讨论帖。", ephemeral=True
+                    await self.bot.api_scheduler.submit(
+                        coro=interaction.followup.send(
+                            "此频道不是一个有效的公示讨论帖。", ephemeral=True
+                        ),
+                        priority=1,
                     )
                     return
                 if announcement.status != 1:
-                    await interaction.followup.send("该公示已结束，无法修改时间。", ephemeral=True)
+                    await self.bot.api_scheduler.submit(
+                        coro=interaction.followup.send(
+                            "该公示已结束，无法修改时间。", ephemeral=True
+                        ),
+                        priority=1,
+                    )
                     return
 
                 old_end_time_utc = announcement.endTime.replace(tzinfo=ZoneInfo("UTC"))
@@ -236,20 +264,29 @@ class Notification(commands.Cog):
                     await self.bot.api_scheduler.submit(
                         interaction.channel.send(embed=embed), priority=5
                     )
-                    await interaction.followup.send("公示时间已成功修改。", ephemeral=True)
+                    await self.bot.api_scheduler.submit(
+                        coro=interaction.followup.send("公示时间已成功修改。", ephemeral=True),
+                        priority=1,
+                    )
                 else:
                     logger.warning(
                         f"无法在频道 {interaction.channel_id} (类型: {type(interaction.channel)}) "
                         "中发送时间修改通知，因为它不是一个有效的消息频道。"
                     )
                     # 即使无法发送通知，也应告知用户操作已成功
-                    await interaction.followup.send(
-                        "数据库中的公示时间已成功修改，但无法在此频道发送公开通知。",
-                        ephemeral=True,
+                    await self.bot.api_scheduler.submit(
+                        coro=interaction.followup.send(
+                            "数据库中的公示时间已成功修改，但无法在此频道发送公开通知。",
+                            ephemeral=True,
+                        ),
+                        priority=1,
                     )
 
         except Exception as e:
             logger.error(f"修改公示时间时发生错误: {e}", exc_info=True)
-            await interaction.followup.send(
-                "修改公示时间时发生未知错误，请联系技术员。", ephemeral=True
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send(
+                    "修改公示时间时发生未知错误，请联系技术员。", ephemeral=True
+                ),
+                priority=1,
             )

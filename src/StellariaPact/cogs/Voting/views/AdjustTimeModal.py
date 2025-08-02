@@ -69,8 +69,9 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
                         return
 
                     # 获取主投票消息
-                    main_vote_message = await interaction.channel.fetch_message(
-                        vote_session.contextMessageId
+                    main_vote_message = await self.bot.api_scheduler.submit(
+                        interaction.channel.fetch_message(vote_session.contextMessageId),
+                        priority=3,
                     )
 
                     # 如果是实时投票，需要获取票数详情

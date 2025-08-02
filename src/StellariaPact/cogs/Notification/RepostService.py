@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import discord
 from sqlmodel.ext.asyncio.session import AsyncSession
-from zoneinfo import ZoneInfo
 
 from StellariaPact.models.Announcement import Announcement
-from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
+from StellariaPact.models.AnnouncementChannelMonitor import \
+    AnnouncementChannelMonitor
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 from .AnnouncementMonitorService import AnnouncementMonitorService
@@ -68,18 +69,20 @@ class RepostService:
         )
         logger.debug(f"成功获取频道 {channel.name} 和作者 {author.name}。")
 
-        # 3. 构建并发送消息
+        # 构建并发送消息
         logger.debug(f"正在为监控器 {monitor.id} 构建并发送 embed...")
         thread_url = f"https://discord.com/channels/{self.bot.config['guild_id']}/{announcement.discussionThreadId}"
         utc_end_time = announcement.endTime.replace(tzinfo=ZoneInfo("UTC"))
         discord_timestamp = f"<t:{int(utc_end_time.timestamp())}:F>"
 
-        embed = AnnouncementEmbedBuilder.create_repost_embed(
+        embed = AnnouncementEmbedBuilder.create_announcement_embed(
             title=announcement.title,
             content=announcement.content,
             thread_url=thread_url,
             discord_timestamp=discord_timestamp,
             author=author,
+            start_time_utc=announcement.createdAt.replace(tzinfo=ZoneInfo("UTC")),
+            is_repost=True,
         )
 
         await self.bot.api_scheduler.submit(coro=channel.send(embed=embed), priority=5)

@@ -4,7 +4,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
+    CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.share.auth.MissingRole import MissingRole
@@ -77,17 +78,25 @@ class Voting(commands.Cog):
         """
         手动启动一个投票。
         """
-        await safeDefer(interaction)
+        await self.bot.api_scheduler.submit(coro=safeDefer(interaction), priority=1)
 
         if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
-            await interaction.followup.send("此命令只能在帖子（Thread）内使用。", ephemeral=True)
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send("此命令只能在帖子（Thread）内使用。", ephemeral=True),
+                priority=1,
+            )
             return
 
         discussion_channel_id = self.bot.config.get("channels", {}).get("discussion")
         if not discussion_channel_id or interaction.channel.parent_id != int(
             discussion_channel_id
         ):
-            await interaction.followup.send("此命令只能在指定的讨论区帖子内使用。", ephemeral=True)
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send(
+                    "此命令只能在指定的讨论区帖子内使用。", ephemeral=True
+                ),
+                priority=1,
+            )
             return
 
         try:
@@ -116,7 +125,10 @@ class Voting(commands.Cog):
                 await uow.voting.create_vote_session(qo)
 
             # 4. 发送最终确认
-            await interaction.followup.send(f"投票 '{topic}' 已成功启动！", ephemeral=True)
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send(f"投票 '{topic}' 已成功启动！", ephemeral=True),
+                priority=1,
+            )
             logger.info(
                 f"用户 {interaction.user.id} 在帖子 {interaction.channel.id} 中 "
                 f"手动启动了投票 '{topic}'"

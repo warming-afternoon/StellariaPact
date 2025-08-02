@@ -6,7 +6,8 @@ from discord.ext import commands
 
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo.GetVoteDetailsQo import GetVoteDetailsQo
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
+from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import \
+    UpdateUserActivityQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -144,13 +145,17 @@ class VotingMessageListener(commands.Cog):
                 if not vote_session.contextMessageId:
                     return
 
-                thread = self.bot.get_channel(message.channel.id) or await self.bot.fetch_channel(
+                thread = self.bot.get_channel(
                     message.channel.id
+                ) or await self.bot.api_scheduler.submit(
+                    self.bot.fetch_channel(message.channel.id), priority=3
                 )
                 if not isinstance(thread, discord.Thread):
                     return
 
-                public_message = await thread.fetch_message(vote_session.contextMessageId)
+                public_message = await self.bot.api_scheduler.submit(
+                    thread.fetch_message(vote_session.contextMessageId), priority=3
+                )
                 new_embed = VoteEmbedBuilder.update_vote_counts_embed(
                     public_message.embeds[0], vote_details
                 )
