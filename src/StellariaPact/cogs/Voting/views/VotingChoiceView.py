@@ -307,7 +307,9 @@ class VotingChoiceView(discord.ui.View):
             bot=self.bot,
             on_confirm_callback=handler,
         )
-        message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        message = await self.bot.api_scheduler.submit(
+            interaction.followup.send(embed=embed, view=view, ephemeral=True), priority=1
+        )
         view.message = message
 
     async def toggle_anonymous_callback(self, interaction: discord.Interaction):

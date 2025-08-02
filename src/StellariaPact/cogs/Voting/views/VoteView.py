@@ -80,14 +80,16 @@ class VoteView(discord.ui.View):
             )
             embed.add_field(name="当前投票", value=current_vote_status, inline=False)
             if user_activity and not user_activity.validation:
-                embed.description = "注意：您的投票资格已被管理员撤销。"
+                embed.description = "注意：您的投票资格已被撤销。"
 
             is_vote_active = vote_session.status == 1 if vote_session else False
             if not is_vote_active:
                 embed.add_field(name="投票状态", value="**已结束**", inline=False)
                 embed.color = discord.Color.dark_grey()
 
-            is_admin = RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor","stewards")
+            is_admin = RoleGuard.hasRoles(
+                interaction, "councilModerator", "executionAuditor", "stewards"
+            )
             # 如果用户不合格且不是管理员，则只显示状态，不显示任何按钮
             if not is_eligible and not is_admin:
                 await self.bot.api_scheduler.submit(

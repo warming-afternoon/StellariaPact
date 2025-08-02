@@ -1,13 +1,12 @@
 import logging
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 import discord
 from sqlmodel.ext.asyncio.session import AsyncSession
+from zoneinfo import ZoneInfo
 
 from StellariaPact.models.Announcement import Announcement
-from StellariaPact.models.AnnouncementChannelMonitor import \
-    AnnouncementChannelMonitor
+from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 from .AnnouncementMonitorService import AnnouncementMonitorService

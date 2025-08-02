@@ -10,6 +10,7 @@ class AnnouncementDto(BaseDto):
 
     id: int
     discussionThreadId: int
+    announcerId: int
     title: str
     content: str
     status: int

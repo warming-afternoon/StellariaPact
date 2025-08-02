@@ -4,8 +4,7 @@ from sqlalchemy import and_, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from StellariaPact.models.Announcement import Announcement
-from StellariaPact.models.AnnouncementChannelMonitor import \
-    AnnouncementChannelMonitor
+from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 
 
 class AnnouncementMonitorService:

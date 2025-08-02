@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 import discord
 from discord import ui
+from zoneinfo import ZoneInfo
 
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
@@ -37,14 +37,6 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
         max_length=4000,
     )
 
-    duration_input = ui.TextInput(
-        label="公示持续小时数",
-        placeholder="请输入一个整数，例如 24, 48, 72",
-        style=discord.TextStyle.short,
-        required=True,
-        max_length=3,
-    )
-
     def __init__(
         self,
         bot: StellariaPactBot,
@@ -52,13 +44,15 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
         enable_reposting: bool,
         message_threshold: int,
         time_interval_minutes: int,
+        duration_hours: int,
     ):
-        super().__init__()
+        super().__init__(timeout=1800)
         self.bot = bot
         self.cog = notification_cog
         self.enable_reposting = enable_reposting
         self.message_threshold = message_threshold
         self.time_interval_minutes = time_interval_minutes
+        self.duration_hours = duration_hours
 
     async def on_submit(self, interaction: discord.Interaction):
         """
@@ -73,24 +67,12 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
             # 1. 数据验证
             title = self.title_input.value
             content = self.content_input.value
-            try:
-                duration_hours = int(self.duration_input.value)
-                if duration_hours <= 0:
-                    raise ValueError
-            except ValueError:
-                await self.bot.api_scheduler.submit(
-                    coro=interaction.followup.send(
-                        "错误：公示持续小时数必须是一个正整数。", ephemeral=True
-                    ),
-                    priority=1,
-                )
-                return
 
             # 2. 准备视图和时间数据
             start_time_utc = datetime.now(ZoneInfo("UTC"))
             timezone = self.bot.config.get("timezone", "UTC")
             end_time = self.bot.time_utils.get_utc_end_time(
-                duration_hours, timezone, start_time=start_time_utc
+                self.duration_hours, timezone, start_time=start_time_utc
             )
             utc_aware_end_time = end_time.replace(tzinfo=ZoneInfo("UTC"))
             discord_timestamp = f"<t:{int(utc_aware_end_time.timestamp())}:F>"
@@ -100,7 +82,7 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
                 title=title,
                 content=content,
                 discord_timestamp=discord_timestamp,
-                author=interaction.user,
+                author_id=interaction.user.id,
             )
 
             # 4. 将所有数据和视图元素委托给 Cog

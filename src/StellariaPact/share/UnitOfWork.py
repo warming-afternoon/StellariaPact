@@ -6,10 +6,12 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
-        AnnouncementMonitorService,
-    )
-    from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
+    from StellariaPact.cogs.Moderation.ModerationService import \
+        ModerationService
+    from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
+        AnnouncementMonitorService
+    from StellariaPact.cogs.Notification.AnnouncementService import \
+        AnnouncementService
     from StellariaPact.cogs.Voting.VotingService import VotingService
     from StellariaPact.share.DatabaseHandler import DatabaseHandler
 
@@ -34,6 +36,7 @@ class UnitOfWork:
     def __init__(self, db_handler: Optional["DatabaseHandler"]):
         self._db_handler = db_handler
         self._session: Optional[AsyncSession] = None
+        self._committed = False
 
     async def __aenter__(self) -> "UnitOfWork":
         """在进入上下文时，获取一个新的数据库会话。"""
@@ -43,6 +46,7 @@ class UnitOfWork:
                 "请确保 bot.db_handler 已在 setup_hook 中正确初始化。"
             )
         self._session = self._db_handler.get_session()
+        self._committed = False  # 重置提交标志
         # 在这里，我们延迟服务的实例化，直到第一次访问它们
         # 这样可以避免在不需要时创建服务实例
         return self
@@ -54,13 +58,16 @@ class UnitOfWork:
         if self._session:
             try:
                 if exc_type:
-                    logger.warning(
-                        f"UnitOfWork 因异常退出，正在回滚事务: {exc_type.__name__}: {exc_val}"
-                    )
-                    await self.rollback()
+                    # 如果发生异常且事务尚未手动处理，则回滚
+                    if not self._committed:
+                        logger.warning(
+                            f"UnitOfWork 因异常退出，正在回滚事务: {exc_type.__name__}: {exc_val}"
+                        )
+                        await self.rollback()
                 else:
-                    # 如果 with 块正常完成，则自动提交
-                    await self.commit()
+                    # 如果 with 块正常完成且未手动提交，则自动提交
+                    if not self._committed:
+                        await self.commit()
             finally:
                 # 确保会话总是被关闭
                 await self._session.close()
@@ -76,10 +83,12 @@ class UnitOfWork:
     async def commit(self):
         """提交当前事务。"""
         await self.session.commit()
+        self._committed = True
 
     async def rollback(self):
         """回滚当前事务。"""
         await self.session.rollback()
+        self._committed = True
 
     # --- 服务/仓库访问属性 ---
 
@@ -97,7 +106,8 @@ class UnitOfWork:
     def announcements(self) -> "AnnouncementService":
         """获取公示服务实例。"""
         if not hasattr(self, "_announcement_service"):
-            from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
+            from StellariaPact.cogs.Notification.AnnouncementService import \
+                AnnouncementService
 
             self._announcement_service = AnnouncementService(self.session)
         return self._announcement_service
@@ -106,9 +116,18 @@ class UnitOfWork:
     def announcement_monitors(self) -> "AnnouncementMonitorService":
         """获取公示监控服务实例。"""
         if not hasattr(self, "_announcement_monitor_service"):
-            from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
-                AnnouncementMonitorService,
-            )
+            from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
+                AnnouncementMonitorService
 
             self._announcement_monitor_service = AnnouncementMonitorService(self.session)
         return self._announcement_monitor_service
+
+    @property
+    def moderation(self) -> "ModerationService":
+        """获取议事管理服务实例。"""
+        if not hasattr(self, "_moderation_service"):
+            from StellariaPact.cogs.Moderation.ModerationService import \
+                ModerationService
+
+            self._moderation_service = ModerationService(self.session)
+        return self._moderation_service

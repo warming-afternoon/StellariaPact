@@ -6,8 +6,7 @@ from discord.ext import commands
 
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo.GetVoteDetailsQo import GetVoteDetailsQo
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import \
-    UpdateUserActivityQo
+from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork

@@ -4,8 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
-    CreateVoteSessionQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.share.auth.MissingRole import MissingRole
@@ -82,7 +81,9 @@ class Voting(commands.Cog):
 
         if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
             await self.bot.api_scheduler.submit(
-                coro=interaction.followup.send("此命令只能在帖子（Thread）内使用。", ephemeral=True),
+                coro=interaction.followup.send(
+                    "此命令只能在帖子（Thread）内使用。", ephemeral=True
+                ),
                 priority=1,
             )
             return

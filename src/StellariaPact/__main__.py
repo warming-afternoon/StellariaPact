@@ -5,9 +5,11 @@ import os
 from pathlib import Path
 
 import discord
+from discord import app_commands
 from dotenv import load_dotenv
 
 from StellariaPact.share.ApiScheduler import APIScheduler
+from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.DatabaseHandler import get_db_handler, initialize_db_handler
 from StellariaPact.share.HttpClient import HttpClient
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -62,10 +64,10 @@ def main():
 
     @bot.event
     async def setup_hook():
-        logger.info("正在显式加载所有数据模型...")
+        # logger.info("正在显式加载所有数据模型...")
         import StellariaPact.models  # noqa: F401
 
-        logger.info("数据模型加载完成。")
+        # logger.info("数据模型加载完成。")
         bot.api_scheduler.start()
 
         logger.info("正在加载所有 Cogs...")
@@ -105,8 +107,6 @@ def main():
         except Exception as e:
             logger.exception(f"数据库初始化失败: {e}")
 
-        logger.info("Cogs 和数据库初始化完成。")
-
         logger.info("正在同步命令...")
         await bot.tree.sync()
         logger.info("命令已同步。")
@@ -116,6 +116,24 @@ def main():
         logger.info(f"以 {bot.user} 的身份登录")
 
         logger.info("------ Bot 已准备就绪 ------")
+
+    @bot.tree.error
+    async def on_app_command_error(
+        interaction: discord.Interaction, error: app_commands.AppCommandError
+    ):
+        """
+        全局应用命令错误处理器。
+        """
+        original_error = getattr(error, "original", error)
+        if isinstance(original_error, MissingRole):
+            if not interaction.response.is_done():
+                await interaction.response.send_message(str(original_error), ephemeral=True)
+        else:
+            logger.error(f"在应用命令中发生未处理的错误: {error}", exc_info=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "发生了一个未知错误，请联系技术员", ephemeral=True
+                )
 
     token = os.getenv("DISCORD_TOKEN")
     if not token or token == "YOUR_BOT_TOKEN_HERE":

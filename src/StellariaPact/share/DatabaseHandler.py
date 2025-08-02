@@ -44,7 +44,12 @@ class DatabaseHandler:
         sqlite_url = f"sqlite+aiosqlite:///{db_name}"
         connect_args = {"timeout": 15}
 
-        self._async_engine = create_async_engine(sqlite_url, echo=True, connect_args=connect_args)
+        sql_echo_str = os.getenv("SQL_ECHO", "False")
+        sql_echo = sql_echo_str.lower() in ("true", "1", "t")
+
+        self._async_engine = create_async_engine(
+            sqlite_url, echo=sql_echo, connect_args=connect_args
+        )
 
         @event.listens_for(self._async_engine.sync_engine, "connect")
         def _enable_wal(dbapi_connection, connection_record):
@@ -64,11 +69,11 @@ class DatabaseHandler:
         if not self._initialized or not self._async_engine:
             raise RuntimeError("DatabaseHandler 尚未初始化。请先调用 initialize_db_handler。")
 
-        logger.info("正在检查并创建数据库表...")
+        # logger.info("正在检查并创建数据库表...")
         async with self._async_engine.begin() as conn:
             # logger.info(f"元数据中已注册的表: {SQLModel.metadata.tables.keys()}")
             await conn.run_sync(SQLModel.metadata.create_all)
-        logger.info("数据库表检查与创建完成。")
+        # logger.info("数据库表检查与创建完成。")
 
     def get_session(self) -> AsyncSession:
         """

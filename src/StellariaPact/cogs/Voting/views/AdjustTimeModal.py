@@ -26,7 +26,7 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
     )
 
     def __init__(self, bot: StellariaPactBot, thread_id: int):
-        super().__init__()
+        super().__init__(timeout=1800)
         self.bot = bot
         self.thread_id = thread_id
 
