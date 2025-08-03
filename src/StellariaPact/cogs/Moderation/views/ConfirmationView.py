@@ -24,10 +24,11 @@ class ConfirmationView(discord.ui.View):
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
 
-    async def _edit_thread_tags(self, thread_id: int):
+    async def _update_thread(self, thread_id: int, title: str):
+        """更新帖子的标题和标签以反映其正在执行的状态。"""
         try:
             if not hasattr(self.bot, "config"):
-                logger.warning("机器人配置未加载，无法修改帖子标签。")
+                logger.warning("机器人配置未加载，无法修改帖子。")
                 return
 
             tags_config = self.bot.config.get("tags", {})
@@ -35,34 +36,35 @@ class ConfirmationView(discord.ui.View):
             executing_tag_id = tags_config.get("executing")
 
             if not discussion_tag_id or not executing_tag_id:
-                logger.warning("讨论或执行中标签ID未在配置中找到，无法修改帖子标签。")
+                logger.warning("讨论或执行中标签ID未在配置中找到，无法修改帖子。")
                 return
 
             thread = await self.bot.fetch_channel(thread_id)
             if not isinstance(thread, discord.Thread):
                 return
 
-            # 确保父频道是论坛频道
             if not isinstance(thread.parent, discord.ForumChannel):
-                logger.warning(f"帖子 {thread_id} 的父频道不是论坛频道，无法修改标签。")
+                logger.warning(f"帖子 {thread_id} 的父频道不是论坛频道，无法修改。")
                 return
 
-            discussion_tag = thread.parent.get_tag(int(discussion_tag_id))
             executing_tag = thread.parent.get_tag(int(executing_tag_id))
-
             if not executing_tag:
                 logger.warning(f"在论坛频道 {thread.parent.name} 中未找到执行中标签。")
                 return
 
-            new_tags = [tag for tag in thread.applied_tags if tag != discussion_tag]
+            # 准备新的标签和标题
+            new_tags = [tag for tag in thread.applied_tags if tag.id != int(discussion_tag_id)]
             new_tags.append(executing_tag)
+            new_title = f"[执行中] {title}"
 
-            await self.bot.api_scheduler.submit(thread.edit(applied_tags=new_tags), 2)
+            await self.bot.api_scheduler.submit(
+                thread.edit(name=new_title, applied_tags=new_tags), 2
+            )
 
         except discord.HTTPException as e:
-            logger.error(f"修改帖子 {thread_id} 标签时发生API错误: {e}", exc_info=True)
+            logger.error(f"更新帖子 {thread_id} 时发生API错误: {e}", exc_info=True)
         except Exception as e:
-            logger.error(f"修改帖子 {thread_id} 标签时发生未知错误: {e}", exc_info=True)
+            logger.error(f"更新帖子 {thread_id} 时发生未知错误: {e}", exc_info=True)
 
     @discord.ui.button(
         label="确认", style=discord.ButtonStyle.green, custom_id="moderation_confirm"
@@ -81,6 +83,7 @@ class ConfirmationView(discord.ui.View):
         await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
 
         thread_id_to_update: int | None = None
+        proposal_title_to_update: str | None = None
         updated_status: int = 0
 
         async with UnitOfWork(self.bot.db_handler) as uow:
@@ -125,6 +128,7 @@ class ConfirmationView(discord.ui.View):
                 if proposal:
                     proposal.status = 1  # 1: 执行中
                     thread_id_to_update = proposal.discussionThreadId
+                    proposal_title_to_update = proposal.title
 
             # 准备 Embed QO
             role_display_names = {}
@@ -157,8 +161,8 @@ class ConfirmationView(discord.ui.View):
                     interaction.edit_original_response(embed=embed, view=self), 1
                 )
             ]
-            if thread_id_to_update:
-                tasks.append(self._edit_thread_tags(thread_id_to_update))
+            if thread_id_to_update and proposal_title_to_update:
+                tasks.append(self._update_thread(thread_id_to_update, proposal_title_to_update))
             await asyncio.gather(*tasks)
         else:
             await self.bot.api_scheduler.submit(

@@ -77,15 +77,18 @@ class ModerationService:
         await self.session.flush()
         return user_activity
 
-    async def create_proposal(self, thread_id: int, proposer_id: int) -> None:
+    async def create_proposal(self, thread_id: int, proposer_id: int, title: str) -> None:
         """
         尝试创建一个新的提案，如果因唯一性约束而失败，则静默处理。
 
         Args:
             thread_id: 提案讨论帖的ID。
             proposer_id: 提案发起人的ID。
+            title: 提案的标题。
         """
-        new_proposal = Proposal(discussionThreadId=thread_id, proposerId=proposer_id, status=0)
+        new_proposal = Proposal(
+            discussionThreadId=thread_id, proposerId=proposer_id, title=title, status=0
+        )
         self.session.add(new_proposal)
         try:
             await self.session.flush()

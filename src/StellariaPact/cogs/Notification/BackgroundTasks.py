@@ -75,12 +75,12 @@ class BackgroundTasks(commands.Cog):
         except Exception as e:
             logger.error(f"检查重复播报任务时发生严重错误: {e}", exc_info=True)
 
-    @tasks.loop(minutes=2)
+    @tasks.loop(minutes=1)
     async def check_announcements(self):
         """
-        每2分钟检查一次到期的公示。
+        每分钟检查一次到期的公示。
         """
-        logger.info("正在执行定时任务: 检查到期公示...")
+        logger.debug("正在执行定时任务: 检查到期公示...")
         expired_announcement_dtos = []
         try:
             # 步骤 1: 在一个事务中安全地获取所有过期的公示 DTO
@@ -97,10 +97,10 @@ class BackgroundTasks(commands.Cog):
             logger.error(f"获取到期公示列表时发生严重错误: {e}", exc_info=True)
             return
 
-        # 步骤 2: 遍历 DTO 列表，为每个公示执行独立的原子操作和 API 调用
+        # 遍历 DTO 列表，为每个公示执行独立的原子操作和 API 调用
         for announcement_dto in expired_announcement_dtos:
             try:
-                # 步骤 2a: 在独立的事务中更新数据库
+                # 在独立的事务中更新数据库
                 async with UnitOfWork(self.bot.db_handler) as uow_atomic:
                     await uow_atomic.announcements.mark_announcement_as_finished(
                         announcement_dto.id
@@ -109,9 +109,9 @@ class BackgroundTasks(commands.Cog):
                     await monitor_service.delete_monitors_for_announcement(announcement_dto.id)
                     await uow_atomic.commit()
 
-                logger.info(f"成功在数据库中将公示 {announcement_dto.id} 标记为已完成。")
+                logger.debug(f"成功在数据库中将公示 {announcement_dto.id} 标记为已完成。")
 
-                # 步骤 2b: 数据库操作成功后，执行 Discord API 调用
+                # 数据库操作成功后，执行 Discord API 调用
                 await self._notify_announcement_finished(announcement_dto)
 
             except Exception as e:
@@ -151,8 +151,9 @@ class BackgroundTasks(commands.Cog):
                 if executing_tag:
                     new_tags.append(executing_tag)
 
+                new_title = f"[执行中] {announcement_dto.title}"
                 await self.bot.api_scheduler.submit(
-                    coro=thread.edit(applied_tags=new_tags), priority=7
+                    coro=thread.edit(name=new_title, applied_tags=new_tags), priority=7
                 )
 
             # 发送通知

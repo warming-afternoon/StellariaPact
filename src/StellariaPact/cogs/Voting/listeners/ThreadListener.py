@@ -9,6 +9,7 @@ from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.TimeUtils import TimeUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
@@ -39,7 +40,8 @@ class ThreadListener(commands.Cog):
             match = re.search(r"<@(\d+)>", start_message.content)
             if match:
                 proposer_id = int(match.group(1))
-                self.bot.dispatch("proposal_thread_created", thread.id, proposer_id)
+                title = StringUtils.clean_title(thread.name)
+                self.bot.dispatch("proposal_thread_created", thread.id, proposer_id, title)
             else:
                 logger.warning(f"在帖子 {thread.id} 的启动消息中未找到提案人ID。")
 
@@ -72,10 +74,11 @@ class ThreadListener(commands.Cog):
                 target_tz = self.bot.config.get("timezone", "UTC")
                 end_time = TimeUtils.get_utc_end_time(duration_hours=72, target_tz=target_tz)
                 view = VoteView(self.bot)
+                clean_title = StringUtils.clean_title(thread.name)
 
                 # 使用 Builder 构建 Embed
                 embed = VoteEmbedBuilder.create_initial_vote_embed(
-                    topic=thread.name,
+                    topic=clean_title,
                     author=None,  # 自动创建的投票没有明确的发起人
                     realtime=True,
                     anonymous=True,

@@ -6,6 +6,7 @@ import discord
 from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
 from .ModerationEmbedBuilder import ModerationEmbedBuilder
@@ -49,8 +50,9 @@ class AbandonReasonModal(discord.ui.Modal):
         tasks = []
 
         # 准备公示Embed
+        clean_title_for_embed = StringUtils.clean_title(interaction.channel.name)
         embed = ModerationEmbedBuilder.build_status_change_embed(
-            thread_name=interaction.channel.name,
+            thread_name=clean_title_for_embed,
             new_status="已废弃",
             moderator=interaction.user,
             reason=self.reason.value,
@@ -59,6 +61,8 @@ class AbandonReasonModal(discord.ui.Modal):
 
         # 准备更新帖子状态和标签
         edit_task = None
+        clean_title = StringUtils.clean_title(interaction.channel.name)
+        new_title = f"[已废弃] {clean_title}"
         if isinstance(interaction.channel.parent, discord.ForumChannel):
             try:
                 abandoned_tag = discord.utils.get(
@@ -67,7 +71,10 @@ class AbandonReasonModal(discord.ui.Modal):
                 if abandoned_tag:
                     edit_task = self.bot.api_scheduler.submit(
                         interaction.channel.edit(
-                            archived=True, locked=True, applied_tags=[abandoned_tag]
+                            name=new_title,
+                            archived=True,
+                            locked=True,
+                            applied_tags=[abandoned_tag],
                         ),
                         2,
                     )
@@ -76,7 +83,7 @@ class AbandonReasonModal(discord.ui.Modal):
 
         if not edit_task:
             edit_task = self.bot.api_scheduler.submit(
-                interaction.channel.edit(archived=True, locked=True), 2
+                interaction.channel.edit(name=new_title, archived=True, locked=True), 2
             )
         tasks.append(edit_task)
 

@@ -129,7 +129,7 @@ class Notification(commands.Cog):
                 author_id=interaction.user.id,
             )
 
-            thread_name = f"【公示】{title}"
+            thread_name = f"[讨论中] {title}"
             thread_creation_result = await self.bot.api_scheduler.submit(
                 coro=discussion_channel.create_thread(
                     name=thread_name, content=thread_content, applied_tags=[target_tag]

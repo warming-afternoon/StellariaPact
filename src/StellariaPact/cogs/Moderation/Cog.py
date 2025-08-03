@@ -87,14 +87,18 @@ class Moderation(commands.Cog):
         )
 
     @commands.Cog.listener()
-    async def on_proposal_thread_created(self, thread_id: int, proposer_id: int):
+    async def on_proposal_thread_created(self, thread_id: int, proposer_id: int, title: str):
         """
         监听由 Voting cog 分派的提案帖子创建事件。
         """
-        logger.info(f"接收到提案创建事件，帖子ID: {thread_id}, 发起人ID: {proposer_id}")
+        logger.info(
+            f"接收到提案创建事件，帖子ID: {thread_id}, 发起人ID: {proposer_id}, 标题: {title}"
+        )
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                await uow.moderation.create_proposal(thread_id=thread_id, proposer_id=proposer_id)
+                await uow.moderation.create_proposal(
+                    thread_id=thread_id, proposer_id=proposer_id, title=title
+                )
                 await uow.commit()
         except Exception as e:
             logger.error(f"处理提案创建事件时发生错误 (帖子ID: {thread_id}): {e}", exc_info=True)

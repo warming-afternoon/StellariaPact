@@ -15,6 +15,7 @@ class Proposal(BaseModel, table=True):
     """
 
     discussionThreadId: int = Field(unique=True, description="Discord讨论帖的ID")
+    title: str = Field(description="提案标题")
     proposerId: int = Field(index=True, description="提案发起人的Discord ID")
     status: int = Field(
         default=0,

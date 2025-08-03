@@ -61,13 +61,24 @@ class VoteCloser(commands.Cog):
                         mention_string = " ".join(roles_to_mention)
                         embed = discord.Embed(
                             title="投票已结束",
-                            description=(
-                                f"总票数: {result_dto.totalVotes}\n"
-                                f"赞成: {result_dto.approveVotes}\n"
-                                f"反对: {result_dto.rejectVotes}"
-                            ),
+                            # description=(
+                            #     f"总票数: {result_dto.totalVotes}\n"
+                            #     f"赞成: {result_dto.approveVotes}\n"
+                            #     f"反对: {result_dto.rejectVotes}"
+                            # ),
                             color=discord.Color.dark_grey(),
                         )
+
+                        embed.add_field(
+                            name="赞成", value=f"{result_dto.approveVotes}", inline=True
+                        )
+                        embed.add_field(
+                            name="反对", value=f"{result_dto.rejectVotes}", inline=True
+                        )
+                        embed.add_field(
+                            name="总票数", value=f"{result_dto.totalVotes}", inline=True
+                        )
+
                         await self.bot.api_scheduler.submit(
                             thread.send(content=mention_string, embed=embed), priority=5
                         )
