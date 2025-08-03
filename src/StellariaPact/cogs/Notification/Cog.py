@@ -2,18 +2,15 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Literal
-from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
-    CreateAnnouncementQo
-from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import \
-    AnnouncementEmbedBuilder
-from StellariaPact.cogs.Notification.views.AnnouncementModal import \
-    AnnouncementModal
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
+from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
+from StellariaPact.cogs.Notification.views.AnnouncementModal import AnnouncementModal
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
@@ -58,7 +55,7 @@ class Notification(commands.Cog):
                     priority=1,
                 )
 
-    @app_commands.command(name="发布公示", description="通过表单发布一个新的社区公示")
+    @app_commands.command(name="发布公示", description="发布一个新的社区公示")
     @RoleGuard.requireRoles("stewards")
     @app_commands.rename(
         duration_hours="公示持续小时数",
@@ -319,7 +316,7 @@ class Notification(commands.Cog):
     #         description="计数器: 0",
     #         color=discord.Color.blue()
     #     )
-        
+
     #     # 类型守卫，确保 channel 是可以发送消息的类型
     #     if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
     #         await self.bot.api_scheduler.submit(
@@ -338,7 +335,7 @@ class Notification(commands.Cog):
 
     #     # 2. 提交大量低优先级任务
     #     task_count = 1000
-        
+
     #     # 为本次测试创建一个专用的锁，以串行化对同一条消息的编辑操作
     #     edit_lock = asyncio.Lock()
 

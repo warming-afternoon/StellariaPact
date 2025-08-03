@@ -1,13 +1,16 @@
 import logging
-from typing import List, Optional
+from typing import Optional
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import \
-    ConfirmationSessionDto
+from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import ConfirmationSessionDto
+from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
+from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import (
+    CreateConfirmationSessionQo,
+)
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.UserActivity import UserActivity
@@ -82,18 +85,14 @@ class ModerationService:
             thread_id: 提案讨论帖的ID。
             proposer_id: 提案发起人的ID。
         """
-        new_proposal = Proposal(
-            discussionThreadId=thread_id, proposerId=proposer_id, status=0
-        )
+        new_proposal = Proposal(discussionThreadId=thread_id, proposerId=proposer_id, status=0)
         self.session.add(new_proposal)
         try:
             await self.session.flush()
             logger.debug(f"成功为帖子 {thread_id} 创建新的提案，发起人: {proposer_id}")
         except IntegrityError:
             # 捕获违反唯一约束的错误，意味着提案已存在
-            logger.debug(
-                f"提案 (帖子ID: {thread_id}) 已存在，无需重复创建。回滚会话。"
-            )
+            logger.debug(f"提案 (帖子ID: {thread_id}) 已存在，无需重复创建。回滚会话。")
             # 发生错误时，SQLAlchemy 会话会自动回滚，
             # 我们只需确保操作可以安全地继续。
             await self.session.rollback()
@@ -122,9 +121,7 @@ class ModerationService:
         else:
             logger.warning(f"尝试更新状态时，未找到帖子 {thread_id} 关联的提案。")
 
-    async def get_proposal_by_thread_id(
-        self, thread_id: int
-    ) -> Optional[Proposal]:
+    async def get_proposal_by_thread_id(self, thread_id: int) -> Optional[Proposal]:
         """
         根据帖子ID获取提案。
         """
@@ -132,21 +129,31 @@ class ModerationService:
         result = await self.session.exec(statement)
         return result.one_or_none()
 
+    async def get_proposal_by_id(self, proposal_id: int) -> Optional[Proposal]:
+        """
+        根据提案ID获取提案。
+        """
+        return await self.session.get(Proposal, proposal_id)
+
     async def create_confirmation_session(
-        self,
-        context: str,
-        target_id: int,
-        required_roles: List[str],
-        message_id: int | None = None,
+        self, qo: CreateConfirmationSessionQo
     ) -> ConfirmationSessionDto:
         """
-        创建一个新的确认会话，并返回其数据的DTO。
+        创建一个新的确认会话，并将发起者自动记录为第一个确认人。
         """
+        confirmed_parties = {}
+        # 查找发起者拥有的、且此会话需要的第一个角色，并将其设为默认确认
+        for role_key in qo.initiator_role_keys:
+            if role_key in qo.required_roles:
+                confirmed_parties[role_key] = qo.initiator_id
+                break  # 只确认一个角色
+
         session = ConfirmationSession(
-            context=context,
-            targetId=target_id,
-            messageId=message_id,
-            requiredRoles=required_roles,
+            context=qo.context,
+            targetId=qo.target_id,
+            messageId=qo.message_id,
+            requiredRoles=qo.required_roles,
+            confirmedParties=confirmed_parties,
         )
         self.session.add(session)
         await self.session.flush()
@@ -162,9 +169,7 @@ class ModerationService:
             required_roles=session.requiredRoles,
         )
 
-    async def update_confirmation_session_message_id(
-        self, session_id: int, message_id: int
-    ):
+    async def update_confirmation_session_message_id(self, session_id: int, message_id: int):
         """
         更新确认会话的消息ID。
         """
@@ -181,9 +186,7 @@ class ModerationService:
         """
         根据消息ID获取确认会话。
         """
-        statement = select(ConfirmationSession).where(
-            ConfirmationSession.messageId == message_id
-        )
+        statement = select(ConfirmationSession).where(ConfirmationSession.messageId == message_id)
         result = await self.session.exec(statement)
         return result.one_or_none()
 
@@ -221,3 +224,27 @@ class ModerationService:
         self.session.add(session)
         await self.session.flush()
         return session
+
+    async def abandon_proposal(self, qo: AbandonProposalQo) -> Proposal:
+        """
+        废弃一个提案。
+
+        Args:
+            qo: 包含废弃操作所需数据的查询对象。
+
+        Returns:
+            被更新的 Proposal 对象。
+
+        Raises:
+            ValueError: 如果找不到提案或提案状态不正确。
+        """
+        proposal = await self.get_proposal_by_thread_id(qo.thread_id)
+        if not proposal:
+            raise ValueError("未找到关连的提案。")
+        if proposal.status != 1:  # 1: 执行中
+            raise ValueError("只能废弃“执行中”的提案。")
+
+        proposal.status = 3  # 3: 已废弃
+        self.session.add(proposal)
+        await self.session.flush()
+        return proposal

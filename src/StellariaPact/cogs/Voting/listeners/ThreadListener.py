@@ -5,8 +5,7 @@ import re
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
-    CreateVoteSessionQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -61,10 +60,9 @@ class ThreadListener(commands.Cog):
 
         # 等待一小段时间，确保帖子完全创建
         await asyncio.sleep(0.5)
-        
+
         # 分派创建提案的事件
         asyncio.create_task(self._dispatch_proposal_creation(thread))
-
 
         logger.info(f"在新帖子 '{thread.name}' (ID: {thread.id}) 中创建投票面板。")
 

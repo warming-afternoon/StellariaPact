@@ -16,11 +16,7 @@ class AnnouncementEmbedBuilder:
         author_id: int,
     ) -> str:
         """创建要在讨论帖中发布的主要内容。"""
-        return (
-            f"{content}\n\n"
-            f"**公示截止时间:** {discord_timestamp}\n\n"
-            f"公示发起人: <@{author_id}>"
-        )
+        return f"{content}\n\n**公示截止时间:** {discord_timestamp}\n\n公示发起人: <@{author_id}>"
 
     @staticmethod
     def create_announcement_embed(

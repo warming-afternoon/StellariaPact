@@ -9,7 +9,6 @@ from StellariaPact.share.database_types import JSON_TYPE
 
 
 class ConfirmationSession(BaseModel, table=True):
-
     """
     通用确认会话模型，用于处理需要多方确认的流程。
     """
@@ -17,7 +16,9 @@ class ConfirmationSession(BaseModel, table=True):
     context: str = Field(index=True, description="确认会话的上下文，如 'proposal_execution'")
     targetId: int = Field(index=True, description="关联的业务对象ID，如 Proposal.id")
     messageId: int | None = Field(default=None, unique=True, description="机器人发送的确认消息ID")
-    status: int = Field(default=0, index=True, description="会话状态: 0-待处理, 1-已完成, 2-已取消")
+    status: int = Field(
+        default=0, index=True, description="会话状态: 0-待处理, 1-已完成, 2-已取消"
+    )
     requiredRoles: List[str] = Field(
         default=[], sa_column=Column(JSON_TYPE), description="需要进行确认的角色列表"
     )

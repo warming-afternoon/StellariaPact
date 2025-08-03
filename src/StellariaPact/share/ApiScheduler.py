@@ -56,7 +56,7 @@ class APIScheduler:
 
                 # 为请求创建一个worker任务
                 asyncio.create_task(self._worker(request))
-                
+
                 # 立即标记任务完成，因为我们已经把它移交给了worker
                 self._queue.task_done()
 
@@ -75,7 +75,6 @@ class APIScheduler:
     async def _worker(self, request: APIRequest):
         """处理单个API请求的完整生命周期。"""
         try:
-
             # 执行API调用协程
             result = await request.coro
 

@@ -1,13 +1,12 @@
 import asyncio
 import logging
 import random
-from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
+from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
-    AnnouncementMonitorService
+from StellariaPact.cogs.Notification.AnnouncementMonitorService import AnnouncementMonitorService
 from StellariaPact.cogs.Notification.RepostService import RepostService
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -107,11 +106,9 @@ class BackgroundTasks(commands.Cog):
                         announcement_dto.id
                     )
                     monitor_service = AnnouncementMonitorService(uow_atomic.session)
-                    await monitor_service.delete_monitors_for_announcement(
-                        announcement_dto.id
-                    )
+                    await monitor_service.delete_monitors_for_announcement(announcement_dto.id)
                     await uow_atomic.commit()
-                
+
                 logger.info(f"成功在数据库中将公示 {announcement_dto.id} 标记为已完成。")
 
                 # 步骤 2b: 数据库操作成功后，执行 Discord API 调用
@@ -150,11 +147,7 @@ class BackgroundTasks(commands.Cog):
                     forum_channel.available_tags, id=self.executing_tag_id
                 )
 
-                new_tags = [
-                    tag
-                    for tag in thread.applied_tags
-                    if tag.id != self.discussion_tag_id
-                ]
+                new_tags = [tag for tag in thread.applied_tags if tag.id != self.discussion_tag_id]
                 if executing_tag:
                     new_tags.append(executing_tag)
 

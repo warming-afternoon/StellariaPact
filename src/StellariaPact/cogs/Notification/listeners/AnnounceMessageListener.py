@@ -9,8 +9,7 @@ from discord.ext import commands, tasks
 from sqlalchemy import func, select, update
 
 from StellariaPact.models.Announcement import Announcement
-from StellariaPact.models.AnnouncementChannelMonitor import \
-    AnnouncementChannelMonitor
+from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
