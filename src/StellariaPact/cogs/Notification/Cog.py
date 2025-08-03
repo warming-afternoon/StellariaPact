@@ -2,15 +2,18 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
-from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
-from StellariaPact.cogs.Notification.views.AnnouncementModal import AnnouncementModal
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
+    CreateAnnouncementQo
+from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import \
+    AnnouncementEmbedBuilder
+from StellariaPact.cogs.Notification.views.AnnouncementModal import \
+    AnnouncementModal
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
@@ -30,7 +33,7 @@ class Notification(commands.Cog):
         self.bot = bot
         self.discussion_channel_id = self.bot.config["channels"]["discussion"]
         self.broadcast_channel_ids = self.bot.config["channels"]["broadcast"]
-        self.in_progress_tag_id = self.bot.config["tags"]["announcement_in_progress"]
+        self.discussion_tag_id = self.bot.config["tags"]["discussion"]
 
     async def cog_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
@@ -116,7 +119,7 @@ class Notification(commands.Cog):
                 raise TypeError("配置的讨论区频道不是有效的论坛频道。")
 
             target_tag = discord.utils.get(
-                discussion_channel.available_tags, id=self.in_progress_tag_id
+                discussion_channel.available_tags, id=self.discussion_tag_id
             )
             if not target_tag:
                 raise ValueError("在论坛频道中找不到配置的“公示中”标签。")
@@ -302,3 +305,71 @@ class Notification(commands.Cog):
                 ),
                 priority=1,
             )
+
+    # @app_commands.command(name="测试调度器", description="测试API调度器的优先级抢占功能")
+    # @RoleGuard.requireRoles("stewards")
+    # async def test_scheduler(self, interaction: discord.Interaction):
+    #     """
+    #     通过提交大量低优先级任务来测试调度器。
+    #     """
+    #     await self.bot.api_scheduler.submit(coro=safeDefer(interaction, ephemeral=True), priority=1)
+
+    #     embed = discord.Embed(
+    #         title="调度器压力测试",
+    #         description="计数器: 0",
+    #         color=discord.Color.blue()
+    #     )
+        
+    #     # 类型守卫，确保 channel 是可以发送消息的类型
+    #     if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
+    #         await self.bot.api_scheduler.submit(
+    #             coro=interaction.followup.send(
+    #                 "此命令只能在文本频道、语音频道或帖子中使用。", ephemeral=True
+    #             ),
+    #             priority=1,
+    #         )
+    #         return
+
+    #     # 1. 发送初始消息，并获取消息对象
+    #     msg = await self.bot.api_scheduler.submit(
+    #         coro=interaction.channel.send(embed=embed),
+    #         priority=2
+    #     )
+
+    #     # 2. 提交大量低优先级任务
+    #     task_count = 1000
+        
+    #     # 为本次测试创建一个专用的锁，以串行化对同一条消息的编辑操作
+    #     edit_lock = asyncio.Lock()
+
+    #     # 使用一个辅助函数来创建协程，以正确捕获循环变量 `i` 和锁
+    #     def create_edit_coro(message_to_edit: discord.Message, num: int, lock: asyncio.Lock):
+    #         async def edit_task():
+    #             # 在执行敏感操作前，获取这个专用锁
+    #             async with lock:
+    #                 # 这里的休眠现在是两次API调用之间的有效间隔
+    #                 await asyncio.sleep(0.1)
+    #                 new_embed = discord.Embed(
+    #                     title="调度器压力测试",
+    #                     description=f"计数器: {num}",
+    #                     color=discord.Color.from_rgb(num % 255, (num*3) % 255, (num*5) % 255)
+    #                 )
+    #                 await message_to_edit.edit(embed=new_embed)
+    #         return edit_task()
+
+    #     for i in range(1, task_count + 1):
+    #         # 使用 asyncio.create_task 实现“即发即忘”，快速将所有任务提交到调度器
+    #         asyncio.create_task(self.bot.api_scheduler.submit(
+    #             coro=create_edit_coro(msg, i, edit_lock), # 传入锁
+    #             priority=10 # Low priority
+    #         ))
+    #         logger.info(f"提交第{i} 个测试任务")
+
+    #     # 3. 确认任务已提交
+    #     await self.bot.api_scheduler.submit(
+    #         coro=interaction.followup.send(
+    #             f"✅ 已成功向调度器提交 {task_count} 个低优先级任务到 {msg.jump_url}",
+    #             ephemeral=True
+    #         ),
+    #         priority=1
+    #     )

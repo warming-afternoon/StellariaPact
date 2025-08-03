@@ -82,67 +82,61 @@ class BackgroundTasks(commands.Cog):
         每2分钟检查一次到期的公示。
         """
         logger.info("正在执行定时任务: 检查到期公示...")
-        processed_announcements = []
-
+        expired_announcement_dtos = []
         try:
-            # --- 数据库操作 ---
+            # 步骤 1: 在一个事务中安全地获取所有过期的公示 DTO
             async with UnitOfWork(self.bot.db_handler) as uow:
-                expired_announcements = await uow.announcements.get_expired_announcements()
-                if not expired_announcements:
-                    logger.debug("没有找到需要处理的到期公示。")
-                    return
+                expired_announcement_dtos = await uow.announcements.get_expired_announcements()
 
-                logger.info(f"发现 {len(expired_announcements)} 个到期公示，正在更新数据库状态...")
-                monitor_service = AnnouncementMonitorService(uow.session)
-                for announcement in expired_announcements:
-                    try:
-                        await uow.announcements.mark_announcement_as_finished(announcement.id)
-                        await monitor_service.delete_monitors_for_announcement(announcement.id)
-                        processed_announcements.append(announcement)
-                    except Exception:
-                        logger.exception(
-                            f"更新公示 {announcement.id} ({announcement.title}) 数据库状态时出错"
-                        )
+            if not expired_announcement_dtos:
+                logger.debug("没有找到需要处理的到期公示。")
+                return
 
-                if processed_announcements:
-                    logger.info(
-                        f"成功在数据库中将 {len(processed_announcements)} 个公示标记为已完成。"
-                    )
+            logger.info(f"发现 {len(expired_announcement_dtos)} 个到期公示，开始处理...")
 
         except Exception as e:
-            logger.error(f"检查到期公示的数据库操作阶段发生严重错误: {e}", exc_info=True)
-            return  # 如果数据库出错，则不继续执行 API 调用
-
-        # --- Discord API 调用 ---
-        if not processed_announcements:
+            logger.error(f"获取到期公示列表时发生严重错误: {e}", exc_info=True)
             return
 
-        logger.info(f"正在为 {len(processed_announcements)} 个已完成的公示执行 API 调用...")
-        api_tasks = [
-            self._notify_announcement_finished(announcement)
-            for announcement in processed_announcements
-        ]
-        results = await asyncio.gather(*api_tasks, return_exceptions=True)
+        # 步骤 2: 遍历 DTO 列表，为每个公示执行独立的原子操作和 API 调用
+        for announcement_dto in expired_announcement_dtos:
+            try:
+                # 步骤 2a: 在独立的事务中更新数据库
+                async with UnitOfWork(self.bot.db_handler) as uow_atomic:
+                    await uow_atomic.announcements.mark_announcement_as_finished(
+                        announcement_dto.id
+                    )
+                    monitor_service = AnnouncementMonitorService(uow_atomic.session)
+                    await monitor_service.delete_monitors_for_announcement(
+                        announcement_dto.id
+                    )
+                    await uow_atomic.commit()
+                
+                logger.info(f"成功在数据库中将公示 {announcement_dto.id} 标记为已完成。")
 
-        for result, announcement in zip(results, processed_announcements):
-            if isinstance(result, Exception):
-                logger.exception(
-                    f"为公示 {announcement.id} ({announcement.title}) 执行 API 调用时发生错误"
+                # 步骤 2b: 数据库操作成功后，执行 Discord API 调用
+                await self._notify_announcement_finished(announcement_dto)
+
+            except Exception as e:
+                logger.error(
+                    f"处理公示 {announcement_dto.id} ({announcement_dto.title}) 时发生错误: {e}",
+                    exc_info=True,
                 )
+                # 单个公示处理失败，记录日志并继续处理下一个
 
         logger.info("所有到期公示处理完毕。")
 
-    async def _notify_announcement_finished(self, announcement):
+    async def _notify_announcement_finished(self, announcement_dto):
         """为单个已完成的公示发送通知并更新标签"""
         try:
             thread = self.bot.get_channel(
-                announcement.discussionThreadId
-            ) or await self.bot.fetch_channel(announcement.discussionThreadId)
+                announcement_dto.discussionThreadId
+            ) or await self.bot.fetch_channel(announcement_dto.discussionThreadId)
 
             if not isinstance(thread, discord.Thread):
                 logger.error(
-                    f"无法为公示 {announcement.id} 找到有效的讨论帖 "
-                    f"(ID: {announcement.discussionThreadId})。"
+                    f"无法为公示 {announcement_dto.id} 找到有效的讨论帖 "
+                    f"(ID: {announcement_dto.discussionThreadId})。"
                 )
                 return
 
@@ -170,11 +164,11 @@ class BackgroundTasks(commands.Cog):
 
             # 发送通知
             embed = discord.Embed(
-                title=f"公示结束: {announcement.title}",
+                title=f"公示结束: {announcement_dto.title}",
                 description="本次公示已到期",
                 color=discord.Color.orange(),
             )
-            utc_end_time = announcement.endTime.replace(tzinfo=ZoneInfo("UTC"))
+            utc_end_time = announcement_dto.endTime.replace(tzinfo=ZoneInfo("UTC"))
             discord_timestamp = f"<t:{int(utc_end_time.timestamp())}:F>"
             embed.add_field(name="公示截止时间", value=discord_timestamp)
             role_mention = f"<@&{self.stewards_role_id}>"
@@ -183,10 +177,10 @@ class BackgroundTasks(commands.Cog):
                 priority=8,
             )
             # 分发事件
-            self.bot.dispatch("announcement_finished", announcement)
+            self.bot.dispatch("announcement_finished", announcement_dto)
         except discord.NotFound:
             logger.error(
-                f"讨论帖 (ID: {announcement.discussionThreadId}) 未找到，可能已被删除。跳过API通知"
+                f"讨论帖 (ID: {announcement_dto.discussionThreadId}) 未找到，可能已被删除。跳过API通知"
             )
         except Exception:
             # 异常将在 gather 中被捕获和记录

@@ -28,7 +28,7 @@ class APIScheduler:
     并使用Semaphore来保证总并发数不超过Discord的速率限制。
     """
 
-    def __init__(self, concurrent_requests: int = 40):
+    def __init__(self, concurrent_requests: int = 10):
         """
         初始化调度器。
         :param concurrent_requests: 允许同时发往Discord API的最大并发请求数。
@@ -43,34 +43,38 @@ class APIScheduler:
         """调度器的主循环，从队列中拉取请求并派发给worker。"""
         logger.info("API scheduler loop started.")
         while self._is_running:
+            await self._semaphore.acquire()
             try:
                 # 从优先级队列中获取下一个最高优先级的请求
                 request = await self._queue.get()
 
                 # 检查是否是哨兵对象 (None)
                 if request is None:
+                    self._semaphore.release()  # 释放为哨兵对象获取的信号量
                     self._queue.task_done()
                     break
 
-                # 为请求创建一个worker任务，但不等待它完成
-                # 这使得调度循环可以立即回去处理下一个请求
+                # 为请求创建一个worker任务
                 asyncio.create_task(self._worker(request))
-
+                
                 # 立即标记任务完成，因为我们已经把它移交给了worker
                 self._queue.task_done()
 
             except asyncio.CancelledError:
+                # 如果在获取信号量后、创建worker前被取消，释放信号量以防泄漏
+                self._semaphore.release()
                 logger.info("API scheduler loop was explicitly cancelled.")
                 break
             except Exception:
+                # 同样，在其他异常情况下也要释放信号量
+                self._semaphore.release()
                 logger.exception("Error in API scheduler loop. This should not happen.")
+                # 短暂休眠以避免在持续错误的情况下快速消耗CPU
                 await asyncio.sleep(1)
 
     async def _worker(self, request: APIRequest):
         """处理单个API请求的完整生命周期。"""
         try:
-            # 等待一个可用的API令牌
-            await self._semaphore.acquire()
 
             # 执行API调用协程
             result = await request.coro

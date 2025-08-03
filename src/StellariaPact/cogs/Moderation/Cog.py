@@ -1,11 +1,21 @@
+import asyncio
 import logging
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+from sqlalchemy.exc import IntegrityError
 
+from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import \
+    ConfirmationSessionDto
+from StellariaPact.cogs.Moderation.views.ConfirmationView import \
+    ConfirmationView
+from StellariaPact.cogs.Moderation.views.dto import ConfirmationEmbedData
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
+    ModerationEmbedBuilder
 from StellariaPact.cogs.Moderation.views.ReasonModal import ReasonModal
 from StellariaPact.share.auth.RoleGuard import RoleGuard
+from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
@@ -92,6 +102,131 @@ class Moderation(commands.Cog):
             logger.error(
                 f"处理提案创建事件时发生错误 (帖子ID: {thread_id}): {e}", exc_info=True
             )
+
+    @app_commands.command(name="进入执行", description="将提案状态变更为执行中")
+    @RoleGuard.requireRoles("councilModerator", "executiveTeam")
+    async def execute_proposal(self, interaction: discord.Interaction):
+        await self.bot.api_scheduler.submit(safeDefer(interaction), 1)
+
+        if not isinstance(interaction.channel, discord.Thread):
+            return await self.bot.api_scheduler.submit(
+                interaction.followup.send("此命令只能在帖子内使用。", ephemeral=True), 1
+            )
+
+        if not self.bot.user:
+            return await self.bot.api_scheduler.submit(
+                interaction.followup.send("机器人尚未完全准备好。", ephemeral=True), 1
+            )
+
+        # --- 事务一：读取提案信息 ---
+        proposal_id: int | None = None
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.moderation.get_proposal_by_thread_id(
+                interaction.channel.id
+            )
+            if not proposal:
+                return await self.bot.api_scheduler.submit(
+                    interaction.followup.send("未找到关连的提案。", ephemeral=True), 1
+                )
+            if proposal.status != 0:  # 0: 讨论中
+                return await self.bot.api_scheduler.submit(
+                    interaction.followup.send(
+                        f"提案当前状态不是“讨论中”，无法执行此操作。", ephemeral=True
+                    ),
+                    1,
+                )
+            proposal_id = proposal.id
+
+        # --- 事务二：创建会话（处理竞态条件） ---
+        session_dto: ConfirmationSessionDto | None = None
+        try:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                assert proposal_id is not None
+                session_dto = await uow.moderation.create_confirmation_session(
+                    context="proposal_execution",
+                    target_id=proposal_id,
+                    required_roles=["councilModerator", "executiveTeam"],
+                )
+                await uow.commit()
+        except IntegrityError:
+            logger.warning(
+                f"创建确认会话时发生唯一性冲突 (proposal_id: {proposal_id})，可能由竞态条件引起。"
+            )
+            return await self.bot.api_scheduler.submit(
+                interaction.followup.send(
+                    "操作失败：此提案的确认流程刚刚已被另一位管理员发起。", ephemeral=True
+                ),
+                1,
+            )
+
+        if not session_dto:
+            return await self.bot.api_scheduler.submit(
+                interaction.followup.send("创建确认会话失败，请稍后再试。", ephemeral=True), 1
+            )
+
+        # --- 构建 UI & 发送消息 (事务外) ---
+        embed_data = ConfirmationEmbedData(
+            status=session_dto.status,
+            canceler_id=session_dto.canceler_id,
+            confirmed_parties=session_dto.confirmed_parties,
+            required_roles=session_dto.required_roles,
+        )
+        embed = ModerationEmbedBuilder.build_confirmation_embed(embed_data, self.bot.user)
+        view = ConfirmationView(self.bot)
+
+        message = await self.bot.api_scheduler.submit(
+            interaction.followup.send(embed=embed, view=view, wait=True), 1
+        )
+
+        # --- 事务三：更新消息ID ---
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.moderation.update_confirmation_session_message_id(
+                session_dto.id, message.id
+            )
+            await uow.commit()
+
+    @app_commands.command(name="废弃", description="将执行中的提案废弃")
+    @RoleGuard.requireRoles("executiveTeam")
+    async def abandon_proposal(self, interaction: discord.Interaction, reason: str):
+        await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=False), 1)
+
+        if not isinstance(interaction.channel, discord.Thread):
+            return await self.bot.api_scheduler.submit(
+                interaction.followup.send("此命令只能在帖子内使用。", ephemeral=True), 1
+            )
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.moderation.get_proposal_by_thread_id(
+                interaction.channel.id
+            )
+            if not proposal:
+                return await self.bot.api_scheduler.submit(
+                    interaction.followup.send("未找到关连的提案。", ephemeral=True), 1
+                )
+            if proposal.status != 1:  # 1: 执行中
+                return await self.bot.api_scheduler.submit(
+                    interaction.followup.send("只能废弃“执行中”的提案。", ephemeral=True),
+                    1,
+                )
+
+            # 更新状态
+            await uow.moderation.update_proposal_status_by_thread_id(
+                interaction.channel.id, 3  # 3: 已废弃
+            )
+            await uow.commit()
+
+        # 发送通知并锁定帖子
+        embed = ModerationEmbedBuilder.build_status_change_embed(
+            interaction.channel.name, "已废弃", reason
+        )
+        await asyncio.gather(
+            self.bot.api_scheduler.submit(
+                interaction.followup.send(embed=embed), 1
+            ),
+            self.bot.api_scheduler.submit(
+                interaction.channel.edit(archived=True, locked=True), 2
+            ),
+        )
 
     @commands.Cog.listener("on_announcement_finished")
     async def on_announcement_finished(self, announcement):

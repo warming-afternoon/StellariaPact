@@ -1,11 +1,14 @@
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import \
+    ConfirmationSessionDto
+from StellariaPact.models.ConfirmationSession import ConfirmationSession
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.UserActivity import UserActivity
 
@@ -107,7 +110,7 @@ class ModerationService:
             update(Proposal)
             .where(Proposal.discussionThreadId == thread_id)  # type: ignore
             .values(status=status)
-            .returning(Proposal.id) # type: ignore
+            .returning(Proposal.id)  # type: ignore
         )
         result = await self.session.exec(statement)
         updated_id = result.scalar_one_or_none()
@@ -118,3 +121,103 @@ class ModerationService:
             )
         else:
             logger.warning(f"尝试更新状态时，未找到帖子 {thread_id} 关联的提案。")
+
+    async def get_proposal_by_thread_id(
+        self, thread_id: int
+    ) -> Optional[Proposal]:
+        """
+        根据帖子ID获取提案。
+        """
+        statement = select(Proposal).where(Proposal.discussionThreadId == thread_id)
+        result = await self.session.exec(statement)
+        return result.one_or_none()
+
+    async def create_confirmation_session(
+        self,
+        context: str,
+        target_id: int,
+        required_roles: List[str],
+        message_id: int | None = None,
+    ) -> ConfirmationSessionDto:
+        """
+        创建一个新的确认会话，并返回其数据的DTO。
+        """
+        session = ConfirmationSession(
+            context=context,
+            targetId=target_id,
+            messageId=message_id,
+            requiredRoles=required_roles,
+        )
+        self.session.add(session)
+        await self.session.flush()
+        await self.session.refresh(session)
+
+        assert session.id is not None, "Session ID should not be None after flush"
+
+        return ConfirmationSessionDto(
+            id=session.id,
+            status=session.status,
+            canceler_id=session.cancelerId,
+            confirmed_parties=session.confirmedParties or {},
+            required_roles=session.requiredRoles,
+        )
+
+    async def update_confirmation_session_message_id(
+        self, session_id: int, message_id: int
+    ):
+        """
+        更新确认会话的消息ID。
+        """
+        statement = (
+            update(ConfirmationSession)
+            .where(ConfirmationSession.id == session_id)  # type: ignore
+            .values(messageId=message_id)
+        )
+        await self.session.exec(statement)  # type: ignore
+
+    async def get_confirmation_session_by_message_id(
+        self, message_id: int
+    ) -> Optional[ConfirmationSession]:
+        """
+        根据消息ID获取确认会话。
+        """
+        statement = select(ConfirmationSession).where(
+            ConfirmationSession.messageId == message_id
+        )
+        result = await self.session.exec(statement)
+        return result.one_or_none()
+
+    async def add_confirmation(
+        self, session: ConfirmationSession, role: str, user_id: int
+    ) -> ConfirmationSession:
+        """
+        向确认会话添加一个确认方。
+        """
+        # 确保 confirmedParties 是一个可修改的字典
+        if session.confirmedParties is None:
+            session.confirmedParties = {}
+
+        # 创建副本以触发 SQLAlchemy 的变更检测
+        new_confirmed_parties = session.confirmedParties.copy()
+        new_confirmed_parties[role] = user_id
+        session.confirmedParties = new_confirmed_parties
+
+        # 检查是否所有角色都已确认
+        if set(session.requiredRoles) == set(session.confirmedParties.keys()):
+            session.status = 1  # 1: 已完成
+
+        self.session.add(session)
+        await self.session.flush()
+        return session
+
+    async def cancel_confirmation_session(
+        self, session: ConfirmationSession, user_id: int
+    ) -> ConfirmationSession:
+        """
+        取消一个确认会话。
+        """
+        session.status = 2  # 2: 已取消
+        session.cancelerId = user_id
+        self.session.add(session)
+        await self.session.flush()
+        return session
