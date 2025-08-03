@@ -7,6 +7,7 @@ from discord.ext import commands
 from StellariaPact.cogs.Moderation.views.ReasonModal import ReasonModal
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 logger = logging.getLogger("stellaria_pact.moderation")
 
@@ -74,3 +75,41 @@ class Moderation(commands.Cog):
         await self.bot.api_scheduler.submit(
             coro=interaction.response.send_modal(modal), priority=1
         )
+
+    @commands.Cog.listener()
+    async def on_proposal_thread_created(self, thread_id: int, proposer_id: int):
+        """
+        监听由 Voting cog 分派的提案帖子创建事件。
+        """
+        logger.info(f"接收到提案创建事件，帖子ID: {thread_id}, 发起人ID: {proposer_id}")
+        try:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                await uow.moderation.create_proposal(
+                    thread_id=thread_id, proposer_id=proposer_id
+                )
+                await uow.commit()
+        except Exception as e:
+            logger.error(
+                f"处理提案创建事件时发生错误 (帖子ID: {thread_id}): {e}", exc_info=True
+            )
+
+    @commands.Cog.listener("on_announcement_finished")
+    async def on_announcement_finished(self, announcement):
+        """
+        监听由 Notification cog 分派的公示结束事件。
+        """
+        logger.debug(
+            f"接收到公示结束事件，帖子ID: {announcement.discussionThreadId}, "
+            f"公示标题: {announcement.title}"
+        )
+        try:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                await uow.moderation.update_proposal_status_by_thread_id(
+                    thread_id=announcement.discussionThreadId, status=1  # 1: 执行中
+                )
+                await uow.commit()
+        except Exception as e:
+            logger.error(
+                f"处理公示结束事件时发生错误 (帖子ID: {announcement.discussionThreadId}): {e}",
+                exc_info=True,
+            )

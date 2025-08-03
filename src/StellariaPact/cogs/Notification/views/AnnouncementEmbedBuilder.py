@@ -19,7 +19,6 @@ class AnnouncementEmbedBuilder:
         return (
             f"{content}\n\n"
             f"**公示截止时间:** {discord_timestamp}\n\n"
-            f"*请在此帖内进行讨论*\n"
             f"公示发起人: <@{author_id}>"
         )
 

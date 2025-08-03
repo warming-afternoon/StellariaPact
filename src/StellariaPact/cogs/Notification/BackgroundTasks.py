@@ -23,8 +23,8 @@ class BackgroundTasks(commands.Cog):
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
         self.announcement_channel_id = self.bot.config["channels"]["discussion"]
-        self.in_progress_tag_id = self.bot.config["tags"]["announcement_in_progress"]
-        self.finished_tag_id = self.bot.config["tags"]["announcement_finished"]
+        self.discussion_tag_id = self.bot.config["tags"]["discussion"]
+        self.executing_tag_id = self.bot.config["tags"]["executing"]
         self.stewards_role_id = self.bot.config["roles"]["stewards"]
 
     def cog_unload(self):
@@ -85,7 +85,7 @@ class BackgroundTasks(commands.Cog):
         processed_announcements = []
 
         try:
-            # --- 步骤 1: 数据库操作 ---
+            # --- 数据库操作 ---
             async with UnitOfWork(self.bot.db_handler) as uow:
                 expired_announcements = await uow.announcements.get_expired_announcements()
                 if not expired_announcements:
@@ -113,7 +113,7 @@ class BackgroundTasks(commands.Cog):
             logger.error(f"检查到期公示的数据库操作阶段发生严重错误: {e}", exc_info=True)
             return  # 如果数据库出错，则不继续执行 API 调用
 
-        # --- 步骤 2: Discord API 调用 ---
+        # --- Discord API 调用 ---
         if not processed_announcements:
             return
 
@@ -149,14 +149,21 @@ class BackgroundTasks(commands.Cog):
             # 修改标签
             forum_channel = thread.parent
             if isinstance(forum_channel, discord.ForumChannel):
-                finished_tag = discord.utils.get(
-                    forum_channel.available_tags, id=self.finished_tag_id
+                discussion_tag = discord.utils.get(
+                    forum_channel.available_tags, id=self.discussion_tag_id
                 )
+                executing_tag = discord.utils.get(
+                    forum_channel.available_tags, id=self.executing_tag_id
+                )
+
                 new_tags = [
-                    tag for tag in thread.applied_tags if tag.id != self.in_progress_tag_id
+                    tag
+                    for tag in thread.applied_tags
+                    if tag.id != self.discussion_tag_id
                 ]
-                if finished_tag:
-                    new_tags.append(finished_tag)
+                if executing_tag:
+                    new_tags.append(executing_tag)
+
                 await self.bot.api_scheduler.submit(
                     coro=thread.edit(applied_tags=new_tags), priority=7
                 )
@@ -175,6 +182,8 @@ class BackgroundTasks(commands.Cog):
                 coro=thread.send(content=role_mention, embed=embed),
                 priority=8,
             )
+            # 分发事件
+            self.bot.dispatch("announcement_finished", announcement)
         except discord.NotFound:
             logger.error(
                 f"讨论帖 (ID: {announcement.discussionThreadId}) 未找到，可能已被删除。跳过API通知"

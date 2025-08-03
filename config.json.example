@@ -5,8 +5,13 @@
     "broadcast": []
   },
   "tags": {
-    "announcement_in_progress": null,
-    "announcement_finished": null
+    "discussion": null,
+    "executing": null,
+    "frozen": null,
+    "objection_voting": null,
+    "finished": null,
+    "abandoned": null,
+    "rejected": null
   },
   "roles": {
     "councilModerator": null,
