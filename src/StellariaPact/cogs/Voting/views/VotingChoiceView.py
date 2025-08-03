@@ -15,6 +15,9 @@ from StellariaPact.share.UnitOfWork import UnitOfWork
 
 
 class VotingChoiceView(discord.ui.View):
+    approve_button: discord.ui.Button
+    reject_button: discord.ui.Button
+    abstain_button: discord.ui.Button
     """
     提供给合格用户进行投票选择的临时视图。
     """
@@ -230,7 +233,7 @@ class VotingChoiceView(discord.ui.View):
     async def adjust_time_callback(self, interaction: discord.Interaction):
         """Callback for the dynamically added 'Adjust Time' button."""
         modal = AdjustTimeModal(self.bot, self.thread_id)
-        await interaction.response.send_modal(modal)
+        await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
 
     async def _handle_toggle_anonymous(self, interaction: discord.Interaction):
         """处理切换匿名投票的逻辑"""
@@ -317,7 +320,10 @@ class VotingChoiceView(discord.ui.View):
         async with UnitOfWork(self.bot.db_handler) as uow:
             vote_session = await uow.voting.get_vote_session_by_thread_id(self.thread_id)
             if not vote_session:
-                return await interaction.response.send_message("找不到投票会话。", ephemeral=True)
+                return await self.bot.api_scheduler.submit(
+                    interaction.response.send_message("找不到投票会话。", ephemeral=True),
+                    priority=1,
+                )
             current_status = vote_session.anonymousFlag
 
         await self._create_and_send_confirmation(
@@ -329,7 +335,10 @@ class VotingChoiceView(discord.ui.View):
         async with UnitOfWork(self.bot.db_handler) as uow:
             vote_session = await uow.voting.get_vote_session_by_thread_id(self.thread_id)
             if not vote_session:
-                return await interaction.response.send_message("找不到投票会话。", ephemeral=True)
+                return await self.bot.api_scheduler.submit(
+                    interaction.response.send_message("找不到投票会话。", ephemeral=True),
+                    priority=1,
+                )
             current_status = vote_session.realtimeFlag
 
         await self._create_and_send_confirmation(

@@ -1,11 +1,13 @@
 import asyncio
 import logging
+import random
+from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
-from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.AnnouncementMonitorService import AnnouncementMonitorService
+from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
+    AnnouncementMonitorService
 from StellariaPact.cogs.Notification.RepostService import RepostService
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -184,7 +186,11 @@ class BackgroundTasks(commands.Cog):
     @check_announcements.before_loop
     async def before_check_announcements(self):
         await self.bot.wait_until_ready()
+        # 增加随机延迟以错开任务启动时间
+        await asyncio.sleep(random.randint(0, 30))
 
     @check_reposts.before_loop
     async def before_check_reposts(self):
         await self.bot.wait_until_ready()
+        # 增加随机延迟以错开任务启动时间
+        await asyncio.sleep(random.randint(0, 15))

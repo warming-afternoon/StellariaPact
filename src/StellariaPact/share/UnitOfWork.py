@@ -6,12 +6,11 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Moderation.ModerationService import \
-        ModerationService
-    from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
-        AnnouncementMonitorService
-    from StellariaPact.cogs.Notification.AnnouncementService import \
-        AnnouncementService
+    from StellariaPact.cogs.Moderation.ModerationService import ModerationService
+    from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
+        AnnouncementMonitorService,
+    )
+    from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
     from StellariaPact.cogs.Voting.VotingService import VotingService
     from StellariaPact.share.DatabaseHandler import DatabaseHandler
 
@@ -106,8 +105,7 @@ class UnitOfWork:
     def announcements(self) -> "AnnouncementService":
         """获取公示服务实例。"""
         if not hasattr(self, "_announcement_service"):
-            from StellariaPact.cogs.Notification.AnnouncementService import \
-                AnnouncementService
+            from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
 
             self._announcement_service = AnnouncementService(self.session)
         return self._announcement_service
@@ -116,8 +114,9 @@ class UnitOfWork:
     def announcement_monitors(self) -> "AnnouncementMonitorService":
         """获取公示监控服务实例。"""
         if not hasattr(self, "_announcement_monitor_service"):
-            from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
-                AnnouncementMonitorService
+            from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
+                AnnouncementMonitorService,
+            )
 
             self._announcement_monitor_service = AnnouncementMonitorService(self.session)
         return self._announcement_monitor_service
@@ -126,8 +125,7 @@ class UnitOfWork:
     def moderation(self) -> "ModerationService":
         """获取议事管理服务实例。"""
         if not hasattr(self, "_moderation_service"):
-            from StellariaPact.cogs.Moderation.ModerationService import \
-                ModerationService
+            from StellariaPact.cogs.Moderation.ModerationService import ModerationService
 
             self._moderation_service = ModerationService(self.session)
         return self._moderation_service

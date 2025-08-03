@@ -108,7 +108,7 @@ def main():
             logger.exception(f"数据库初始化失败: {e}")
 
         logger.info("正在同步命令...")
-        await bot.tree.sync()
+        await bot.api_scheduler.submit(bot.tree.sync(), priority=5)
         logger.info("命令已同步。")
 
     @bot.event
@@ -127,12 +127,18 @@ def main():
         original_error = getattr(error, "original", error)
         if isinstance(original_error, MissingRole):
             if not interaction.response.is_done():
-                await interaction.response.send_message(str(original_error), ephemeral=True)
+                await bot.api_scheduler.submit(
+                    interaction.response.send_message(str(original_error), ephemeral=True),
+                    priority=1,
+                )
         else:
             logger.error(f"在应用命令中发生未处理的错误: {error}", exc_info=True)
             if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "发生了一个未知错误，请联系技术员", ephemeral=True
+                await bot.api_scheduler.submit(
+                    interaction.response.send_message(
+                        "发生了一个未知错误，请联系技术员", ephemeral=True
+                    ),
+                    priority=1,
                 )
 
     token = os.getenv("DISCORD_TOKEN")

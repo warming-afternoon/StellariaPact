@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import random
 
 import discord
 from discord.ext import commands, tasks
@@ -79,3 +81,5 @@ class VoteCloser(commands.Cog):
     @close_expired_votes.before_loop
     async def before_close_expired_votes(self):
         await self.bot.wait_until_ready()
+        # 增加随机延迟以错开任务启动时间
+        await asyncio.sleep(random.randint(0, 30))

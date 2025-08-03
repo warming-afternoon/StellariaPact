@@ -12,8 +12,8 @@ class UserActivity(BaseModel, table=True):
     用户投票资格表模型
     """
 
-    userId: int = Field(description="用户的Discord ID")
-    contextThreadId: int = Field(description="上下文的帖子ID")
+    userId: int = Field(index=True, description="用户的Discord ID")
+    contextThreadId: int = Field(index=True, description="上下文的帖子ID")
     messageCount: int = Field(default=0, description="该用户在帖子中的有效发言次数")
     validation: int = Field(default=1, description="用户投票是否有效: 0-无效, 1-有效")
     lastUpdated: datetime = Field(

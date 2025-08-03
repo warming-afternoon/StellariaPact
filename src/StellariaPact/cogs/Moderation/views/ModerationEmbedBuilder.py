@@ -1,7 +1,7 @@
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import discord
+from zoneinfo import ZoneInfo
 
 
 class ModerationEmbedBuilder:

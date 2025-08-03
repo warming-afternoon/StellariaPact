@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -174,13 +175,20 @@ class VotingService:
         """
         计票并关闭一个投票会话。
         """
-        vote_session = await self.session.get(VoteSession, vote_session_id)
+        # 使用 selectinload 一次性加载投票会话及其所有关联的投票记录
+        statement = (
+            select(VoteSession)
+            .where(VoteSession.id == vote_session_id)
+            .options(selectinload(VoteSession.userVotes))  # type: ignore
+        )
+        result = await self.session.exec(statement)
+        vote_session = result.one_or_none()
+
         if not vote_session:
             raise ValueError(f"找不到ID为 {vote_session_id} 的投票会话")
 
-        statement = select(UserVote).where(UserVote.sessionId == vote_session.id)
-        result = await self.session.exec(statement)
-        all_votes = result.all()
+        # 直接从已加载的关系中获取投票，无需额外查询
+        all_votes = vote_session.userVotes
 
         approve_votes = sum(1 for vote in all_votes if vote.choice == 1)
         reject_votes = sum(1 for vote in all_votes if vote.choice == 0)
@@ -297,13 +305,19 @@ class VotingService:
         """
         获取投票的详细状态，包括票数和投票者信息。
         """
-        vote_session = await self._get_vote_session_by_thread_id(qo.thread_id)
+        # 在获取投票会话时，同时加载所有投票记录
+        statement = (
+            select(VoteSession)
+            .where(VoteSession.contextThreadId == qo.thread_id)
+            .options(selectinload(VoteSession.userVotes))  # type: ignore
+        )
+        result = await self.session.exec(statement)
+        vote_session = result.one_or_none()
+
         if not vote_session:
             raise ValueError("找不到指定的投票会话。")
 
-        statement = select(UserVote).where(UserVote.sessionId == vote_session.id)
-        result = await self.session.exec(statement)
-        all_votes = result.all()
+        all_votes = vote_session.userVotes
 
         approve_votes = sum(1 for vote in all_votes if vote.choice == 1)
         reject_votes = sum(1 for vote in all_votes if vote.choice == 0)
