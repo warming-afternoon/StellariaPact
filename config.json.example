@@ -2,7 +2,9 @@
   "guild_id": null,
   "channels": {
     "discussion": null,
-    "broadcast": []
+    "broadcast": [],
+    "objection_audit": null,
+    "objection_publicity": null
   },
   "tags": {
     "discussion": null,

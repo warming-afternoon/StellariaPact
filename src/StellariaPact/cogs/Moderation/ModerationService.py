@@ -1,19 +1,25 @@
 import logging
-from typing import Optional
+from typing import Optional, Sequence
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import ConfirmationSessionDto
-from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
-from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import (
-    CreateConfirmationSessionQo,
-)
+from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import \
+    ConfirmationSessionDto
+from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import \
+    AbandonProposalQo
+from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import \
+    CreateConfirmationSessionQo
+from StellariaPact.cogs.Moderation.qo.CreateObjectionQo import \
+    CreateObjectionQo
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
+from StellariaPact.models.Objection import Objection
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.UserActivity import UserActivity
+from StellariaPact.share.enums.ConfirmationStatus import ConfirmationStatus
+from StellariaPact.share.enums.ProposalStatus import ProposalStatus
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +93,10 @@ class ModerationService:
             title: 提案的标题。
         """
         new_proposal = Proposal(
-            discussionThreadId=thread_id, proposerId=proposer_id, title=title, status=0
+            discussionThreadId=thread_id,
+            proposerId=proposer_id,
+            title=title,
+            status=ProposalStatus.DISCUSSION,
         )
         self.session.add(new_proposal)
         try:
@@ -137,6 +146,74 @@ class ModerationService:
         根据提案ID获取提案。
         """
         return await self.session.get(Proposal, proposal_id)
+
+    async def get_objections_by_proposal_id(self, proposal_id: int) -> Sequence[Objection]:
+        """
+        根据提案ID获取所有相关的异议。
+        """
+        statement = (
+            select(Objection)
+            .where(Objection.proposalId == proposal_id)
+            .order_by(Objection.createdAt.asc())  # type: ignore
+        )
+        result = await self.session.exec(statement)
+        return result.all()
+
+    async def get_objection_by_id(self, objection_id: int) -> Optional[Objection]:
+        """
+        根据ID获取异议。
+        """
+        return await self.session.get(Objection, objection_id)
+
+    async def create_objection(self, qo: CreateObjectionQo) -> Objection:
+        """
+        创建一个新的异议。
+        """
+        new_objection = Objection(
+            proposalId=qo.proposal_id,
+            objector_id=qo.objector_id,
+            reason=qo.reason,
+            requiredVotes=qo.required_votes,
+            status=qo.status,
+        )
+        self.session.add(new_objection)
+        await self.session.flush()
+        await self.session.refresh(new_objection)
+        return new_objection
+
+    async def update_objection_status(self, objection_id: int, status: int) -> Optional[Objection]:
+        """
+        更新异议的状态。
+        """
+        objection = await self.get_objection_by_id(objection_id)
+        if not objection:
+            logger.warning(f"尝试更新状态时，未找到ID为 {objection_id} 的异议。")
+            return None
+
+        objection.status = status
+        self.session.add(objection)
+        await self.session.flush()
+        await self.session.refresh(objection)
+        logger.debug(f"已将异议 {objection_id} 的状态更新为 {status}。")
+        return objection
+
+    async def update_objection_review_thread_id(
+        self, objection_id: int, review_thread_id: int
+    ) -> Optional[Objection]:
+        """
+        更新异议的审核帖子ID。
+        """
+        objection = await self.get_objection_by_id(objection_id)
+        if not objection:
+            logger.warning(f"尝试更新审核帖子ID时，未找到ID为 {objection_id} 的异议。")
+            return None
+
+        objection.reviewThreadId = review_thread_id
+        self.session.add(objection)
+        await self.session.flush()
+        await self.session.refresh(objection)
+        logger.debug(f"已将异议 {objection_id} 的审核帖子ID更新为 {review_thread_id}。")
+        return objection
 
     async def create_confirmation_session(
         self, qo: CreateConfirmationSessionQo
@@ -210,7 +287,7 @@ class ModerationService:
 
         # 检查是否所有角色都已确认
         if set(session.requiredRoles) == set(session.confirmedParties.keys()):
-            session.status = 1  # 1: 已完成
+            session.status = ConfirmationStatus.COMPLETED
 
         self.session.add(session)
         await self.session.flush()
@@ -222,7 +299,7 @@ class ModerationService:
         """
         取消一个确认会话。
         """
-        session.status = 2  # 2: 已取消
+        session.status = ConfirmationStatus.CANCELED
         session.cancelerId = user_id
         self.session.add(session)
         await self.session.flush()
@@ -244,10 +321,10 @@ class ModerationService:
         proposal = await self.get_proposal_by_thread_id(qo.thread_id)
         if not proposal:
             raise ValueError("未找到关连的提案。")
-        if proposal.status != 1:  # 1: 执行中
+        if proposal.status != ProposalStatus.EXECUTING:
             raise ValueError("只能废弃“执行中”的提案。")
 
-        proposal.status = 3  # 3: 已废弃
+        proposal.status = ProposalStatus.ABANDONED
         self.session.add(proposal)
         await self.session.flush()
         return proposal

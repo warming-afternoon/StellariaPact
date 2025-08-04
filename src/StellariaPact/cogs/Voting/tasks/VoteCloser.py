@@ -46,42 +46,50 @@ class VoteCloser(commands.Cog):
                         )
                         await uow_atomic.commit()
 
-                    # 步骤 2b: 数据库操作成功后，发送 Discord 通知
-                    thread = self.bot.get_channel(session_dto.contextThreadId)
-                    if isinstance(thread, discord.Thread):
-                        roles_to_mention = []
-                        role_ids = self.bot.config.get("roles", {})
-                        moderator_id = role_ids.get("councilModerator")
-                        auditor_id = role_ids.get("executionAuditor")
-                        if moderator_id:
-                            roles_to_mention.append(f"<@&{moderator_id}>")
-                        if auditor_id:
-                            roles_to_mention.append(f"<@&{auditor_id}>")
+                    # 步骤 2b: 检查是否为异议投票，并分派相应事件
+                    if session_dto.objectionId is not None:
+                        logger.info(
+                            f"投票会话 {session_dto.id} 是一个异议投票。分派 'objection_vote_finished' 事件。"
+                        )
+                        self.bot.dispatch(
+                            "objection_vote_finished", session_dto, result_dto
+                        )
+                    else:
+                        # 对于非异议投票，保留原有的通知逻辑
+                        logger.info(
+                            f"投票会话 {session_dto.id} 是一个普通投票。在原帖中发送结果。"
+                        )
+                        thread = self.bot.get_channel(session_dto.contextThreadId)
+                        if isinstance(thread, discord.Thread):
+                            roles_to_mention = []
+                            role_ids = self.bot.config.get("roles", {})
+                            moderator_id = role_ids.get("councilModerator")
+                            auditor_id = role_ids.get("executionAuditor")
+                            if moderator_id:
+                                roles_to_mention.append(f"<@&{moderator_id}>")
+                            if auditor_id:
+                                roles_to_mention.append(f"<@&{auditor_id}>")
 
-                        mention_string = " ".join(roles_to_mention)
-                        embed = discord.Embed(
-                            title="投票已结束",
-                            # description=(
-                            #     f"总票数: {result_dto.totalVotes}\n"
-                            #     f"赞成: {result_dto.approveVotes}\n"
-                            #     f"反对: {result_dto.rejectVotes}"
-                            # ),
-                            color=discord.Color.dark_grey(),
-                        )
+                            mention_string = " ".join(roles_to_mention)
+                            embed = discord.Embed(
+                                title="投票已结束",
+                                color=discord.Color.dark_grey(),
+                            )
 
-                        embed.add_field(
-                            name="赞成", value=f"{result_dto.approveVotes}", inline=True
-                        )
-                        embed.add_field(
-                            name="反对", value=f"{result_dto.rejectVotes}", inline=True
-                        )
-                        embed.add_field(
-                            name="总票数", value=f"{result_dto.totalVotes}", inline=True
-                        )
+                            embed.add_field(
+                                name="赞成", value=f"{result_dto.approveVotes}", inline=True
+                            )
+                            embed.add_field(
+                                name="反对", value=f"{result_dto.rejectVotes}", inline=True
+                            )
+                            embed.add_field(
+                                name="总票数", value=f"{result_dto.totalVotes}", inline=True
+                            )
 
-                        await self.bot.api_scheduler.submit(
-                            thread.send(content=mention_string, embed=embed), priority=5
-                        )
+                            await self.bot.api_scheduler.submit(
+                                thread.send(content=mention_string, embed=embed),
+                                priority=5,
+                            )
                 except Exception as e:
                     logger.error(f"处理投票会话 {session_dto.id} 时出错: {e}", exc_info=True)
                     # 单个会话处理失败，记录日志并继续处理下一个

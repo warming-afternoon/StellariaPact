@@ -5,6 +5,7 @@ from sqlmodel import Field, Relationship, text
 
 from StellariaPact.models.BaseModel import BaseModel
 from StellariaPact.models.Proposal import Proposal
+from StellariaPact.share.enums.ObjectionStatus import ObjectionStatus
 
 if TYPE_CHECKING:
     from StellariaPact.models.VoteSession import VoteSession
@@ -16,10 +17,13 @@ class Objection(BaseModel, table=True):
     """
 
     proposalId: int = Field(foreign_key="proposal.id", index=True, description="关联的提案ID")
+    objector_id: int = Field(index=True, description="异议发起人的Discord ID")
+    reason: str = Field(description="反对理由")
     objectionThreadId: Optional[int] = Field(default=None, description="异议讨论帖的ID")
+    reviewThreadId: Optional[int] = Field(default=None, description="管理员审核帖的ID")
     status: int = Field(
-        default=0,
-        description="异议当前状态: 0-异议贴产生票收集中, 1-异议投票中, 2-已裁定",
+        default=ObjectionStatus.PENDING_REVIEW,
+        description="异议当前状态: 0-待审核, 1-异议贴产生票收集中, 2-异议投票中, 3-已通过, 4-已否决",
     )
     requiredVotes: int = Field(description="触发投票所需的反对票数")
     createdAt: datetime = Field(

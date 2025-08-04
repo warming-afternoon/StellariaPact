@@ -6,6 +6,7 @@ from sqlmodel import Field
 
 from StellariaPact.models.BaseModel import BaseModel
 from StellariaPact.share.database_types import JSON_TYPE
+from StellariaPact.share.enums.ConfirmationStatus import ConfirmationStatus
 
 
 class ConfirmationSession(BaseModel, table=True):
@@ -17,7 +18,9 @@ class ConfirmationSession(BaseModel, table=True):
     targetId: int = Field(index=True, description="关联的业务对象ID，如 Proposal.id")
     messageId: int | None = Field(default=None, unique=True, description="机器人发送的确认消息ID")
     status: int = Field(
-        default=0, index=True, description="会话状态: 0-待处理, 1-已完成, 2-已取消"
+        default=ConfirmationStatus.PENDING,
+        index=True,
+        description="会话状态: 0-待处理, 1-已完成, 2-已取消",
     )
     requiredRoles: List[str] = Field(
         default=[], sa_column=Column(JSON_TYPE), description="需要进行确认的角色列表"
@@ -45,6 +48,6 @@ class ConfirmationSession(BaseModel, table=True):
             "context",
             "targetId",
             unique=True,
-            sqlite_where=text("status = 0"),
+            sqlite_where=text(f"status = {ConfirmationStatus.PENDING}"),
         ),
     )

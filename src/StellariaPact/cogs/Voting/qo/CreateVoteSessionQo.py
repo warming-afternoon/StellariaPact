@@ -10,6 +10,7 @@ class CreateVoteSessionQo(BaseDto):
     """
 
     thread_id: int
+    objection_id: Optional[int] = None
     context_message_id: int
     realtime: bool = False
     anonymous: bool = True

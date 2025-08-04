@@ -1,10 +1,14 @@
 from datetime import datetime, timezone
 from typing import Dict
-
-import discord
 from zoneinfo import ZoneInfo
 
+import discord
+
+from ....share.enums.ConfirmationStatus import ConfirmationStatus
+from ..qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
 from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
+from ..qo.BuildFormalVoteEmbedQo import BuildFormalVoteEmbedQo
+from ..qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 
 
 class ModerationEmbedBuilder:
@@ -22,16 +26,16 @@ class ModerationEmbedBuilder:
         title = "⏳ 流程确认中：进入执行阶段"
         color = discord.Color.yellow()
 
-        if qo.status == 1:  # 已完成
+        if qo.status == ConfirmationStatus.COMPLETED:
             title = "✅ 确认完成：提案已进入执行阶段"
             color = discord.Color.green()
-        elif qo.status == 2:  # 已取消
+        elif qo.status == ConfirmationStatus.CANCELED:
             title = "❌ 操作已取消"
             color = discord.Color.red()
 
         embed = discord.Embed(title=title, color=color)
 
-        if qo.status == 2 and qo.canceler_id:
+        if qo.status == ConfirmationStatus.CANCELED and qo.canceler_id:
             embed.description = f"操作由 <@{qo.canceler_id}> 取消。"
 
         confirmed_lines = []
@@ -97,4 +101,70 @@ class ModerationEmbedBuilder:
             name="相关消息", value=f"[点击跳转]({target_message.jump_url})", inline=True
         )
         embed.add_field(name="操作人员", value=moderator.mention, inline=True)
+        return embed
+
+    @staticmethod
+    def build_admin_review_embed(
+        qo: "BuildAdminReviewEmbedQo", bot_user: discord.ClientUser
+    ) -> discord.Embed:
+        """
+        构建管理员审核异议的 Embed 消息。
+        """
+        embed = discord.Embed(
+            title="新的异议需要审核",
+            description=f"针对提案 **[{qo.proposal_title}](https://discord.com/channels/{qo.guild_id}/{qo.proposal_thread_id})** 的一项新异议需要管理员审核。",
+            color=discord.Color.orange(),
+        )
+        embed.add_field(name="异议ID", value=str(qo.objection_id), inline=True)
+        embed.add_field(name="提案ID", value=str(qo.proposal_id), inline=True)
+        embed.add_field(name="异议发起人", value=f"<@{qo.objector_id}>", inline=True)
+        embed.add_field(name="异议理由", value=f">>> {qo.objection_reason}", inline=False)
+        return embed
+
+    @staticmethod
+    def build_formal_vote_embed(
+        qo: "BuildFormalVoteEmbedQo", bot_user: discord.ClientUser
+    ) -> discord.Embed:
+        """
+        构建正式异议投票的 Embed 消息。
+        """
+        embed = discord.Embed(
+            title=f"异议投票：{qo.proposal_title}",
+            description=f"对提案 [**{qo.proposal_title}**]({qo.proposal_thread_url}) 的一项异议已进入正式投票阶段。",
+            color=discord.Color.blue(),
+        )
+        embed.add_field(name="异议 ID", value=str(qo.objection_id), inline=True)
+        embed.add_field(name="发起人", value=f"<@{qo.objector_id}>", inline=True)
+        embed.add_field(name="异议理由", value=f">>> {qo.objection_reason}", inline=False)
+        embed.add_field(
+            name="投票规则",
+            value="请所有议事成员就此异议进行投票。点击下方按钮表达您的意见。",
+            inline=False,
+        )
+        embed.set_footer(text=f"由 {bot_user.display_name} 提供支持", icon_url=bot_user.display_avatar.url)
+        embed.timestamp = datetime.now(timezone.utc)
+        return embed
+
+    @staticmethod
+    def build_vote_result_embed(
+        qo: "BuildVoteResultEmbedQo", bot_user: discord.ClientUser
+    ) -> discord.Embed:
+        """
+        构建异议投票结果的 Embed 消息。
+        """
+        result_text = "通过" if qo.is_passed else "被否决"
+        result_color = discord.Color.green() if qo.is_passed else discord.Color.red()
+        embed = discord.Embed(
+            title=f"异议投票结果：{result_text}",
+            description=f"关于提案 **[{qo.proposal_title}]({qo.proposal_thread_url})** 的异议（ID: {qo.objection_id}）投票已结束。",
+            color=result_color,
+        )
+        embed.add_field(name="赞成票", value=str(qo.approve_votes), inline=True)
+        embed.add_field(name="反对票", value=str(qo.reject_votes), inline=True)
+        embed.add_field(name="总票数", value=str(qo.total_votes), inline=True)
+        embed.add_field(name="异议理由", value=f">>> {qo.objection_reason}", inline=False)
+        embed.set_footer(
+            text=f"由 {bot_user.display_name} 提供支持", icon_url=bot_user.display_avatar.url
+        )
+        embed.timestamp = datetime.now(timezone.utc)
         return embed
