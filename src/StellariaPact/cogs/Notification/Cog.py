@@ -309,7 +309,9 @@ class Notification(commands.Cog):
     #     """
     #     通过提交大量低优先级任务来测试调度器。
     #     """
-    #     await self.bot.api_scheduler.submit(coro=safeDefer(interaction, ephemeral=True), priority=1)
+    #     await self.bot.api_scheduler.submit(
+    #         coro=safeDefer(interaction, ephemeral=True), priority=1
+    #     )
 
     #     embed = discord.Embed(
     #         title="调度器压力测试",
@@ -318,7 +320,9 @@ class Notification(commands.Cog):
     #     )
 
     #     # 类型守卫，确保 channel 是可以发送消息的类型
-    #     if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
+    #     if not isinstance(
+    #         interaction.channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)
+    #     ):
     #         await self.bot.api_scheduler.submit(
     #             coro=interaction.followup.send(
     #                 "此命令只能在文本频道、语音频道或帖子中使用。", ephemeral=True

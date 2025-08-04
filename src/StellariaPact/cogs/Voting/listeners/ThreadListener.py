@@ -20,23 +20,18 @@ class ThreadListener(commands.Cog):
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
 
-    async def _dispatch_proposal_creation(self, thread: discord.Thread):
+    async def _dispatch_proposal_creation(
+        self, thread: discord.Thread, start_message: discord.Message | None
+    ):
         """
-        从帖子的启动消息中解析出提案人ID，并分派事件。
+        从帖子的启动消息中解析出提案人ID，并分派事件
         """
+        if not start_message:
+            logger.warning(f"无法获取帖子 {thread.id} 的启动消息。")
+            return
+
         try:
-            # 优先使用缓存的启动消息，避免不必要的API调用
-            start_message = thread.starter_message
-            if not start_message:
-                # 如果缓存中没有，再尝试通过API获取
-                logger.debug(f"帖子 {thread.id} 的启动消息不在缓存中，尝试API获取...")
-                start_message = await thread.fetch_message(thread.id)
-
-            if not start_message:
-                logger.warning(f"无法获取帖子 {thread.id} 的启动消息。")
-                return
-
-            # 使用正则表达式从消息内容中解析出用户ID
+            # 使用正则表达式从消息内容中解析出提案人ID及标题
             match = re.search(r"<@(\d+)>", start_message.content)
             if match:
                 proposer_id = int(match.group(1))
@@ -45,10 +40,8 @@ class ThreadListener(commands.Cog):
             else:
                 logger.warning(f"在帖子 {thread.id} 的启动消息中未找到提案人ID。")
 
-        except discord.NotFound:
-            logger.warning(f"无法找到帖子 {thread.id} 的启动消息，可能已被删除。")
         except Exception as e:
-            logger.error(f"解析提案人ID时发生错误 (帖子ID: {thread.id}): {e}", exc_info=True)
+            logger.error(f"解析提案人 ID 时发生错误 (帖子ID: {thread.id}): {e}", exc_info=True)
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
@@ -63,16 +56,34 @@ class ThreadListener(commands.Cog):
         # 等待一小段时间，确保帖子完全创建
         await asyncio.sleep(0.5)
 
+        # 获取启动消息
+        starter_message = None
+        try:
+            starter_message = thread.starter_message
+            if not starter_message:
+                logger.debug(f"帖子 {thread.id} 的启动消息不在缓存中，尝试API获取...")
+                starter_message = await thread.fetch_message(thread.id)
+        except discord.NotFound:
+            logger.warning(f"无法找到帖子 {thread.id} 的启动消息，可能已被删除。")
+            return
+        except Exception as e:
+            logger.error(f"获取帖子 {thread.id} 的启动消息时发生错误: {e}", exc_info=True)
+            return
+
         # 分派创建提案的事件
-        asyncio.create_task(self._dispatch_proposal_creation(thread))
+        asyncio.create_task(self._dispatch_proposal_creation(thread, starter_message))
 
         logger.info(f"在新帖子 '{thread.name}' (ID: {thread.id}) 中创建投票面板。")
 
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
+                # 解析截止时间，如果不存在则使用默认值
+                end_time = TimeUtils.parse_discord_timestamp(starter_message.content)
+                if end_time is None:
+                    target_tz = self.bot.config.get("timezone", "UTC")
+                    end_time = TimeUtils.get_utc_end_time(duration_hours=48, target_tz=target_tz)
+
                 # 准备参数和 View
-                target_tz = self.bot.config.get("timezone", "UTC")
-                end_time = TimeUtils.get_utc_end_time(duration_hours=72, target_tz=target_tz)
                 view = VoteView(self.bot)
                 clean_title = StringUtils.clean_title(thread.name)
 

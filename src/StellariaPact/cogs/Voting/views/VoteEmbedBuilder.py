@@ -31,7 +31,7 @@ class VoteEmbedBuilder:
 
         embed = discord.Embed(
             title=f"议题：{topic}",
-            # description=description,
+            description=description,
             color=discord.Color.blue(),
         )
         embed.add_field(name="是否匿名", value="✅ 是" if anonymous else "❌ 否", inline=True)

@@ -140,9 +140,6 @@ class BackgroundTasks(commands.Cog):
             # 修改标签
             forum_channel = thread.parent
             if isinstance(forum_channel, discord.ForumChannel):
-                discussion_tag = discord.utils.get(
-                    forum_channel.available_tags, id=self.discussion_tag_id
-                )
                 executing_tag = discord.utils.get(
                     forum_channel.available_tags, id=self.executing_tag_id
                 )
@@ -174,7 +171,10 @@ class BackgroundTasks(commands.Cog):
             self.bot.dispatch("announcement_finished", announcement_dto)
         except discord.NotFound:
             logger.error(
-                f"讨论帖 (ID: {announcement_dto.discussionThreadId}) 未找到，可能已被删除。跳过API通知"
+                (
+                    f"讨论帖 (ID: {announcement_dto.discussionThreadId}) 未找到，"
+                    "可能已被删除。跳过API通知"
+                )
             )
         except Exception:
             # 异常将在 gather 中被捕获和记录

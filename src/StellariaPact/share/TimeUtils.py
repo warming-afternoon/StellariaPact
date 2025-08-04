@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timedelta
 
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -13,7 +14,7 @@ class TimeUtils:
 
     @staticmethod
     def get_utc_end_time(
-        duration_hours: int, target_tz: str, start_time: datetime = None
+        duration_hours: int, target_tz: str, start_time: datetime | None = None
     ) -> datetime:
         """
         根据本地时区的持续时间计算出未来的、准确的 UTC 结束时间。
@@ -54,3 +55,16 @@ class TimeUtils:
         except Exception as e:
             logger.exception("在计算 UTC 结束时间时发生未知错误。")
             raise e
+
+    @staticmethod
+    def parse_discord_timestamp(content: str) -> datetime | None:
+        """
+        从消息内容中解析 Discord 的截止时间戳。
+        截止时间格式为 <t:UNIX时间戳:F>
+        """
+        match = re.search(r"<t:(\d+):F>", content)
+        if match:
+            timestamp = int(match.group(1))
+            # 返回一个不含时区信息的 "naive" datetime 对象
+            return datetime.fromtimestamp(timestamp, tz=ZoneInfo("UTC")).replace(tzinfo=None)
+        return None
