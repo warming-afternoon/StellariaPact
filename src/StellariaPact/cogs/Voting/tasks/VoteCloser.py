@@ -49,11 +49,10 @@ class VoteCloser(commands.Cog):
                     # 步骤 2b: 检查是否为异议投票，并分派相应事件
                     if session_dto.objectionId is not None:
                         logger.info(
-                            f"投票会话 {session_dto.id} 是一个异议投票。分派 'objection_vote_finished' 事件。"
+                            f"投票会话 {session_dto.id} 是一个异议投票。"
+                            "分派 'objection_vote_finished' 事件。"
                         )
-                        self.bot.dispatch(
-                            "objection_vote_finished", session_dto, result_dto
-                        )
+                        self.bot.dispatch("objection_vote_finished", session_dto, result_dto)
                     else:
                         # 对于非异议投票，保留原有的通知逻辑
                         logger.info(

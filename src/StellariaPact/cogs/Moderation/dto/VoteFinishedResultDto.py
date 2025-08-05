@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from ....cogs.Moderation.qo.BuildVoteResultEmbedQo import \
-    BuildVoteResultEmbedQo
+from ....cogs.Moderation.qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from ....share.BaseDto import BaseDto
 
 

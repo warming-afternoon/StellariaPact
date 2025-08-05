@@ -14,14 +14,9 @@ class ObjectionFormalVoteView(discord.ui.View):
     用于“正式异议投票”的视图。
     """
 
-    def __init__(self, bot: StellariaPactBot, objection_id: int):
+    def __init__(self, bot: StellariaPactBot):
         super().__init__(timeout=None)
         self.bot = bot
-        self.objection_id = objection_id
-        # 动态设置按钮的 custom_id
-        self.support_button.custom_id = f"objection_formal_support:{self.objection_id}"
-        self.reject_button.custom_id = f"objection_formal_reject:{self.objection_id}"
-        self.abstain_button.custom_id = f"objection_formal_abstain:{self.objection_id}"
 
     async def _handle_vote(self, interaction: discord.Interaction, choice: int, choice_text: str):
         """
@@ -43,7 +38,8 @@ class ObjectionFormalVoteView(discord.ui.View):
                 )
                 if not vote_session or not vote_session.id:
                     await self.bot.api_scheduler.submit(
-                        interaction.followup.send("错误：找不到对应的投票会话。", ephemeral=True), 1
+                        interaction.followup.send("错误：找不到对应的投票会话。", ephemeral=True),
+                        1,
                     )
                     return
 
@@ -56,11 +52,17 @@ class ObjectionFormalVoteView(discord.ui.View):
                         await uow.voting.update_vote(existing_vote.id, choice)
                         await uow.commit()
                         await self.bot.api_scheduler.submit(
-                            interaction.followup.send(f"您的投票已从其他选项更改为“{choice_text}”。", ephemeral=True), 1
+                            interaction.followup.send(
+                                f"您的投票已从其他选项更改为“{choice_text}”。", ephemeral=True
+                            ),
+                            1,
                         )
                     else:
                         await self.bot.api_scheduler.submit(
-                            interaction.followup.send(f"您已经投过“{choice_text}”了。", ephemeral=True), 1
+                            interaction.followup.send(
+                                f"您已经投过“{choice_text}”了。", ephemeral=True
+                            ),
+                            1,
                         )
                     return
 
@@ -79,27 +81,30 @@ class ObjectionFormalVoteView(discord.ui.View):
 
             except Exception as e:
                 logger.error(
-                    f"处理异议 {self.objection_id} 的正式投票时出错: {e}", exc_info=True
+                    f"处理正式投票时发生未知错误 (消息ID: {interaction.message.id}): {e}",
+                    exc_info=True,
                 )
                 await self.bot.api_scheduler.submit(
-                    interaction.followup.send("处理投票时发生未知错误，请联系技术员。", ephemeral=True),
+                    interaction.followup.send(
+                        "处理投票时发生未知错误，请联系技术员。", ephemeral=True
+                    ),
                     1,
                 )
 
-    @discord.ui.button(label="同意", style=discord.ButtonStyle.success)
-    async def support_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    @discord.ui.button(
+        label="同意", style=discord.ButtonStyle.success, custom_id="objection_formal_support"
+    )
+    async def support_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_vote(interaction, 1, "同意")
 
-    @discord.ui.button(label="反对", style=discord.ButtonStyle.danger)
-    async def reject_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    @discord.ui.button(
+        label="反对", style=discord.ButtonStyle.danger, custom_id="objection_formal_reject"
+    )
+    async def reject_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_vote(interaction, 2, "反对")
 
-    @discord.ui.button(label="弃权", style=discord.ButtonStyle.secondary)
-    async def abstain_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    @discord.ui.button(
+        label="弃权", style=discord.ButtonStyle.secondary, custom_id="objection_formal_abstain"
+    )
+    async def abstain_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_vote(interaction, 3, "弃权")

@@ -83,7 +83,8 @@ class APIScheduler:
                 request.future.set_result(result)
 
         except Exception as e:
-            # 如果发生异常，将异常设置到future中
+            # 如果发生异常，记录它，然后将其设置到future中
+            logger.exception(f"执行协程 (优先级: {request.priority}) 时发生错误: {e}")
             if not request.future.done():
                 request.future.set_exception(e)
         finally:

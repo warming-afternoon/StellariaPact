@@ -1,36 +1,51 @@
-
+import asyncio
 import logging
 from typing import Optional
 
-import discord
 from sqlalchemy.exc import IntegrityError
 
 from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
-from ....cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from ....models.Announcement import Announcement
-from ....models.Objection import Objection
-from ....models.Proposal import Proposal
 from ....share.enums.ObjectionStatus import ObjectionStatus
 from ....share.enums.ProposalStatus import ProposalStatus
 from ....share.StellariaPactBot import StellariaPactBot
 from ....share.UnitOfWork import UnitOfWork
 from ..dto.ConfirmationSessionDto import ConfirmationSessionDto
 from ..dto.ExecuteProposalResultDto import ExecuteProposalResultDto
-from ..dto.ObjectionInitiationDto import ObjectionInitiationDto
+from ..dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
 from ..dto.RaiseObjectionResultDto import RaiseObjectionResultDto
-from ..qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
-from ..qo.BuildFormalVoteEmbedQo import BuildFormalVoteEmbedQo
+from ..dto.VoteFinishedResultDto import VoteFinishedResultDto
 from ..qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from ..qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
-from ..qo.CreateObjectionQo import CreateObjectionQo
-from ..views.ModerationEmbedBuilder import ModerationEmbedBuilder
-from ..views.ObjectionFormalVoteView import ObjectionFormalVoteView
+from ..qo.CreateObjectionAndVoteSessionShellQo import (
+    CreateObjectionAndVoteSessionShellQo,
+)
+from ..qo.HandleSupportObjectionQo import HandleSupportObjectionQo
 
 logger = logging.getLogger(__name__)
 
 
 class ModerationLogic:
+    async def handle_objection_thread_creation(
+        self,
+        objection_id: int,
+        objection_thread_id: int,
+        original_proposal_thread_id: int,
+    ):
+        """
+        处理异议帖创建后的数据库更新和通知。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 1. 更新异议记录，关联新的帖子ID
+            await uow.moderation.update_objection_thread_id(objection_id, objection_thread_id)
+
+            # 2. 更新原提案状态为“冻结中”
+            await uow.moderation.update_proposal_status_by_thread_id(
+                original_proposal_thread_id, ProposalStatus.FROZEN
+            )
+            await uow.commit()
+
     """
     处理议事管理相关的业务流程。
     这一层负责编排 Service、分派事件、处理条件逻辑，
@@ -47,13 +62,11 @@ class ModerationLogic:
         reason: str,
     ) -> RaiseObjectionResultDto:
         """
-        处理发起异议的完整业务流程。
+        处理发起异议的第一阶段：创建数据库实体。
+        返回一个包含所有后续UI操作所需数据的DTO。
         """
-        event_dto: Optional[ObjectionInitiationDto] = None
-        is_first_objection = False
-        message: str = ""
-
         async with UnitOfWork(self.bot.db_handler) as uow:
+            # 验证提案
             proposal = await uow.moderation.get_proposal_by_thread_id(target_thread_id)
             if not proposal:
                 raise ValueError("未在指定帖子中找到关连的提案。")
@@ -64,12 +77,15 @@ class ModerationLogic:
             ]:
                 raise ValueError("只能对“讨论中”或“执行中”的提案发起异议。")
 
-            assert proposal.id is not None
-            existing_objections = await uow.moderation.get_objections_by_proposal_id(
-                proposal.id
-            )
+            proposal_id = proposal.id
+            proposal_title = proposal.title
+            assert proposal_id is not None
+
+            # 2. 判断是否为首次异议
+            existing_objections = await uow.moderation.get_objections_by_proposal_id(proposal_id)
             is_first_objection = not bool(existing_objections)
 
+            # 3. 准备数据并调用服务
             required_votes = 5 if is_first_objection else 10
             initial_status = (
                 ObjectionStatus.COLLECTING_VOTES
@@ -77,43 +93,33 @@ class ModerationLogic:
                 else ObjectionStatus.PENDING_REVIEW
             )
 
-            qo = CreateObjectionQo(
-                proposal_id=proposal.id,
+            qo = CreateObjectionAndVoteSessionShellQo(
+                proposal_id=proposal_id,
                 objector_id=user_id,
                 reason=reason,
                 required_votes=required_votes,
                 status=initial_status,
+                thread_id=target_thread_id,
+                is_anonymous=False,
+                is_realtime=True,
             )
-            objection = await uow.moderation.create_objection(qo)
-            await uow.flush([objection])  # Flush to get the auto-generated ID
+            creation_result_dto = await uow.moderation.create_objection_and_vote_session_shell(qo)
 
-            # 创建事件 DTO
-            event_dto = ObjectionInitiationDto(
-                objection_id=objection.id,  # type: ignore
-                objector_id=objection.objector_id,
-                objection_reason=objection.reason,
-                required_votes=objection.requiredVotes,
-                proposal_id=proposal.id,
-                proposal_title=proposal.title,
-                proposal_thread_id=proposal.discussionThreadId,
-            )
+            # 4. 提交事务
             await uow.commit()
 
-        # 分派事件
-        if event_dto:
-            if is_first_objection:
-                logger.debug(f"准备分派事件 'on_objection_creation_vote_initiation' for objection {event_dto.objection_id}")
-                self.bot.dispatch("on_objection_creation_vote_initiation", event_dto)
-                logger.debug(f"事件 'on_objection_creation_vote_initiation' 已分派。")
-                message = "首次异议已成功发起！将在公示频道开启异议产生票收集。"
-            else:
-                self.bot.dispatch("objection_admin_review_initiation", event_dto)
-                message = "异议已成功发起！由于该提案已有其他异议，本次异议需要先由管理员审核。"
-
-        return RaiseObjectionResultDto(
-            message=message,
-            is_first_objection=is_first_objection,
-        )
+            # 5. 准备返回给 Cog 层的 DTO
+            return RaiseObjectionResultDto(
+                is_first_objection=is_first_objection,
+                objection_id=creation_result_dto.objection_id,
+                vote_session_id=creation_result_dto.vote_session_id,
+                objector_id=user_id,
+                objection_reason=reason,
+                required_votes=required_votes,
+                proposal_id=proposal_id,
+                proposal_title=proposal_title,
+                proposal_thread_id=target_thread_id,
+            )
 
     async def handle_execute_proposal(
         self,
@@ -136,7 +142,7 @@ class ModerationLogic:
                     raise ValueError("未找到关连的提案。")
                 if proposal.status != ProposalStatus.DISCUSSION:
                     raise ValueError("提案当前状态不是“讨论中”，无法执行此操作。")
-                
+
                 assert proposal.id is not None
 
                 # 2. 创建确认会话
@@ -144,11 +150,11 @@ class ModerationLogic:
                 initiator_role_keys = [
                     key for key, val in config_roles.items() if int(val) in user_role_ids
                 ]
-                
+
                 create_session_qo = CreateConfirmationSessionQo(
                     context="proposal_execution",
                     target_id=proposal.id,
-                    message_id=message_id_placeholder, # 稍后更新
+                    message_id=message_id_placeholder,  # 稍后更新
                     required_roles=["councilModerator", "executionAuditor"],
                     initiator_id=user_id,
                     initiator_role_keys=initiator_role_keys,
@@ -168,7 +174,7 @@ class ModerationLogic:
         except IntegrityError:
             # 竞态条件：其他管理员同时操作
             raise ValueError("操作失败：此提案的确认流程刚刚已被另一位管理员发起。")
-        
+
         if not session_dto:
             # 正常情况下不应发生
             return None
@@ -185,170 +191,33 @@ class ModerationLogic:
         在一个独立的事务中更新确认会话的消息ID。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.moderation.update_confirmation_session_message_id(
-                session_id, message_id
-            )
+            await uow.moderation.update_confirmation_session_message_id(session_id, message_id)
             await uow.commit()
 
-    async def handle_objection_creation_vote_initiation(
-        self, event_dto: ObjectionInitiationDto, message_sender
-    ) -> None:
+    async def update_vote_session_message_id(self, session_id: int, message_id: int):
         """
-        处理“异议产生票”发起事件的完整业务流程。
-        包括构建UI、发送消息、创建数据库记录。
+        更新投票会话的消息ID
         """
-        try:
-            # 1. 获取必要信息
-            guild_id = self.bot.config.get("guild_id")
-            if not guild_id:
-                raise ValueError("未在 config.json 中配置 'guild_id'。")
-
-            objector = await self.bot.fetch_user(event_dto.objector_id)
-            objector_name = objector.display_name if objector else f"用户 {event_dto.objector_id}"
-            objector_avatar = objector.avatar.url if objector and objector.avatar else None
-
-            # 2. 构建 Embed
-            proposal_url = f"https://discord.com/channels/{guild_id}/{event_dto.proposal_thread_id}"
-            embed = discord.Embed(
-                title="异议产生票收集中",
-                description=f"对提案 **[{event_dto.proposal_title}]({proposal_url})** 的一项异议需要收集足够的支持票以进入正式投票阶段。",
-                color=discord.Color.yellow(),
-            )
-            embed.add_field(
-                name="异议理由", value=f">>> {event_dto.objection_reason}", inline=False
-            )
-            embed.add_field(
-                name="所需票数", value=str(event_dto.required_votes), inline=True
-            )
-            embed.add_field(
-                name="当前支持", value=f"0 / {event_dto.required_votes}", inline=True
-            )
-            embed.set_footer(text=f"由 {objector_name} 发起", icon_url=objector_avatar)
-
-            # 3. 调用传入的函数发送消息
-            # 注意：View 的构建被保留在 Cog 层，因为 View 自身可能需要 bot 实例和其它上下文
-            message_id = await message_sender(embed)
-            if not message_id:
-                logger.error("消息发送函数未能返回有效的 message_id。")
-                return
-
-            # 4. 创建数据库记录
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                qo = CreateVoteSessionQo(
-                    thread_id=event_dto.proposal_thread_id,
-                    objection_id=event_dto.objection_id,
-                    context_message_id=message_id,
-                    realtime=True,
-                    anonymous=False,
-                )
-                await uow.voting.create_vote_session(qo)
-                await uow.commit()
-
-            logger.info(f"已为异议 {event_dto.objection_id} 成功发起产生票并创建了投票会话。")
-
-        except Exception as e:
-            logger.exception(f"为异议 {event_dto.objection_id} 发起产生票时发生错误: {e}")
-
-    async def handle_objection_admin_review_initiation(
-        self, event_dto: ObjectionInitiationDto
-    ) -> BuildAdminReviewEmbedQo:
-        """
-        处理非首次异议的管理员审核发起事件。
-        """
-        guild_id = self.bot.config.get("guild_id")
-        if not guild_id:
-            # 在这种情况下，抛出异常比记录错误更好，因为调用方需要知道操作失败了
-            raise ValueError("未在 config.json 中配置 'guild_id'。")
-
-        return BuildAdminReviewEmbedQo(
-            objection_id=event_dto.objection_id,
-            objector_id=event_dto.objector_id,
-            objection_reason=event_dto.objection_reason,
-            proposal_id=event_dto.proposal_id,
-            proposal_title=event_dto.proposal_title,
-            proposal_thread_id=event_dto.proposal_thread_id,
-            guild_id=int(guild_id),
-        )
-
-    async def handle_objection_formal_vote_initiation(
-        self, objection: Objection, proposal: Proposal
-    ):
-        """
-        处理正式异议投票发起事件的业务逻辑。
-        """
-        channel_id = self.bot.config.get("channels", {}).get("objection_publicity")
-        if not channel_id:
-            logger.error("未在 config.json 中配置 'objection_publicity' 频道ID。")
-            return
-
-        channel = self.bot.get_channel(int(channel_id))
-        if not isinstance(channel, discord.TextChannel):
-            logger.error(f"无法找到ID为 {channel_id} 的文本频道，或类型不正确。")
-            return
-
-        if not self.bot.user:
-            logger.error("机器人尚未登录，无法创建投票。")
-            return
-
-        # 构建投票Embed
-        guild_id = self.bot.config.get("guild_id")
-        if not guild_id:
-            logger.error("未在 config.json 中配置 'guild_id'。")
-            return
-        assert objection.id is not None, "Objection ID cannot be None for formal vote embed"
-        qo = BuildFormalVoteEmbedQo(
-            proposal_title=proposal.title,
-            proposal_thread_url=f"https://discord.com/channels/{guild_id}/{proposal.discussionThreadId}",
-            objection_id=objection.id,
-            objector_id=objection.objector_id,
-            objection_reason=objection.reason,
-        )
-        embed = ModerationEmbedBuilder.build_formal_vote_embed(qo, self.bot.user)
-
-        # 创建投票视图
-        assert objection.id is not None
-        view = ObjectionFormalVoteView(self.bot, objection.id)
-
-        # 发送消息并创建投票会话
-        try:
-            message = await self.bot.api_scheduler.submit(
-                channel.send(embed=embed, view=view), priority=5
-            )
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                assert objection.id is not None, "Objection ID cannot be None here"
-                # 注意：这里的 thread_id 仍然是提案的帖子ID，用于上下文关联
-                vote_qo = CreateVoteSessionQo(
-                    thread_id=proposal.discussionThreadId,
-                    objection_id=objection.id,
-                    context_message_id=message.id,
-                    realtime=True,
-                    anonymous=False,
-                    # end_time 可以根据需要设置，例如72小时后
-                )
-                await uow.voting.create_vote_session(vote_qo)
-                await uow.commit()
-            logger.info(f"已为异议 {objection.id} 在频道 {channel.id} 中创建了正式投票面板。")
-        except Exception as e:
-            logger.exception(f"为异议 {objection.id} 创建正式投票面板时发生错误: {e}")
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.moderation.update_vote_session_message_id(session_id, message_id)
+            await uow.commit()
 
     async def handle_objection_vote_finished(
         self, session_dto: VoteSessionDto, result_dto: VoteStatusDto
-    ):
+    ) -> Optional[VoteFinishedResultDto]:
         """
         处理异议投票结束事件的业务逻辑。
         """
         objection_id = session_dto.objectionId
         if objection_id is None:
             logger.warning(f"投票会话 {session_dto.id} 结束，但没有关联的异议ID。")
-            return
+            return None
 
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 1. 判断投票结果
                 is_passed = result_dto.approveVotes > result_dto.rejectVotes
-                new_status = (
-                    ObjectionStatus.PASSED if is_passed else ObjectionStatus.REJECTED
-                )
+                new_status = ObjectionStatus.PASSED if is_passed else ObjectionStatus.REJECTED
 
                 # 2. 更新异议状态
                 await uow.moderation.update_objection_status(objection_id, new_status)
@@ -360,30 +229,17 @@ class ModerationLogic:
                 )
                 await uow.commit()
 
-            # 3. 发送通知
+            # 准备返回给 Cog 层的数据
             if not objection or not proposal:
                 logger.error(f"无法为已结束的异议 {objection_id} 找到完整的上下文信息。")
-                return
+                return None
 
-            publicity_channel_id = self.bot.config.get("channels", {}).get(
-                "objection_publicity"
-            )
-            publicity_channel = (
-                self.bot.get_channel(int(publicity_channel_id))
-                if publicity_channel_id
-                else None
-            )
-
-            if not self.bot.user:
-                logger.error("机器人尚未登录，无法创建结果通知。")
-                return
-
-            assert objection.id is not None, "Objection ID cannot be None for result embed"
             guild_id = self.bot.config.get("guild_id")
             if not guild_id:
                 logger.error("未在 config.json 中配置 'guild_id'。")
-                return
-                
+                return None
+            assert objection.id is not None, "Objection ID cannot be None for result embed"
+
             result_qo = BuildVoteResultEmbedQo(
                 proposal_title=proposal.title,
                 proposal_thread_url=f"https://discord.com/channels/{guild_id}/{proposal.discussionThreadId}",
@@ -394,37 +250,21 @@ class ModerationLogic:
                 reject_votes=result_dto.rejectVotes,
                 total_votes=result_dto.totalVotes,
             )
-            embed = ModerationEmbedBuilder.build_vote_result_embed(
-                result_qo, self.bot.user
-            )
 
-            if isinstance(publicity_channel, discord.TextChannel) and session_dto.contextMessageId:
-                try:
-                    original_message = await publicity_channel.fetch_message(
-                        session_dto.contextMessageId
-                    )
-                    await self.bot.api_scheduler.submit(
-                        original_message.edit(embed=embed, view=None), priority=5
-                    )
-                except discord.NotFound:
-                    logger.warning(
-                        f"无法找到原始投票消息 {session_dto.contextMessageId}，将发送新消息。"
-                    )
-                    await self.bot.api_scheduler.submit(
-                        publicity_channel.send(embed=embed), priority=5
-                    )
-                except Exception as e:
-                    logger.error(f"更新原始投票消息时出错: {e}", exc_info=True)
-                    await self.bot.api_scheduler.submit(
-                        publicity_channel.send(embed=embed), priority=5
-                    )
-            elif isinstance(publicity_channel, discord.TextChannel):
-                await self.bot.api_scheduler.submit(
-                    publicity_channel.send(embed=embed), priority=5
-                )
+            publicity_channel_id_str = self.bot.config.get("channels", {}).get(
+                "objection_publicity"
+            )
+            channel_id = int(publicity_channel_id_str) if publicity_channel_id_str else None
+
+            return VoteFinishedResultDto(
+                embed_qo=result_qo,
+                channel_id=channel_id,
+                message_id=session_dto.contextMessageId,
+            )
 
         except Exception as e:
             logger.exception(f"处理异议投票结束事件 (异议ID: {objection_id}) 时发生错误: {e}")
+            return None
 
     async def handle_announcement_finished(self, announcement: Announcement):
         """
@@ -445,4 +285,127 @@ class ModerationLogic:
             logger.error(
                 f"处理公示结束事件时发生错误 (帖子ID: {announcement.discussionThreadId}): {e}",
                 exc_info=True,
+            )
+
+    async def handle_support_objection(
+        self, qo: HandleSupportObjectionQo
+    ) -> HandleSupportObjectionResultDto:
+        """
+        处理支持异议的业务逻辑，包括数据库操作和状态检查。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # --- 读取和验证 ---
+            vote_session = await uow.voting.get_vote_session_by_context_message_id(qo.message_id)
+            if not vote_session or not vote_session.id or not vote_session.objectionId:
+                raise ValueError("错误：找不到对应的投票会话或会话未关联任何异议。")
+
+            objection_id = vote_session.objectionId
+
+            # 并行获取数据
+            (
+                objection,
+                existing_vote,
+                votes_count_before_vote,
+            ) = await asyncio.gather(
+                uow.moderation.get_objection_by_id(objection_id),
+                uow.voting.get_user_vote_by_session_id(
+                    user_id=qo.user_id, session_id=vote_session.id
+                ),
+                uow.voting.get_vote_count_by_session_id(vote_session.id),
+            )
+
+            if not objection:
+                raise ValueError("错误：找不到相关的异议。")
+
+            if existing_vote:
+                return HandleSupportObjectionResultDto(
+                    votes_count=votes_count_before_vote,
+                    required_votes=objection.requiredVotes,
+                    is_goal_reached=(votes_count_before_vote >= objection.requiredVotes),
+                    is_vote_recorded=False,
+                )
+
+            # ---  写入操作 ---
+            await uow.voting.create_vote(session_id=vote_session.id, user_id=qo.user_id, choice=1)
+
+            # --- 进行业务判断 ---
+            votes_count = votes_count_before_vote + 1
+            is_goal_reached = votes_count >= objection.requiredVotes
+
+            result_dto_data = {
+                "votes_count": votes_count,
+                "required_votes": objection.requiredVotes,
+                "is_goal_reached": is_goal_reached,
+                "is_vote_recorded": True,
+            }
+
+            if is_goal_reached:
+                await uow.moderation.update_objection_status(objection_id, ObjectionStatus.VOTING)
+                proposal = await uow.moderation.get_proposal_by_id(objection.proposalId)
+                if not proposal:
+                    raise ValueError(
+                        f"在处理异议 {objection_id} 时找不到关联的提案 {objection.proposalId}"
+                    )
+
+                # 填充用于事件分派的数据
+                result_dto_data["objection_id"] = objection.id
+                result_dto_data["proposal_id"] = proposal.id
+                result_dto_data["proposal_title"] = proposal.title
+                result_dto_data["proposal_discussion_thread_id"] = proposal.discussionThreadId
+                result_dto_data["objector_id"] = objection.objector_id
+                result_dto_data["objection_reason"] = objection.reason
+
+                dispatch_dto = HandleSupportObjectionResultDto.model_validate(result_dto_data)
+
+            # --- 4. 提交和返回 ---
+            await uow.commit()
+
+            # 在事务成功后分派事件
+            if is_goal_reached:
+                self.bot.dispatch("objection_goal_reached", dispatch_dto)
+
+            return HandleSupportObjectionResultDto.model_validate(result_dto_data)
+
+    async def handle_withdraw_support(
+        self, qo: HandleSupportObjectionQo
+    ) -> HandleSupportObjectionResultDto:
+        """
+        处理撤回支持异议的业务逻辑。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # --- 1. 读取和验证 ---
+            vote_session = await uow.voting.get_vote_session_by_context_message_id(qo.message_id)
+            if not vote_session or not vote_session.id or not vote_session.objectionId:
+                raise ValueError("错误：找不到对应的投票会话或会话未关联任何异议。")
+
+            objection = await uow.moderation.get_objection_by_id(vote_session.objectionId)
+            if not objection:
+                raise ValueError(f"错误：找不到ID为 {vote_session.objectionId} 的异议。")
+
+            required_votes = objection.requiredVotes
+
+            # --- 2. 尝试删除投票 ---
+            await uow.voting.delete_user_vote_by_message_id(
+                user_id=qo.user_id, message_id=qo.message_id
+            )
+
+            # --- 3. 获取最新票数并进行业务判断 ---
+            votes_count = await uow.voting.get_vote_count_by_session_id(vote_session.id)
+            is_goal_reached = votes_count >= required_votes
+
+            # 如果之前是达到目标的，现在没达到，需要更新异议状态
+            if objection.status == ObjectionStatus.VOTING and not is_goal_reached:
+                assert objection.id is not None
+                await uow.moderation.update_objection_status(
+                    objection.id, ObjectionStatus.COLLECTING_VOTES
+                )
+
+            # --- 4. 提交和返回 ---
+            await uow.commit()
+
+            return HandleSupportObjectionResultDto(
+                votes_count=votes_count,
+                required_votes=required_votes,
+                is_goal_reached=is_goal_reached,
+                is_vote_recorded=False,  # 撤回后，投票记录必定不存在
             )

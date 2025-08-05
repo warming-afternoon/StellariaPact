@@ -12,32 +12,15 @@ from StellariaPact.share.ApiScheduler import APIScheduler
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.DatabaseHandler import get_db_handler, initialize_db_handler
 from StellariaPact.share.HttpClient import HttpClient
+from StellariaPact.share.LoggingConfigurator import LoggingConfigurator
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
 
 # --- .env 和 日志配置 ---
 load_dotenv()
-
-# 配置根日志记录器
-log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
-log_level = getattr(logging, log_level_str, logging.INFO)
-formatter = logging.Formatter("%(asctime)s:%(levelname)s:%(name)s: %(message)s")
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(formatter)
-root_logger = logging.getLogger()
-root_logger.setLevel(log_level)
-if root_logger.hasHandlers():
-    root_logger.handlers.clear()
-root_logger.addHandler(stream_handler)
-
-# --- SQLAlchemy 日志配置 ---
-# 获取 sqlalchemy.engine 日志记录器
-sql_logger = logging.getLogger("sqlalchemy.engine")
-# 设置其日志级别，使其与根日志级别一致
-sql_logger.setLevel(log_level)
-# 禁止它将日志向上传播到根日志记录器，以避免重复记录
-sql_logger.propagate = False
-# --- SQLAlchemy 日志配置结束 ---
+log_level = os.getenv("LOG_LEVEL", "INFO")
+configurator = LoggingConfigurator(rootLogLevel=log_level)
+configurator.configure()
 
 logger = logging.getLogger("stellaria_pact")
 # --- 日志配置结束 ---
@@ -70,6 +53,22 @@ def main():
         # logger.info("数据模型加载完成。")
         bot.api_scheduler.start()
 
+        # 初始化 DatabaseHandler 并将其分配给 Bot
+        logger.info("正在初始化 DatabaseHandler...")
+        initialize_db_handler()
+        bot.db_handler = get_db_handler()
+        logger.info("DatabaseHandler 初始化并分配给 Bot。")
+
+        # 使用 Bot 上的句柄初始化数据库表
+        logger.info("正在检查数据库表...")
+        try:
+            await bot.db_handler.init_db()
+            logger.info("数据库表处理成功。")
+        except Exception as e:
+            logger.exception(f"数据库表处理失败: {e}")
+            # 如果数据库初始化失败，可能不应该继续，这里可以选择直接返回或抛出异常
+            return
+
         logger.info("正在加载所有 Cogs...")
         cogs_path = Path(__file__).parent / "cogs"
         cog_load_tasks = []
@@ -92,20 +91,6 @@ def main():
                 else:
                     logger.info(f"成功加载 Cog: {name}")
         logger.info("所有 Cogs 加载完成。")
-
-        # 1. 初始化 DatabaseHandler 并将其分配给 Bot
-        # logger.info("正在初始化 DatabaseHandler...")
-        initialize_db_handler()
-        bot.db_handler = get_db_handler()
-        # logger.info("DatabaseHandler 初始化并分配给 Bot。")
-
-        # 2. 使用 Bot 上的句柄初始化数据库
-        logger.info("正在初始化数据库...")
-        try:
-            await bot.db_handler.init_db()
-            logger.info("数据库初始化成功。")
-        except Exception as e:
-            logger.exception(f"数据库初始化失败: {e}")
 
         logger.info("正在同步命令...")
         await bot.api_scheduler.submit(bot.tree.sync(), priority=5)

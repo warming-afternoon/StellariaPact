@@ -10,17 +10,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from StellariaPact.cogs.Voting.dto.AdjustVoteTimeDto import AdjustVoteTimeDto
 from StellariaPact.cogs.Voting.dto.UserActivityDto import UserActivityDto
 from StellariaPact.cogs.Voting.dto.UserVoteDto import UserVoteDto
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import (VoteDetailDto,
-                                                         VoterInfo)
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
 from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
-    CreateVoteSessionQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.qo.GetVoteDetailsQo import GetVoteDetailsQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import \
-    UpdateUserActivityQo
+from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
@@ -163,10 +160,29 @@ class VotingService:
 
     async def delete_user_vote(self, user_id: int, thread_id: int) -> bool:
         """
-        删除用户的投票记录 (弃票)。
+        根据帖子频道ID删除用户的投票记录 (弃票)。
         """
         vote_session = await self._get_vote_session_by_thread_id(thread_id)
         if not vote_session:
+            return False
+
+        statement = select(UserVote).where(
+            UserVote.userId == user_id, UserVote.sessionId == vote_session.id
+        )
+        result = await self.session.exec(statement)
+        existing_vote = result.one_or_none()
+
+        if existing_vote:
+            await self.session.delete(existing_vote)
+            return True
+        return False
+
+    async def delete_user_vote_by_message_id(self, user_id: int, message_id: int) -> bool:
+        """
+        根据消息ID删除用户的投票记录。
+        """
+        vote_session = await self.get_vote_session_by_context_message_id(message_id)
+        if not vote_session or not vote_session.id:
             return False
 
         statement = select(UserVote).where(
@@ -197,20 +213,19 @@ class VotingService:
         vote_record = await self.session.get(UserVote, vote_id)
         if not vote_record:
             return None
-        
+
         vote_record.choice = choice
         await self.session.flush()
         return UserVoteDto.model_validate(vote_record)
 
     async def get_vote_count_by_session_id(self, session_id: int) -> int:
         """
-        获取特定投票会话的总票数。
+        获取特定投票会话的总票数
         """
         result = await self.session.exec(
             select(func.count(UserVote.id)).where(UserVote.sessionId == session_id)  # type: ignore
         )
-        # 使用 scalar_one_or_none() 来安全地获取结果
-        count = result.scalar_one_or_none()  # type: ignore
+        count = result.one_or_none()
         return count if count is not None else 0
 
     async def get_expired_sessions(self) -> Sequence[VoteSessionDto]:

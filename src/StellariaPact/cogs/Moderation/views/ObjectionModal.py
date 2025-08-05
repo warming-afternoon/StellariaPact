@@ -21,7 +21,6 @@ class ObjectionModal(discord.ui.Modal, title="发起异议"):
         style=discord.TextStyle.short,
     )
 
-
     def __init__(self, bot: StellariaPactBot):
         super().__init__()
         self.bot = bot

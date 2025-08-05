@@ -6,12 +6,11 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Moderation.ModerationService import \
-        ModerationService
-    from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
-        AnnouncementMonitorService
-    from StellariaPact.cogs.Notification.AnnouncementService import \
-        AnnouncementService
+    from StellariaPact.cogs.Moderation.ModerationService import ModerationService
+    from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
+        AnnouncementMonitorService,
+    )
+    from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
     from StellariaPact.cogs.Voting.VotingService import VotingService
     from StellariaPact.share.DatabaseHandler import DatabaseHandler
 
@@ -55,23 +54,25 @@ class UnitOfWork:
         """
         在退出上下文时，根据是否发生异常来提交或回滚事务，并最终关闭会话。
         """
-        if self._session:
-            try:
-                if exc_type:
-                    # 如果发生异常且事务尚未手动处理，则回滚
-                    if not self._committed:
-                        logger.warning(
-                            f"UnitOfWork 因异常退出，正在回滚事务: {exc_type.__name__}: {exc_val}"
-                        )
-                        await self.rollback()
-                else:
-                    # 如果 with 块正常完成且未手动提交，则自动提交
-                    if not self._committed:
-                        await self.commit()
-            finally:
-                # 确保会话总是被关闭
-                await self._session.close()
-                self._session = None
+        if not self._session:
+            return
+
+        try:
+            if exc_type:
+                # 如果发生异常，记录并回滚
+                if not self._committed:
+                    logger.warning(
+                        f"UnitOfWork 检测到异常，正在回滚事务: {exc_type.__name__}: {exc_val}"
+                    )
+                    await self.rollback()
+            else:
+                # 如果没有异常且未手动提交，提交
+                if not self._committed:
+                    await self.commit()
+        finally:
+            # 确保会话总是被关闭
+            await self._session.close()
+            self._session = None
 
     @property
     def session(self) -> AsyncSession:
@@ -113,8 +114,7 @@ class UnitOfWork:
     def announcements(self) -> "AnnouncementService":
         """获取公示服务实例。"""
         if not hasattr(self, "_announcement_service"):
-            from StellariaPact.cogs.Notification.AnnouncementService import \
-                AnnouncementService
+            from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
 
             self._announcement_service = AnnouncementService(self.session)
         return self._announcement_service
@@ -123,8 +123,9 @@ class UnitOfWork:
     def announcement_monitors(self) -> "AnnouncementMonitorService":
         """获取公示监控服务实例。"""
         if not hasattr(self, "_announcement_monitor_service"):
-            from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
-                AnnouncementMonitorService
+            from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
+                AnnouncementMonitorService,
+            )
 
             self._announcement_monitor_service = AnnouncementMonitorService(self.session)
         return self._announcement_monitor_service
@@ -133,8 +134,7 @@ class UnitOfWork:
     def moderation(self) -> "ModerationService":
         """获取议事管理服务实例。"""
         if not hasattr(self, "_moderation_service"):
-            from StellariaPact.cogs.Moderation.ModerationService import \
-                ModerationService
+            from StellariaPact.cogs.Moderation.ModerationService import ModerationService
 
             self._moderation_service = ModerationService(self.session)
         return self._moderation_service

@@ -3,21 +3,29 @@ from typing import Optional, Sequence
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import \
-    ConfirmationSessionDto
-from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import \
-    AbandonProposalQo
-from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import \
-    CreateConfirmationSessionQo
-from StellariaPact.cogs.Moderation.qo.CreateObjectionQo import \
-    CreateObjectionQo
+from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import (
+    ConfirmationSessionDto,
+)
+from StellariaPact.cogs.Moderation.dto.ObjectionCreationResultDto import (
+    ObjectionCreationResultDto,
+)
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
+from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
+from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import (
+    CreateConfirmationSessionQo,
+)
+from StellariaPact.cogs.Moderation.qo.CreateObjectionAndVoteSessionShellQo import (
+    CreateObjectionAndVoteSessionShellQo,
+)
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
 from StellariaPact.models.Objection import Objection
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.UserActivity import UserActivity
+from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.share.enums.ConfirmationStatus import ConfirmationStatus
 from StellariaPact.share.enums.ProposalStatus import ProposalStatus
 
@@ -165,10 +173,47 @@ class ModerationService:
         """
         return await self.session.get(Objection, objection_id)
 
-    async def create_objection(self, qo: CreateObjectionQo) -> Objection:
+    async def get_objection_by_thread_id(
+        self, thread_id: int
+    ) -> Optional[ObjectionDetailsDto]:
         """
-        创建一个新的异议。
+        根据异议帖子ID获取异议的详细信息，包括其关联的提案。
+        使用预加载（eager loading）来避免懒加载问题。
         """
+        statement = (
+            select(Objection)
+            .where(Objection.objectionThreadId == thread_id)
+            .options(selectinload(Objection.proposal))  # type: ignore
+        )
+        result = await self.session.exec(statement)
+        objection = result.one_or_none()
+
+        if not objection or not objection.proposal:
+            return None
+
+        # 向类型检查器断言 ID 的存在，因为它们是从数据库加载的
+        assert objection.id is not None, "Objection ID should not be None"
+        assert (
+            objection.proposal.id is not None
+        ), "Associated Proposal ID should not be None"
+
+        # 将模型数据打包到 DTO 中，以实现层间解耦
+        return ObjectionDetailsDto(
+            objection_id=objection.id,
+            objection_reason=objection.reason,
+            objector_id=objection.objector_id,
+            proposal_id=objection.proposal.id,
+            proposal_title=objection.proposal.title,
+        )
+
+    async def create_objection_and_vote_session_shell(
+        self, qo: CreateObjectionAndVoteSessionShellQo
+    ) -> ObjectionCreationResultDto:
+        """
+        原子性地创建一个新的异议和一个关联的、但没有消息ID的“空壳”投票会话。
+        这是两阶段提交的第一步。返回一个只包含ID的DTO。
+        """
+        # 创建异议
         new_objection = Objection(
             proposalId=qo.proposal_id,
             objector_id=qo.objector_id,
@@ -178,8 +223,36 @@ class ModerationService:
         )
         self.session.add(new_objection)
         await self.session.flush()
-        await self.session.refresh(new_objection)
-        return new_objection
+
+        # 创建投票会话空壳
+        assert new_objection.id is not None, "Objection ID is None after flush"
+        new_vote_session = VoteSession(
+            contextThreadId=qo.thread_id,
+            objectionId=new_objection.id,
+            contextMessageId=None,  # 设置为空，等待后续更新
+            anonymousFlag=qo.is_anonymous,
+            realtimeFlag=qo.is_realtime,
+        )
+        self.session.add(new_vote_session)
+        await self.session.flush()
+        assert new_vote_session.id is not None, "VoteSession ID is None after flush"
+
+        return ObjectionCreationResultDto(
+            objection_id=new_objection.id, vote_session_id=new_vote_session.id
+        )
+
+    async def update_vote_session_message_id(self, session_id: int, message_id: int):
+        """
+        在一个独立的事务中更新投票会话的消息ID。
+        这是两阶段提交的第二步。
+        """
+        statement = (
+            update(VoteSession)
+            .where(VoteSession.id == session_id)  # type: ignore
+            .values(contextMessageId=message_id)
+            .returning(VoteSession.id)  # type: ignore
+        )
+        await self.session.exec(statement)
 
     async def update_objection_status(self, objection_id: int, status: int) -> Optional[Objection]:
         """
@@ -195,6 +268,24 @@ class ModerationService:
         await self.session.flush()
         await self.session.refresh(objection)
         logger.debug(f"已将异议 {objection_id} 的状态更新为 {status}。")
+        return objection
+
+    async def update_objection_thread_id(
+        self, objection_id: int, objection_thread_id: int
+    ) -> Optional[Objection]:
+        """
+        更新异议的讨论帖子ID。
+        """
+        objection = await self.get_objection_by_id(objection_id)
+        if not objection:
+            logger.warning(f"尝试更新异议帖子ID时，未找到ID为 {objection_id} 的异议。")
+            return None
+
+        objection.objectionThreadId = objection_thread_id
+        self.session.add(objection)
+        await self.session.flush()
+        await self.session.refresh(objection)
+        logger.debug(f"已将异议 {objection_id} 的帖子ID更新为 {objection_thread_id}。")
         return objection
 
     async def update_objection_review_thread_id(

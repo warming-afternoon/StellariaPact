@@ -53,18 +53,23 @@ class ObjectionAdminReviewView(discord.ui.View):
         for item in self.children:
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
-        
+
         # 更新原始消息
         if interaction.message:
             await self.bot.api_scheduler.submit(
                 interaction.message.edit(
-                    content=f"✅ 操作完成：此异议已被 <@{interaction.user.id}> **批准**，将在公示频道开启异议产生票。",
+                    content=(
+                        f"✅ 操作完成：此异议已被 <@{interaction.user.id}> **批准**，"
+                        "将在公示频道开启异议产生票。"
+                    ),
                     view=self,
                 ),
                 2,
             )
 
-        logger.info(f"异议 {self.objection_id} 已被管理员 {interaction.user.id} 批准，进入异议产生票阶段。")
+        logger.info(
+            f"异议 {self.objection_id} 已被管理员 {interaction.user.id} 批准，进入异议产生票阶段。"
+        )
         await self.bot.api_scheduler.submit(
             interaction.followup.send("操作成功，异议已批准。", ephemeral=True), 1
         )
@@ -97,7 +102,11 @@ class ObjectionAdminReviewView(discord.ui.View):
         # 更新原始消息
         if interaction.message:
             await self.bot.api_scheduler.submit(
-                interaction.message.edit(content=f"❌ 操作完成：此异议已被 <@{interaction.user.id}> **驳回**。", view=self), 2
+                interaction.message.edit(
+                    content=f"❌ 操作完成：此异议已被 <@{interaction.user.id}> **驳回**。",
+                    view=self,
+                ),
+                2,
             )
 
         logger.info(f"异议 {self.objection_id} 已被管理员 {interaction.user.id} 驳回。")

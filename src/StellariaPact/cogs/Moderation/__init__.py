@@ -17,4 +17,4 @@ async def setup(bot: StellariaPactBot):
 
     cogs_to_load = [Moderation(bot)]
     await asyncio.gather(*[bot.add_cog(cog) for cog in cogs_to_load])
-    # logger.info(f"成功为 Moderation 模块加载了 {len(cogs_to_load)} 个 Cogs。")
+    logger.info(f"成功为 Moderation 模块加载了 {len(cogs_to_load)} 个 Cogs。")

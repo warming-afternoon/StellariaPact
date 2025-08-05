@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from typing import Dict
-from zoneinfo import ZoneInfo
 
 import discord
+from zoneinfo import ZoneInfo
 
 from ....share.enums.ConfirmationStatus import ConfirmationStatus
 from ..qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
@@ -112,7 +112,11 @@ class ModerationEmbedBuilder:
         """
         embed = discord.Embed(
             title="新的异议需要审核",
-            description=f"针对提案 **[{qo.proposal_title}](https://discord.com/channels/{qo.guild_id}/{qo.proposal_thread_id})** 的一项新异议需要管理员审核。",
+            description=(
+                f"针对提案 **[{qo.proposal_title}]"
+                f"(https://discord.com/channels/{qo.guild_id}/{qo.proposal_thread_id})** "
+                "的一项新异议需要管理员审核。"
+            ),
             color=discord.Color.orange(),
         )
         embed.add_field(name="异议ID", value=str(qo.objection_id), inline=True)
@@ -130,7 +134,10 @@ class ModerationEmbedBuilder:
         """
         embed = discord.Embed(
             title=f"异议投票：{qo.proposal_title}",
-            description=f"对提案 [**{qo.proposal_title}**]({qo.proposal_thread_url}) 的一项异议已进入正式投票阶段。",
+            description=(
+                f"对提案 [**{qo.proposal_title}**]({qo.proposal_thread_url}) "
+                "的一项异议已进入正式投票阶段。"
+            ),
             color=discord.Color.blue(),
         )
         embed.add_field(name="异议 ID", value=str(qo.objection_id), inline=True)
@@ -141,7 +148,9 @@ class ModerationEmbedBuilder:
             value="请所有议事成员就此异议进行投票。点击下方按钮表达您的意见。",
             inline=False,
         )
-        embed.set_footer(text=f"由 {bot_user.display_name} 提供支持", icon_url=bot_user.display_avatar.url)
+        embed.set_footer(
+            text=f"由 {bot_user.display_name} 提供支持", icon_url=bot_user.display_avatar.url
+        )
         embed.timestamp = datetime.now(timezone.utc)
         return embed
 
@@ -156,7 +165,10 @@ class ModerationEmbedBuilder:
         result_color = discord.Color.green() if qo.is_passed else discord.Color.red()
         embed = discord.Embed(
             title=f"异议投票结果：{result_text}",
-            description=f"关于提案 **[{qo.proposal_title}]({qo.proposal_thread_url})** 的异议（ID: {qo.objection_id}）投票已结束。",
+            description=(
+                f"关于提案 **[{qo.proposal_title}]({qo.proposal_thread_url})** "
+                f"的异议（ID: {qo.objection_id}）投票已结束。"
+            ),
             color=result_color,
         )
         embed.add_field(name="赞成票", value=str(qo.approve_votes), inline=True)
