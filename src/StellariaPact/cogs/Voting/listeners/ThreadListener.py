@@ -94,9 +94,7 @@ class ThreadListener(commands.Cog):
 
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                objection_dto = await uow.moderation.get_objection_by_thread_id(
-                    thread.id
-                )
+                objection_dto = await uow.moderation.get_objection_by_thread_id(thread.id)
 
             if objection_dto:
                 await self._handle_objection_thread(thread, objection_dto)

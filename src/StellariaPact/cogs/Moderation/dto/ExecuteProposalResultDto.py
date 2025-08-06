@@ -1,11 +1,9 @@
-from dataclasses import dataclass
 from typing import Dict
 
 from ....share.BaseDto import BaseDto
 from .ConfirmationSessionDto import ConfirmationSessionDto
 
 
-@dataclass
 class ExecuteProposalResultDto(BaseDto):
     """
     用于封装 handle_execute_proposal 逻辑层方法成功执行后的结果。

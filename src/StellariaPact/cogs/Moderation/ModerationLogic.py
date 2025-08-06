@@ -1,27 +1,24 @@
-import asyncio
 import logging
 from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
 
-from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
-from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
-from ....models.Announcement import Announcement
-from ....share.enums.ObjectionStatus import ObjectionStatus
-from ....share.enums.ProposalStatus import ProposalStatus
-from ....share.StellariaPactBot import StellariaPactBot
-from ....share.UnitOfWork import UnitOfWork
-from ..dto.ConfirmationSessionDto import ConfirmationSessionDto
-from ..dto.ExecuteProposalResultDto import ExecuteProposalResultDto
-from ..dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
-from ..dto.RaiseObjectionResultDto import RaiseObjectionResultDto
-from ..dto.VoteFinishedResultDto import VoteFinishedResultDto
-from ..qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
-from ..qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
-from ..qo.CreateObjectionAndVoteSessionShellQo import (
-    CreateObjectionAndVoteSessionShellQo,
-)
-from ..qo.HandleSupportObjectionQo import HandleSupportObjectionQo
+from ...models.Announcement import Announcement
+from ...share.enums.ObjectionStatus import ObjectionStatus
+from ...share.enums.ProposalStatus import ProposalStatus
+from ...share.StellariaPactBot import StellariaPactBot
+from ...share.UnitOfWork import UnitOfWork
+from ..Voting.dto.VoteSessionDto import VoteSessionDto
+from ..Voting.dto.VoteStatusDto import VoteStatusDto
+from .dto.ConfirmationSessionDto import ConfirmationSessionDto
+from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
+from .dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
+from .dto.RaiseObjectionResultDto import RaiseObjectionResultDto
+from .dto.VoteFinishedResultDto import VoteFinishedResultDto
+from .qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
+from .qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
+from .qo.CreateObjectionAndVoteSessionShellQo import CreateObjectionAndVoteSessionShellQo
+from .qo.ObjectionSupportQo import ObjectionSupportQo
 
 logger = logging.getLogger(__name__)
 
@@ -288,124 +285,59 @@ class ModerationLogic:
             )
 
     async def handle_support_objection(
-        self, qo: HandleSupportObjectionQo
+        self, qo: ObjectionSupportQo
     ) -> HandleSupportObjectionResultDto:
         """
-        处理支持异议的业务逻辑，包括数据库操作和状态检查。
+        处理对异议的支持操作。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            # --- 读取和验证 ---
-            vote_session = await uow.voting.get_vote_session_by_context_message_id(qo.message_id)
-            if not vote_session or not vote_session.id or not vote_session.objectionId:
-                raise ValueError("错误：找不到对应的投票会话或会话未关联任何异议。")
+            result_dto = await uow.moderation.objection_support(qo)
 
-            objection_id = vote_session.objectionId
-
-            # 并行获取数据
-            (
-                objection,
-                existing_vote,
-                votes_count_before_vote,
-            ) = await asyncio.gather(
-                uow.moderation.get_objection_by_id(objection_id),
-                uow.voting.get_user_vote_by_session_id(
-                    user_id=qo.user_id, session_id=vote_session.id
-                ),
-                uow.voting.get_vote_count_by_session_id(vote_session.id),
+            # 根据服务层的返回结果，处理业务逻辑（状态变更、事件分发）
+            goal_reached_first_time = (
+                result_dto.user_action_result == "supported"
+                and result_dto.objection_status != ObjectionStatus.VOTING
+                and result_dto.is_goal_reached
             )
 
-            if not objection:
-                raise ValueError("错误：找不到相关的异议。")
-
-            if existing_vote:
-                return HandleSupportObjectionResultDto(
-                    votes_count=votes_count_before_vote,
-                    required_votes=objection.requiredVotes,
-                    is_goal_reached=(votes_count_before_vote >= objection.requiredVotes),
-                    is_vote_recorded=False,
+            if goal_reached_first_time:
+                # 状态变更：收集票数 -> 正式投票
+                await uow.moderation.update_objection_status(
+                    result_dto.objection_id, ObjectionStatus.VOTING
                 )
+                # 事件分发
+                self.bot.dispatch("objection_goal_reached", result_dto)
 
-            # ---  写入操作 ---
-            await uow.voting.create_vote(session_id=vote_session.id, user_id=qo.user_id, choice=1)
-
-            # --- 进行业务判断 ---
-            votes_count = votes_count_before_vote + 1
-            is_goal_reached = votes_count >= objection.requiredVotes
-
-            result_dto_data = {
-                "votes_count": votes_count,
-                "required_votes": objection.requiredVotes,
-                "is_goal_reached": is_goal_reached,
-                "is_vote_recorded": True,
-            }
-
-            if is_goal_reached:
-                await uow.moderation.update_objection_status(objection_id, ObjectionStatus.VOTING)
-                proposal = await uow.moderation.get_proposal_by_id(objection.proposalId)
-                if not proposal:
-                    raise ValueError(
-                        f"在处理异议 {objection_id} 时找不到关联的提案 {objection.proposalId}"
-                    )
-
-                # 填充用于事件分派的数据
-                result_dto_data["objection_id"] = objection.id
-                result_dto_data["proposal_id"] = proposal.id
-                result_dto_data["proposal_title"] = proposal.title
-                result_dto_data["proposal_discussion_thread_id"] = proposal.discussionThreadId
-                result_dto_data["objector_id"] = objection.objector_id
-                result_dto_data["objection_reason"] = objection.reason
-
-                dispatch_dto = HandleSupportObjectionResultDto.model_validate(result_dto_data)
-
-            # --- 4. 提交和返回 ---
+            # 提交事务
             await uow.commit()
 
-            # 在事务成功后分派事件
-            if is_goal_reached:
-                self.bot.dispatch("objection_goal_reached", dispatch_dto)
-
-            return HandleSupportObjectionResultDto.model_validate(result_dto_data)
+            # 将从服务层获取的完整DTO直接返回给上层 (View)
+            return result_dto
 
     async def handle_withdraw_support(
-        self, qo: HandleSupportObjectionQo
+        self, qo: ObjectionSupportQo
     ) -> HandleSupportObjectionResultDto:
         """
-        处理撤回支持异议的业务逻辑。
+        处理撤回对异议的支持。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            # --- 1. 读取和验证 ---
-            vote_session = await uow.voting.get_vote_session_by_context_message_id(qo.message_id)
-            if not vote_session or not vote_session.id or not vote_session.objectionId:
-                raise ValueError("错误：找不到对应的投票会话或会话未关联任何异议。")
+            # 调用服务层，获取DTO
+            result_dto = await uow.moderation.objection_support(qo)
 
-            objection = await uow.moderation.get_objection_by_id(vote_session.objectionId)
-            if not objection:
-                raise ValueError(f"错误：找不到ID为 {vote_session.objectionId} 的异议。")
-
-            required_votes = objection.requiredVotes
-
-            # --- 2. 尝试删除投票 ---
-            await uow.voting.delete_user_vote_by_message_id(
-                user_id=qo.user_id, message_id=qo.message_id
+            # 根据服务层的返回结果，处理状态变更
+            goal_lost = (
+                result_dto.user_action_result == "withdrew"
+                and result_dto.objection_status == ObjectionStatus.VOTING
+                and not result_dto.is_goal_reached
             )
-
-            # --- 3. 获取最新票数并进行业务判断 ---
-            votes_count = await uow.voting.get_vote_count_by_session_id(vote_session.id)
-            is_goal_reached = votes_count >= required_votes
-
-            # 如果之前是达到目标的，现在没达到，需要更新异议状态
-            if objection.status == ObjectionStatus.VOTING and not is_goal_reached:
-                assert objection.id is not None
+            if goal_lost:
+                # 状态变更：正式投票 -> 收集票数
                 await uow.moderation.update_objection_status(
-                    objection.id, ObjectionStatus.COLLECTING_VOTES
+                    result_dto.objection_id, ObjectionStatus.COLLECTING_VOTES
                 )
 
-            # --- 4. 提交和返回 ---
+            # 3. 提交事务
             await uow.commit()
 
-            return HandleSupportObjectionResultDto(
-                votes_count=votes_count,
-                required_votes=required_votes,
-                is_goal_reached=is_goal_reached,
-                is_vote_recorded=False,  # 撤回后，投票记录必定不存在
-            )
+            # 4. 将从服务层获取的完整DTO直接返回给上层 (View)
+            return result_dto

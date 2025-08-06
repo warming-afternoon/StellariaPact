@@ -1,41 +1,34 @@
 import logging
-from typing import Optional
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import (
-    HandleSupportObjectionResultDto,
-)
-from StellariaPact.cogs.Moderation.dto.RaiseObjectionResultDto import (
-    RaiseObjectionResultDto,
-)
-from StellariaPact.cogs.Moderation.logic.ModerationLogic import ModerationLogic
-from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import (
-    BuildAdminReviewEmbedQo,
-)
-from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import (
-    BuildConfirmationEmbedQo,
-)
-from StellariaPact.cogs.Moderation.views.AbandonReasonModal import (
-    AbandonReasonModal,
-)
-from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import (
-    ModerationEmbedBuilder,
-)
-from StellariaPact.cogs.Moderation.views.ObjectionAdminReviewView import (
-    ObjectionAdminReviewView,
-)
-from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import (
-    ObjectionCreationVoteView,
-)
+from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import \
+    HandleSupportObjectionResultDto
+from StellariaPact.cogs.Moderation.dto.RaiseObjectionResultDto import \
+    RaiseObjectionResultDto
+from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
+from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
+    BuildAdminReviewEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import \
+    BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.views.AbandonReasonModal import \
+    AbandonReasonModal
+from StellariaPact.cogs.Moderation.views.ConfirmationView import \
+    ConfirmationView
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
+    ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionAdminReviewView import \
+    ObjectionAdminReviewView
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.cogs.Moderation.views.ReasonModal import ReasonModal
 from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
+from StellariaPact.cogs.Voting.views.ObjectionCreationVoteView import \
+    ObjectionCreationVoteView
 from StellariaPact.share.auth.RoleGuard import RoleGuard
+from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
@@ -120,7 +113,7 @@ class Moderation(commands.Cog):
         """
         监听由 Voting cog 分派的提案帖子创建事件。
         """
-        logger.info(
+        logger.debug(
             f"接收到提案创建事件，帖子ID: {thread_id}, 发起人ID: {proposer_id}, 标题: {title}"
         )
         try:
@@ -235,10 +228,10 @@ class Moderation(commands.Cog):
 
             try:
                 # --- 阶段一: 创建数据库记录 ---
-                # 1. 确定目标帖子ID
+                # 确定目标帖子ID
                 target_thread_id = self._determine_target_thread_id(interaction, proposal_link)
 
-                # 2. 调用 Logic 层完成数据库操作
+                # 调用 Logic 层完成数据库操作
                 result_dto = await self.logic.handle_raise_objection(
                     user_id=interaction.user.id,
                     target_thread_id=target_thread_id,
@@ -296,13 +289,13 @@ class Moderation(commands.Cog):
         channel_id_str = self.bot.config.get("channels", {}).get("objection_publicity")
         if not channel_id_str or not interaction.guild:
             raise RuntimeError("公示频道未配置或无法获取服务器信息。")
-        channel = await self._fetch_channel(int(channel_id_str))
+        channel = await DiscordUtils.fetch_channel(self.bot, int(channel_id_str))
 
         # 类型守卫，确保公示频道是文本频道
         if not isinstance(channel, discord.TextChannel):
             raise RuntimeError(f"异议公示频道 (ID: {channel_id_str}) 必须是一个文本频道。")
 
-        # 2. 构建 Embed 和 View
+        # 构建 Embed 和 View
         objector = await self.bot.fetch_user(result_dto.objector_id)
         guild_id = self.bot.config.get("guild_id")
         if not guild_id:
@@ -313,8 +306,8 @@ class Moderation(commands.Cog):
             title="异议产生票收集中",
             description=(
                 f"对提案 **[{result_dto.proposal_title}]({proposal_url})** 的一项异议"
-                "需要收集足够的支持票以进入正式投票阶段。\n\n"
-                f"**提案者**: <@{result_dto.objector_id}> ({objector.display_name})"
+                "需要收集足够的支持票以进入正式讨论阶段。\n\n"
+                f"**异议发起人**: <@{result_dto.objector_id}> ({objector.display_name})"
             ),
             color=discord.Color.yellow(),
         )
@@ -339,18 +332,18 @@ class Moderation(commands.Cog):
         self, interaction: discord.Interaction, result_dto: RaiseObjectionResultDto
     ):
         """处理后续异议的UI交互（发送审核面板）。"""
-        # 1. 获取频道
+        # 获取频道
         channel_id_str = self.bot.config.get("channels", {}).get("objection_audit")
         if not channel_id_str:
             raise RuntimeError("审核频道未配置")
         if not self.bot.user:
             raise RuntimeError("机器人未登录")
-        channel = await self._fetch_channel(int(channel_id_str))
+        channel = await DiscordUtils.fetch_channel(self.bot, int(channel_id_str))
 
         if not isinstance(channel, discord.ForumChannel):
             raise RuntimeError(f"审核频道 (ID: {channel.id}) 不是一个论坛频道。")
 
-        # 2. 构建 Embed 和 View
+        # 构建 Embed 和 View
         guild_id = self.bot.config.get("guild_id")
         if not guild_id:
             raise RuntimeError("Guild ID 未配置。")
@@ -381,32 +374,6 @@ class Moderation(commands.Cog):
             )
             await uow.commit()
 
-    async def _fetch_channel(self, channel_id: int) -> discord.TextChannel | discord.ForumChannel:
-        """安全地获取一个频道，优先使用缓存，支持文本和论坛频道。"""
-        channel = self.bot.get_channel(channel_id)
-        if not channel:
-            try:
-                channel = await self.bot.fetch_channel(channel_id)
-            except (discord.NotFound, discord.Forbidden) as e:
-                raise RuntimeError(f"无法获取ID为 {channel_id} 的频道。") from e
-
-        if not isinstance(channel, (discord.TextChannel, discord.ForumChannel)):
-            raise RuntimeError(f"ID {channel_id} 不是一个文本或论坛频道。")
-        return channel
-
-    async def _fetch_thread(self, thread_id: int) -> Optional[discord.Thread]:
-        """安全地获取一个帖子，优先使用缓存。"""
-        thread = self.bot.get_channel(thread_id)
-        if isinstance(thread, discord.Thread):
-            return thread
-        try:
-            thread = await self.bot.fetch_channel(thread_id)
-            if isinstance(thread, discord.Thread):
-                return thread
-            return None
-        except (discord.NotFound, discord.Forbidden):
-            logger.warning(f"无法获取ID为 {thread_id} 的帖子。")
-            return None
 
     @commands.Cog.listener()
     async def on_objection_vote_finished(
@@ -482,7 +449,9 @@ class Moderation(commands.Cog):
             if not discussion_channel_id_str:
                 raise RuntimeError("未配置提案讨论频道 (discussion)。")
 
-            discussion_channel = await self._fetch_channel(int(discussion_channel_id_str))
+            discussion_channel = await DiscordUtils.fetch_channel(
+                self.bot, int(discussion_channel_id_str)
+            )
             if not isinstance(discussion_channel, discord.ForumChannel):
                 raise RuntimeError("提案讨论频道必须是论坛频道。")
 
@@ -505,7 +474,7 @@ class Moderation(commands.Cog):
                 f"成功为异议 {result_dto.objection_id} 创建了异议帖: {objection_thread.id}"
             )
 
-            # 4. 更新数据库和原提案
+            # 更新数据库和原提案
             assert result_dto.objection_id is not None, "Objection ID is required"
             assert (
                 result_dto.proposal_discussion_thread_id is not None
@@ -516,8 +485,10 @@ class Moderation(commands.Cog):
                 original_proposal_thread_id=result_dto.proposal_discussion_thread_id,
             )
 
-            # 5. 更新原提案帖的标签和标题
-            original_thread = await self._fetch_thread(result_dto.proposal_discussion_thread_id)
+            # 更新原提案帖的标签和标题
+            original_thread = await DiscordUtils.fetch_thread(
+                self.bot, result_dto.proposal_discussion_thread_id
+            )
             if original_thread:
                 # 类型守卫，确保父频道是论坛
                 if not isinstance(original_thread.parent, discord.ForumChannel):
@@ -529,15 +500,6 @@ class Moderation(commands.Cog):
                     logger.warning("未在 config.json 中配置 'frozen' 标签ID。")
                     return
 
-                # 获取冻结标签对象
-                frozen_tag = original_thread.parent.get_tag(int(frozen_tag_id))
-                if not frozen_tag:
-                    logger.warning(
-                        f"在论坛频道 {original_thread.parent.name} 中"
-                        f"找不到ID为 {frozen_tag_id} 的标签"
-                    )
-                    return
-
                 # 准备新标题和新标签
                 if not result_dto.proposal_title:
                     logger.warning(f"提案 {result_dto.proposal_id} 缺少标题，无法更新。")
@@ -545,17 +507,62 @@ class Moderation(commands.Cog):
                 clean_title = StringUtils.clean_title(result_dto.proposal_title)
                 new_title = f"[冻结中] {clean_title}"
 
-                # 为保证幂等性，移除可能存在的其他状态标签，然后应用新标签
-                # 注意：这里需要一个更健壮的方法来移除所有“状态类”标签
-                current_tags = original_thread.applied_tags
-                new_tags = [t for t in current_tags if t.id != frozen_tag.id]
-                new_tags.append(frozen_tag)
+                # 定义状态标签键
+                status_tag_keys = [
+                    "discussion",
+                    "executing",
+                    "finished",
+                    "abandoned",
+                    "rejected",
+                    "objection_voting",
+                ]
 
-                await self.bot.api_scheduler.submit(
-                    original_thread.edit(name=new_title, applied_tags=new_tags),
-                    priority=4,
+                # 计算新标签
+                new_tags = DiscordUtils.calculate_new_tags(
+                    current_tags=original_thread.applied_tags,
+                    forum_tags=original_thread.parent.available_tags,
+                    config=self.bot.config,
+                    target_tag_name="frozen",
+                    status_tag_keys=status_tag_keys,
                 )
-                logger.info(f"已将原提案帖 {original_thread.id} 的标题和标签更新为“冻结中”。")
+
+                # 只有在标签实际发生变化时才进行编辑
+                if new_tags is not None:
+                    await self.bot.api_scheduler.submit(
+                        original_thread.edit(
+                            name=new_title,
+                            applied_tags=new_tags,
+                            archived=True,
+                            locked=True,
+                        ),
+                        priority=4,
+                    )
+                else:
+                    # 如果标签未变，仍然需要更新标题和状态
+                    await self.bot.api_scheduler.submit(
+                        original_thread.edit(name=new_title, archived=True, locked=True),
+                        priority=4,
+                    )
+                logger.info(f"已将原提案帖 {original_thread.id} 冻结、关闭并锁定。")
+
+                # 在原提案帖发送通知
+                notification_embed = discord.Embed(
+                    title="提案已冻结",
+                    description=(
+                        "由于一项异议已获得足够的支持票，该提案现已进入冻结状态。\n"
+                        "在相关异议得到处理之前，原提案的投票和讨论将暂停。"
+                    ),
+                    color=discord.Color.orange(),
+                )
+                notification_embed.add_field(
+                    name="相关异议帖",
+                    value=f"[点击跳转至异议帖]({objection_thread.jump_url})",
+                    inline=False,
+                )
+                notification_embed.set_footer(text="请在异议帖中继续进行讨论和投票。")
+                await self.bot.api_scheduler.submit(
+                    original_thread.send(embed=notification_embed), priority=4
+                )
 
         except (RuntimeError, ValueError) as e:
             logger.error(f"处理 on_objection_goal_reached 事件时出错: {e}")

@@ -3,7 +3,9 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
+from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import \
+    AbandonProposalQo
+from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
@@ -60,32 +62,30 @@ class AbandonReasonModal(discord.ui.Modal):
         tasks.append(self.bot.api_scheduler.submit(interaction.channel.send(embed=embed), 1))
 
         # 准备更新帖子状态和标签
-        edit_task = None
         clean_title = StringUtils.clean_title(interaction.channel.name)
         new_title = f"[已废弃] {clean_title}"
-        if isinstance(interaction.channel.parent, discord.ForumChannel):
-            try:
-                abandoned_tag = discord.utils.get(
-                    interaction.channel.parent.available_tags, name="已废弃"
-                )
-                if abandoned_tag:
-                    edit_task = self.bot.api_scheduler.submit(
-                        interaction.channel.edit(
-                            name=new_title,
-                            archived=True,
-                            locked=True,
-                            applied_tags=[abandoned_tag],
-                        ),
-                        2,
-                    )
-            except Exception as e:
-                logger.warning(f"查找'已废弃'标签时出错: {e}", exc_info=True)
+        edit_payload = {"name": new_title, "archived": True, "locked": True}
 
-        if not edit_task:
-            edit_task = self.bot.api_scheduler.submit(
-                interaction.channel.edit(name=new_title, archived=True, locked=True), 2
+        if isinstance(interaction.channel.parent, discord.ForumChannel):
+            status_tag_keys = [
+                "discussion",
+                "executing",
+                "finished",
+                "frozen",
+                "rejected",
+                "objection_voting",
+            ]
+            new_tags = DiscordUtils.calculate_new_tags(
+                current_tags=interaction.channel.applied_tags,
+                forum_tags=interaction.channel.parent.available_tags,
+                config=self.bot.config,
+                target_tag_name="abandoned",
+                status_tag_keys=status_tag_keys,
             )
-        tasks.append(edit_task)
+            if new_tags is not None:
+                edit_payload["applied_tags"] = new_tags
+
+        tasks.append(self.bot.api_scheduler.submit(interaction.channel.edit(**edit_payload), 2))
 
         # 准备最终确认消息
         tasks.append(

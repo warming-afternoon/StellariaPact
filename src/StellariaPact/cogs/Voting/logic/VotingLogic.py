@@ -3,12 +3,12 @@ from datetime import datetime, timedelta
 
 import discord
 
-from ...Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
 from ....share.StellariaPactBot import StellariaPactBot
 from ....share.UnitOfWork import UnitOfWork
+from ...Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
 from ..qo.CreateVoteSessionQo import CreateVoteSessionQo
+from ..views.ObjectionFormalVoteView import ObjectionFormalVoteView
 from ..views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
-from ..views.ObjectionVoteView import ObjectionVoteView
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,8 @@ class VotingLogic:
         在异议帖中创建专用的裁决投票面板。
         """
         # 1. 构建 UI
-        view = ObjectionVoteView(self.bot)
-        embed = ObjectionVoteEmbedBuilder.create_embed(objection_dto=objection_dto)
+        view = ObjectionFormalVoteView(self.bot)
+        embed = ObjectionVoteEmbedBuilder.create_formal_embed(objection_dto=objection_dto)
 
         # 2. 发送消息
         message = await self.bot.api_scheduler.submit(

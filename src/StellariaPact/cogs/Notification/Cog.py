@@ -2,17 +2,21 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
-from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
-from StellariaPact.cogs.Notification.views.AnnouncementModal import AnnouncementModal
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
+    CreateAnnouncementQo
+from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import \
+    AnnouncementEmbedBuilder
+from StellariaPact.cogs.Notification.views.AnnouncementModal import \
+    AnnouncementModal
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.auth.RoleGuard import RoleGuard
+from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
@@ -130,9 +134,19 @@ class Notification(commands.Cog):
             )
 
             thread_name = f"[讨论中] {title}"
+
+            # 使用通用函数计算初始标签
+            initial_tags = DiscordUtils.calculate_new_tags(
+                current_tags=[],
+                forum_tags=discussion_channel.available_tags,
+                config=self.bot.config,
+                target_tag_name="discussion",
+                status_tag_keys=[],  # 创建时没有需要移除的标签
+            )
+
             thread_creation_result = await self.bot.api_scheduler.submit(
                 coro=discussion_channel.create_thread(
-                    name=thread_name, content=thread_content, applied_tags=[target_tag]
+                    name=thread_name, content=thread_content, applied_tags=initial_tags or []
                 ),
                 priority=5,
             )

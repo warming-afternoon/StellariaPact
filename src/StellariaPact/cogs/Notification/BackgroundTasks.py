@@ -1,13 +1,15 @@
 import asyncio
 import logging
 import random
+from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
-from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.AnnouncementMonitorService import AnnouncementMonitorService
+from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
+    AnnouncementMonitorService
 from StellariaPact.cogs.Notification.RepostService import RepostService
+from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
@@ -140,18 +142,25 @@ class BackgroundTasks(commands.Cog):
             # 修改标签
             forum_channel = thread.parent
             if isinstance(forum_channel, discord.ForumChannel):
-                executing_tag = discord.utils.get(
-                    forum_channel.available_tags, id=self.executing_tag_id
+                status_tag_keys = ["discussion"]  # 在此场景下，我们只移除“讨论中”
+                new_tags = DiscordUtils.calculate_new_tags(
+                    current_tags=thread.applied_tags,
+                    forum_tags=forum_channel.available_tags,
+                    config=self.bot.config,
+                    target_tag_name="executing",
+                    status_tag_keys=status_tag_keys,
                 )
-
-                new_tags = [tag for tag in thread.applied_tags if tag.id != self.discussion_tag_id]
-                if executing_tag:
-                    new_tags.append(executing_tag)
 
                 new_title = f"[执行中] {announcement_dto.title}"
-                await self.bot.api_scheduler.submit(
-                    coro=thread.edit(name=new_title, applied_tags=new_tags), priority=7
-                )
+                if new_tags is not None:
+                    await self.bot.api_scheduler.submit(
+                        coro=thread.edit(name=new_title, applied_tags=new_tags),
+                        priority=7,
+                    )
+                else:
+                    await self.bot.api_scheduler.submit(
+                        coro=thread.edit(name=new_title), priority=7
+                    )
 
             # 发送通知
             embed = discord.Embed(
