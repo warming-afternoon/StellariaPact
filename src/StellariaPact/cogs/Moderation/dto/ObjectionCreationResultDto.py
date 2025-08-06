@@ -1,8 +1,7 @@
-from dataclasses import dataclass
+from ....share.BaseDto import BaseDto
 
 
-@dataclass
-class ObjectionCreationResultDto:
+class ObjectionCreationResultDto(BaseDto):
     """
     封装创建异议及其关联投票会话“空壳”后的结果。
     """

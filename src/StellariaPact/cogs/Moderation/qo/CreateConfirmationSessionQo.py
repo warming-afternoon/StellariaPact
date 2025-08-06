@@ -1,9 +1,9 @@
-from dataclasses import dataclass
 from typing import List
 
+from ....share.BaseDto import BaseDto
 
-@dataclass(frozen=True)
-class CreateConfirmationSessionQo:
+
+class CreateConfirmationSessionQo(BaseDto):
     """
     用于创建确认会话的查询对象。
     """

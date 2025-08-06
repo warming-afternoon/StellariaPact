@@ -44,9 +44,10 @@ class VoteEmbedBuilder:
             embed.add_field(name="\u200b", value="\u200b", inline=True)
 
         if end_time:
+            end_time_ts = int(end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
             embed.add_field(
                 name="截止时间",
-                value=f"<t:{int(end_time.replace(tzinfo=ZoneInfo('UTC')).timestamp())}:F>",
+                value=f"<t:{end_time_ts}:F> (<t:{end_time_ts}:R>)",
                 inline=False,
             )
 
@@ -84,9 +85,10 @@ class VoteEmbedBuilder:
             embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
 
         if end_time:
+            end_time_ts = int(end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
             embed.add_field(
                 name="截止时间",
-                value=f"<t:{int(end_time.replace(tzinfo=ZoneInfo('UTC')).timestamp())}:F>",
+                value=f"<t:{end_time_ts}:F> (<t:{end_time_ts}:R>)",
                 inline=False,
             )
 
@@ -149,12 +151,12 @@ class VoteEmbedBuilder:
 
         embed.add_field(
             name="原截止时间",
-            value=f"<t:{int(old_time.timestamp())}:F>",
+            value=f"<t:{int(old_time.timestamp())}:F> (<t:{int(old_time.timestamp())}:R>)",
             inline=False,
         )
         embed.add_field(
             name="新截止时间",
-            value=f"<t:{int(new_time.timestamp())}:F>",
+            value=f"<t:{int(new_time.timestamp())}:F> (<t:{int(new_time.timestamp())}:R>)",
             inline=False,
         )
 

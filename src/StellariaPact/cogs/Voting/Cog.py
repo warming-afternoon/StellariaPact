@@ -47,18 +47,6 @@ class Voting(commands.Cog):
                     priority=1,
                 )
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """
-        当 bot 准备就绪时，重新注册持久化视图。
-        """
-        try:
-            # VoteView 的实例化现在将在其自身内部处理数据库交互
-            self.bot.add_view(VoteView(self.bot))
-            logger.info("VoteView 已成功重新注册。")
-        except Exception as e:
-            logger.error(f"重新注册 VoteView 时出错: {e}", exc_info=True)
-
     @app_commands.command(name="启动投票", description="在当前帖子中启动投票")
     @app_commands.rename(realtime="是否实时", anonymous="是否匿名")
     @app_commands.describe(

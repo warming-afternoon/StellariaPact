@@ -3,8 +3,7 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import \
-    AbandonProposalQo
+from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -67,20 +66,11 @@ class AbandonReasonModal(discord.ui.Modal):
         edit_payload = {"name": new_title, "archived": True, "locked": True}
 
         if isinstance(interaction.channel.parent, discord.ForumChannel):
-            status_tag_keys = [
-                "discussion",
-                "executing",
-                "finished",
-                "frozen",
-                "rejected",
-                "objection_voting",
-            ]
             new_tags = DiscordUtils.calculate_new_tags(
                 current_tags=interaction.channel.applied_tags,
                 forum_tags=interaction.channel.parent.available_tags,
                 config=self.bot.config,
                 target_tag_name="abandoned",
-                status_tag_keys=status_tag_keys,
             )
             if new_tags is not None:
                 edit_payload["applied_tags"] = new_tags

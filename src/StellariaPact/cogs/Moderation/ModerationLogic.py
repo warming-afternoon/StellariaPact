@@ -10,14 +10,22 @@ from ...share.StellariaPactBot import StellariaPactBot
 from ...share.UnitOfWork import UnitOfWork
 from ..Voting.dto.VoteSessionDto import VoteSessionDto
 from ..Voting.dto.VoteStatusDto import VoteStatusDto
+from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from .dto.ConfirmationSessionDto import ConfirmationSessionDto
 from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
 from .dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
-from .dto.RaiseObjectionResultDto import RaiseObjectionResultDto
+from .dto.ObjectionDto import ObjectionDto
+from .dto.ObjectionReviewResultDto import ObjectionReviewResultDto
+from .dto.ObjectionVotePanelDto import ObjectionVotePanelDto
+from .dto.ObjectionReasonUpdateResultDto import ObjectionReasonUpdateResultDto
+from .dto.SubsequentObjectionDto import SubsequentObjectionDto
 from .dto.VoteFinishedResultDto import VoteFinishedResultDto
 from .qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from .qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
-from .qo.CreateObjectionAndVoteSessionShellQo import CreateObjectionAndVoteSessionShellQo
+from .qo.CreateObjectionAndVoteSessionShellQo import (
+    CreateObjectionAndVoteSessionShellQo,
+)
+from .qo.EditObjectionReasonQo import EditObjectionReasonQo
 from .qo.ObjectionSupportQo import ObjectionSupportQo
 
 logger = logging.getLogger(__name__)
@@ -57,10 +65,11 @@ class ModerationLogic:
         user_id: int,
         target_thread_id: int,
         reason: str,
-    ) -> RaiseObjectionResultDto:
+    ) -> ObjectionVotePanelDto | SubsequentObjectionDto:
         """
         处理发起异议的第一阶段：创建数据库实体。
-        返回一个包含所有后续UI操作所需数据的DTO。
+        - 如果为首次异议，返回一个 ObjectionVotePanelDto。
+        - 如果为后续异议，返回一个 SubsequentObjectionDto。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 验证提案
@@ -74,15 +83,16 @@ class ModerationLogic:
             ]:
                 raise ValueError("只能对“讨论中”或“执行中”的提案发起异议。")
 
+            # 预取数据
             proposal_id = proposal.id
             proposal_title = proposal.title
             assert proposal_id is not None
 
-            # 2. 判断是否为首次异议
+            # 判断是否为首次异议
             existing_objections = await uow.moderation.get_objections_by_proposal_id(proposal_id)
             is_first_objection = not bool(existing_objections)
 
-            # 3. 准备数据并调用服务
+            # 准备数据并调用服务
             required_votes = 5 if is_first_objection else 10
             initial_status = (
                 ObjectionStatus.COLLECTING_VOTES
@@ -102,21 +112,32 @@ class ModerationLogic:
             )
             creation_result_dto = await uow.moderation.create_objection_and_vote_session_shell(qo)
 
-            # 4. 提交事务
+            # 提交事务
             await uow.commit()
 
-            # 5. 准备返回给 Cog 层的 DTO
-            return RaiseObjectionResultDto(
-                is_first_objection=is_first_objection,
-                objection_id=creation_result_dto.objection_id,
-                vote_session_id=creation_result_dto.vote_session_id,
-                objector_id=user_id,
-                objection_reason=reason,
-                required_votes=required_votes,
-                proposal_id=proposal_id,
-                proposal_title=proposal_title,
-                proposal_thread_id=target_thread_id,
-            )
+            # 根据是否首次异议，返回不同类型的 DTO
+            if is_first_objection:
+                # 准备返回给 Cog 层的 DTO 用于创建投票面板
+                return ObjectionVotePanelDto(
+                    objection_id=creation_result_dto.objection_id,
+                    vote_session_id=creation_result_dto.vote_session_id,
+                    objector_id=user_id,
+                    objection_reason=reason,
+                    required_votes=required_votes,
+                    proposal_id=proposal_id,
+                    proposal_title=proposal_title,
+                    proposal_thread_id=target_thread_id,
+                )
+            else:
+                # 准备返回给 Cog 层的 DTO 用于创建审核UI
+                return SubsequentObjectionDto(
+                    objection_id=creation_result_dto.objection_id,
+                    objector_id=user_id,
+                    objection_reason=reason,
+                    proposal_id=proposal_id,
+                    proposal_title=proposal_title,
+                    proposal_thread_id=target_thread_id,
+                )
 
     async def handle_execute_proposal(
         self,
@@ -133,7 +154,7 @@ class ModerationLogic:
 
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 1. 读取提案信息
+                # 读取提案信息
                 proposal = await uow.moderation.get_proposal_by_thread_id(channel_id)
                 if not proposal:
                     raise ValueError("未找到关连的提案。")
@@ -142,7 +163,7 @@ class ModerationLogic:
 
                 assert proposal.id is not None
 
-                # 2. 创建确认会话
+                # 创建确认会话
                 config_roles = self.bot.config.get("roles", {})
                 initiator_role_keys = [
                     key for key, val in config_roles.items() if int(val) in user_role_ids
@@ -158,14 +179,14 @@ class ModerationLogic:
                 )
                 session_dto = await uow.moderation.create_confirmation_session(create_session_qo)
 
-                # 3. 准备返回给 Cog 层的数据
+                # 准备返回给 Cog 层的数据
                 roles_config = self.bot.config.get("roles", {})
                 role_display_names = {}
                 for role_key in session_dto.required_roles:
                     role_id = roles_config.get(role_key)
                     role_display_names[role_key] = str(role_id) if role_id else role_key
 
-                # 4. 提交事务
+                # 提交事务
                 await uow.commit()
 
         except IntegrityError:
@@ -211,56 +232,89 @@ class ModerationLogic:
             return None
 
         try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                # 1. 判断投票结果
-                is_passed = result_dto.approveVotes > result_dto.rejectVotes
-                new_status = ObjectionStatus.PASSED if is_passed else ObjectionStatus.REJECTED
+            # 用于存储从事务中安全提取的数据
+            extracted_data = {}
 
-                # 2. 更新异议状态
-                await uow.moderation.update_objection_status(objection_id, new_status)
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                # 获取关联数据
                 objection = await uow.moderation.get_objection_by_id(objection_id)
-                proposal = (
-                    await uow.moderation.get_proposal_by_id(objection.proposalId)
-                    if objection
-                    else None
+                if not objection:
+                    raise ValueError(f"找不到ID为 {objection_id} 的异议。")
+
+                proposal = await uow.moderation.get_proposal_by_id(objection.proposalId)
+                if not proposal:
+                    raise ValueError(f"找不到异议 {objection_id} 关联的提案。")
+
+                # 判断投票结果并更新状态
+                is_passed = result_dto.approveVotes > result_dto.rejectVotes
+                objection.status = (
+                    ObjectionStatus.PASSED if is_passed else ObjectionStatus.REJECTED
                 )
+
+                if is_passed:
+                    # 异议通过，原提案被否决
+                    proposal.status = ProposalStatus.REJECTED
+                else:
+                    # 异议失败，原提案解冻
+                    if proposal.status == ProposalStatus.FROZEN:
+                        proposal.status = ProposalStatus.DISCUSSION
+
+                uow.session.add(objection)
+                uow.session.add(proposal)
+
+                # 在事务内预取所有需要的数据
+                guild_id = self.bot.config.get("guild_id")
+                if not guild_id:
+                    raise RuntimeError("未在 config.json 中配置 'guild_id'。")
+                assert objection.id is not None, "Objection ID cannot be None for result embed"
+
+                publicity_channel_id_str = self.bot.config.get("channels", {}).get(
+                    "objection_publicity"
+                )
+
+                # 将所有需要在事务外使用的数据存入字典
+                extracted_data = {
+                    "proposal_title": proposal.title,
+                    "proposal_thread_id": proposal.discussionThreadId,
+                    "objection_id": objection.id,
+                    "objection_reason": objection.reason,
+                    "objection_thread_id": objection.objectionThreadId,
+                    "is_passed": is_passed,
+                    "guild_id": guild_id,
+                    "notification_channel_id": int(publicity_channel_id_str)
+                    if publicity_channel_id_str
+                    else None,
+                }
+
+                # 提交事务
                 await uow.commit()
 
-            # 准备返回给 Cog 层的数据
-            if not objection or not proposal:
-                logger.error(f"无法为已结束的异议 {objection_id} 找到完整的上下文信息。")
-                return None
-
-            guild_id = self.bot.config.get("guild_id")
-            if not guild_id:
-                logger.error("未在 config.json 中配置 'guild_id'。")
-                return None
-            assert objection.id is not None, "Objection ID cannot be None for result embed"
-
+            # 在事务外使用预取的数据构建 DTO
             result_qo = BuildVoteResultEmbedQo(
-                proposal_title=proposal.title,
-                proposal_thread_url=f"https://discord.com/channels/{guild_id}/{proposal.discussionThreadId}",
-                objection_id=objection.id,
-                objection_reason=objection.reason,
-                is_passed=is_passed,
+                proposal_title=extracted_data["proposal_title"],
+                proposal_thread_url=f"https://discord.com/channels/{extracted_data['guild_id']}/{extracted_data['proposal_thread_id']}",
+                objection_id=extracted_data["objection_id"],
+                objection_reason=extracted_data["objection_reason"],
+                is_passed=extracted_data["is_passed"],
                 approve_votes=result_dto.approveVotes,
                 reject_votes=result_dto.rejectVotes,
                 total_votes=result_dto.totalVotes,
             )
 
-            publicity_channel_id_str = self.bot.config.get("channels", {}).get(
-                "objection_publicity"
-            )
-            channel_id = int(publicity_channel_id_str) if publicity_channel_id_str else None
-
             return VoteFinishedResultDto(
                 embed_qo=result_qo,
-                channel_id=channel_id,
-                message_id=session_dto.contextMessageId,
+                is_passed=extracted_data["is_passed"],
+                original_proposal_thread_id=extracted_data["proposal_thread_id"],
+                objection_thread_id=extracted_data["objection_thread_id"],
+                notification_channel_id=extracted_data["notification_channel_id"],
+                original_vote_message_id=session_dto.contextMessageId,
             )
 
+        except (ValueError, RuntimeError) as e:
+            logger.error(f"处理异议投票结束事件 (异议ID: {objection_id}) 时发生逻辑错误: {e}")
+            return None
         except Exception as e:
-            logger.exception(f"处理异议投票结束事件 (异议ID: {objection_id}) 时发生错误: {e}")
+            logger.exception(f"处理异议投票结束事件 (异议ID: {objection_id}) 时发生意外错误: {e}")
             return None
 
     async def handle_announcement_finished(self, announcement: Announcement):
@@ -311,7 +365,7 @@ class ModerationLogic:
             # 提交事务
             await uow.commit()
 
-            # 将从服务层获取的完整DTO直接返回给上层 (View)
+            # 将从服务层获取的 DTO 返回给上层 (View)
             return result_dto
 
     async def handle_withdraw_support(
@@ -336,8 +390,150 @@ class ModerationLogic:
                     result_dto.objection_id, ObjectionStatus.COLLECTING_VOTES
                 )
 
-            # 3. 提交事务
+            # 提交事务
             await uow.commit()
 
-            # 4. 将从服务层获取的完整DTO直接返回给上层 (View)
+            # 将从服务层获取的完整 DTO 返回给上层 (View)
             return result_dto
+
+    async def handle_approve_objection(
+        self, objection_id: int, moderator_id: int, reason: str
+    ) -> ObjectionReviewResultDto:
+        """
+        处理批准异议的逻辑。
+        """
+        try:
+            panel_dto: ObjectionVotePanelDto | None = None
+            objection_dto_for_result: ObjectionDto | None = None
+
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                objection = await uow.moderation.get_objection_by_id(objection_id)
+                if not objection or objection.status != ObjectionStatus.PENDING_REVIEW:
+                    raise ValueError("此异议当前无法被批准。")
+
+                proposal = await uow.moderation.get_proposal_by_id(objection.proposalId)
+                if not proposal:
+                    raise ValueError("找不到关联的提案，操作中止。")
+
+                # 类型断言，确保后续操作安全
+                assert objection.id is not None
+                assert proposal.id is not None
+                assert proposal.discussionThreadId is not None
+
+                # 为此异议创建新的投票会话
+                vote_qo = CreateVoteSessionQo(
+                    thread_id=proposal.discussionThreadId,
+                    objection_id=objection.id,
+                    context_message_id=0,  # 占位符，将在UI创建后更新
+                )
+                vote_session_dto = await uow.voting.create_vote_session(vote_qo)
+
+                # 更新异议状态
+                await uow.moderation.update_objection_status(
+                    objection_id, ObjectionStatus.COLLECTING_VOTES
+                )
+
+                # 准备用于事件分派的 DTO
+                panel_dto = ObjectionVotePanelDto(
+                    objection_id=objection.id,
+                    vote_session_id=vote_session_dto.id,
+                    objector_id=objection.objector_id,
+                    objection_reason=objection.reason,
+                    required_votes=objection.requiredVotes,
+                    proposal_id=proposal.id,
+                    proposal_title=proposal.title,
+                    proposal_thread_id=proposal.discussionThreadId,
+                )
+                objection_dto_for_result = ObjectionDto.from_orm(objection)
+
+                await uow.commit()
+
+            # 在事务外使用安全的 DTO 对象分派事件
+            if panel_dto:
+                self.bot.dispatch("objection_vote_initiation", panel_dto)
+
+            return ObjectionReviewResultDto(
+                success=True,
+                message=(
+                    f"✅ 操作完成：此异议已被 <@{moderator_id}> **批准**。\n"
+                    f"理由: {reason}\n"
+                    "将在公示频道开启异议产生票。"
+                ),
+                objection=objection_dto_for_result,
+                proposal=None,
+            )
+        except ValueError as e:
+            return ObjectionReviewResultDto(success=False, message=str(e))
+
+    async def handle_update_objection_reason(
+        self, qo: EditObjectionReasonQo
+    ) -> ObjectionReasonUpdateResultDto:
+        """
+        处理更新异议理由的业务逻辑。
+        返回一个包含所有需要的数据的DTO。
+        """
+        try:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                # 更新数据库
+                objection = await uow.moderation.update_objection_reason(
+                    qo.objection_id, qo.new_reason, qo.interaction.user.id
+                )
+
+                # 从数据库中提取所需数据
+                proposal = await uow.moderation.get_proposal_by_id(objection.proposalId)
+                if not proposal:
+                    raise ValueError(f"找不到异议 {qo.objection_id} 关联的提案。")
+
+                if not qo.interaction.guild:
+                    raise RuntimeError("交互不包含服务器信息。")
+
+                # 3. 将数据打包到 DTO
+                return ObjectionReasonUpdateResultDto(
+                    success=True,
+                    message="异议理由已成功更新。",
+                    guild_id=qo.interaction.guild.id,
+                    review_thread_id=objection.reviewThreadId,
+                    objection_id=objection.id,
+                    proposal_id=proposal.id,
+                    proposal_title=proposal.title,
+                    proposal_thread_id=proposal.discussionThreadId,
+                    objector_id=objection.objector_id,
+                    new_reason=objection.reason,
+                )
+        except (PermissionError, ValueError, RuntimeError) as e:
+            logger.warning(f"更新异议理由时发生错误: {e}")
+            return ObjectionReasonUpdateResultDto(success=False, message=str(e))
+        except Exception as e:
+            logger.error(
+                f"更新异议 {qo.objection_id} 理由时发生未知错误: {e}", exc_info=True
+            )
+            return ObjectionReasonUpdateResultDto(
+                success=False, message="更新理由时发生未知错误，请联系管理员。"
+            )
+
+    async def handle_reject_objection(
+        self, objection_id: int, moderator_id: int, reason: str
+    ) -> ObjectionReviewResultDto:
+        """
+        处理驳回异议的逻辑。
+        """
+        try:
+            objection_dto: ObjectionDto | None = None
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                objection = await uow.moderation.get_objection_by_id(objection_id)
+                if not objection or objection.status != ObjectionStatus.PENDING_REVIEW:
+                    raise ValueError("此异议当前无法被驳回。")
+
+                await uow.moderation.update_objection_status(
+                    objection_id, ObjectionStatus.REJECTED
+                )
+                objection_dto = ObjectionDto.from_orm(objection)
+                await uow.commit()
+
+            return ObjectionReviewResultDto(
+                success=True,
+                message=f"❌ 操作完成：此异议已被 <@{moderator_id}> **驳回**。\n理由: {reason}",
+                objection=objection_dto,
+            )
+        except ValueError as e:
+            return ObjectionReviewResultDto(success=False, message=str(e))

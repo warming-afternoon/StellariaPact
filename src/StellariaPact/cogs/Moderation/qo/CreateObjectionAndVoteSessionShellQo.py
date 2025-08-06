@@ -1,10 +1,8 @@
-from dataclasses import dataclass
+from ....share.BaseDto import BaseDto
+from ....share.enums.ObjectionStatus import ObjectionStatus
 
-from StellariaPact.share.enums.ObjectionStatus import ObjectionStatus
 
-
-@dataclass
-class CreateObjectionAndVoteSessionShellQo:
+class CreateObjectionAndVoteSessionShellQo(BaseDto):
     """
     创建异议和投票会话“空壳”的查询对象。
     """

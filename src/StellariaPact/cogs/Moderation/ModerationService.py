@@ -178,6 +178,35 @@ class ModerationService:
         """
         return await self.session.get(Objection, objection_id)
 
+    async def get_objection_by_review_thread_id(
+        self, review_thread_id: int
+    ) -> Optional[Objection]:
+        """
+        根据审核帖子ID获取异议。
+        """
+        statement = select(Objection).where(Objection.reviewThreadId == review_thread_id)
+        result = await self.session.exec(statement)
+        return result.one_or_none()
+
+    async def update_objection_reason(
+        self, objection_id: int, new_reason: str, user_id: int
+    ) -> Objection:
+        """
+        更新异议的理由，并进行权限检查。
+        """
+        objection = await self.get_objection_by_id(objection_id)
+        if not objection:
+            raise ValueError(f"未找到ID为 {objection_id} 的异议。")
+
+        if objection.objector_id != user_id:
+            raise PermissionError("只有异议发起人才能修改理由。")
+
+        objection.reason = new_reason
+        self.session.add(objection)
+        await self.session.flush()
+        await self.session.refresh(objection)
+        return objection
+
     async def get_objection_by_thread_id(self, thread_id: int) -> Optional[ObjectionDetailsDto]:
         """
         根据异议帖子ID获取异议的详细信息，包括其关联的提案。

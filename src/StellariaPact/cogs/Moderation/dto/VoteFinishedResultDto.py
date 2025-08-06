@@ -1,16 +1,17 @@
-from dataclasses import dataclass
 from typing import Optional
 
 from ....cogs.Moderation.qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from ....share.BaseDto import BaseDto
 
 
-@dataclass
 class VoteFinishedResultDto(BaseDto):
     """
     用于封装 handle_objection_vote_finished 逻辑层方法成功执行后的结果。
     """
 
     embed_qo: BuildVoteResultEmbedQo
-    channel_id: Optional[int]
-    message_id: Optional[int]
+    is_passed: bool
+    original_proposal_thread_id: int
+    objection_thread_id: Optional[int]
+    notification_channel_id: Optional[int]
+    original_vote_message_id: Optional[int]

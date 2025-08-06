@@ -1,8 +1,7 @@
-from dataclasses import dataclass
+from ....share.BaseDto import BaseDto
 
 
-@dataclass(frozen=True)
-class AbandonProposalQo:
+class AbandonProposalQo(BaseDto):
     """
     用于废弃提案的查询对象。
     """

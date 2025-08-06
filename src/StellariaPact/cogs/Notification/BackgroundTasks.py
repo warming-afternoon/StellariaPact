@@ -1,13 +1,12 @@
 import asyncio
 import logging
 import random
-from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
+from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.AnnouncementMonitorService import \
-    AnnouncementMonitorService
+from StellariaPact.cogs.Notification.AnnouncementMonitorService import AnnouncementMonitorService
 from StellariaPact.cogs.Notification.RepostService import RepostService
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -142,13 +141,11 @@ class BackgroundTasks(commands.Cog):
             # 修改标签
             forum_channel = thread.parent
             if isinstance(forum_channel, discord.ForumChannel):
-                status_tag_keys = ["discussion"]  # 在此场景下，我们只移除“讨论中”
                 new_tags = DiscordUtils.calculate_new_tags(
                     current_tags=thread.applied_tags,
                     forum_tags=forum_channel.available_tags,
                     config=self.bot.config,
                     target_tag_name="executing",
-                    status_tag_keys=status_tag_keys,
                 )
 
                 new_title = f"[执行中] {announcement_dto.title}"
@@ -169,7 +166,9 @@ class BackgroundTasks(commands.Cog):
                 color=discord.Color.orange(),
             )
             utc_end_time = announcement_dto.endTime.replace(tzinfo=ZoneInfo("UTC"))
-            discord_timestamp = f"<t:{int(utc_end_time.timestamp())}:F>"
+            discord_timestamp = (
+                f"<t:{int(utc_end_time.timestamp())}:F>(<t:{int(utc_end_time.timestamp())}:R>)"
+            )
             embed.add_field(name="公示截止时间", value=discord_timestamp)
             role_mention = f"<@&{self.stewards_role_id}>"
             await self.bot.api_scheduler.submit(

@@ -1,5 +1,4 @@
 import logging
-from typing import TYPE_CHECKING
 
 import discord
 
@@ -8,8 +7,6 @@ from ....share.StellariaPactBot import StellariaPactBot
 from ....share.UnitOfWork import UnitOfWork
 from ..EligibilityService import EligibilityService
 from .ObjectionFormalVoteChoiceView import ObjectionFormalVoteChoiceView
-
-
 
 logger = logging.getLogger(__name__)
 

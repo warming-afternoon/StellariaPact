@@ -75,7 +75,8 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
                 self.duration_hours, timezone, start_time=start_time_utc
             )
             utc_aware_end_time = end_time.replace(tzinfo=ZoneInfo("UTC"))
-            discord_timestamp = f"<t:{int(utc_aware_end_time.timestamp())}:F>"
+            end_time_timestamp = int(utc_aware_end_time.timestamp())
+            discord_timestamp = f"<t:{end_time_timestamp}:F> (<t:{end_time_timestamp}:R>)"
 
             # 3. 使用 Builder 构建视图元素
             thread_content = AnnouncementEmbedBuilder.create_thread_content(

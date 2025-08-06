@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import discord
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class VotingLogic:
     """
-    处理与投票相关的复杂业务逻辑。
+    处理与投票相关的业务逻辑。
     """
 
     def __init__(self, bot: StellariaPactBot):
@@ -27,19 +27,23 @@ class VotingLogic:
         """
         在异议帖中创建专用的裁决投票面板。
         """
-        # 1. 构建 UI
-        view = ObjectionFormalVoteView(self.bot)
-        embed = ObjectionVoteEmbedBuilder.create_formal_embed(objection_dto=objection_dto)
+        # 计算结束时间
+        # 默认投票时长为 48 小时
+        end_time = datetime.now(timezone.utc) + timedelta(hours=48)
 
-        # 2. 发送消息
+        # 构建 UI
+        view = ObjectionFormalVoteView(self.bot)
+        embed = ObjectionVoteEmbedBuilder.create_formal_embed(
+            objection_dto=objection_dto, end_time=end_time
+        )
+
+        # 发送消息
         message = await self.bot.api_scheduler.submit(
             thread.send(embed=embed, view=view), priority=2
         )
 
-        # 3. 在数据库中创建会话
+        # 在数据库中创建会话
         async with UnitOfWork(self.bot.db_handler) as uow:
-            # 默认投票时长为 48 小时
-            end_time = datetime.utcnow() + timedelta(hours=48)
             qo = CreateVoteSessionQo(
                 thread_id=thread.id,
                 objection_id=objection_dto.objection_id,

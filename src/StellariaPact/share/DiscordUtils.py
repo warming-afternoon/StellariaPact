@@ -71,7 +71,6 @@ class DiscordUtils:
         forum_tags: Sequence[discord.ForumTag],
         config: dict,
         target_tag_name: str,
-        status_tag_keys: List[str],
     ) -> Optional[List[discord.ForumTag]]:
         """
         计算帖子的新标签列表。
@@ -79,9 +78,8 @@ class DiscordUtils:
         Args:
             current_tags: 帖子当前的标签列表。
             forum_tags: 论坛频道所有可用的标签列表。
-            config: 包含标签ID的配置字典。
+            config: 包含标签ID和状态标签键列表的配置字典。
             target_tag_name: 要添加的目标标签在 config 中的键名。
-            status_tag_keys: 要移除的所有状态标签在 config 中的键名列表。
 
         Returns:
             计算出的新标签列表，如果无需更改则返回 None。
@@ -99,7 +97,12 @@ class DiscordUtils:
             logger.warning(f"在论坛中找不到ID为 {target_tag_id} 的目标标签。")
             return None
 
-        # 获取所有状态类标签的ID，以便移除它们
+        # 从配置中获取要移除的状态标签键列表
+        status_tag_keys = config.get("status_tag_keys", [])
+        if not status_tag_keys:
+            logger.warning("未在 config.json 中配置 'status_tag_keys'。")
+            # 即使没有配置 status_tag_keys，也继续执行，只是不移除任何标签
+
         status_tag_ids = {
             int(config.get("tags", {}).get(key))
             for key in status_tag_keys

@@ -1,8 +1,11 @@
+from datetime import datetime
+from typing import Optional
+
 import discord
 
-from ...Moderation.dto.HandleSupportObjectionResultDto import (
-    HandleSupportObjectionResultDto,
-)
+from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
+
+from ...Moderation.dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
 from ...Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
 from ..dto.VoteDetailDto import VoteDetailDto
 
@@ -13,11 +16,14 @@ class ObjectionVoteEmbedBuilder:
     """
 
     @staticmethod
-    def create_formal_embed(objection_dto: ObjectionDetailsDto) -> discord.Embed:
+    def create_formal_embed(
+        objection_dto: ObjectionDetailsDto, end_time: Optional[datetime] = None
+    ) -> discord.Embed:
         """
         创建正式异议投票的初始 Embed。
 
         :param objection_dto: 包含异议和提案信息的DTO。
+        :param end_time: 投票的结束时间。
         :return: 一个 discord.Embed 对象。
         """
         embed = discord.Embed(
@@ -28,15 +34,22 @@ class ObjectionVoteEmbedBuilder:
         )
 
         embed.add_field(
-            name="异议理由",
-            value=f"{objection_dto.objection_reason}",
+            name="投票规则",
+            value="请议事成员进行投票。\n如果“赞成异议”票数超过“反对异议”票数，则原提案将被推翻",
             inline=False,
         )
-        embed.add_field(
-            name="投票规则",
-            value="请讨论者进行投票。\n如果“赞成异议”票数超过“反对异议”票数，"
-            "则原提案将被冻结，此异议将进入后续处理流程",
-            inline=False,
+        embed.add_field(name="✅ 同意异议", value="**0**", inline=True)
+        embed.add_field(name="❌ 反对异议", value="**0**", inline=True)
+
+        if end_time:
+            embed.add_field(
+                name="截止时间",
+                value=f"<t:{int(end_time.timestamp())}:f> (<t:{int(end_time.timestamp())}:R>)",
+                inline=False,
+            )
+
+        embed.set_footer(
+            text=f"投票资格：在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}"
         )
 
         return embed
@@ -52,7 +65,7 @@ class ObjectionVoteEmbedBuilder:
         """
         new_embed = original_embed.copy()
 
-        # 1. 重构描述以保留链接
+        # 重构描述以保留链接
         proposal_url = (
             f"https://discord.com/channels/{guild_id}/{result_dto.proposal_discussion_thread_id}"
         )
@@ -62,7 +75,7 @@ class ObjectionVoteEmbedBuilder:
             f"**异议发起人**: <@{result_dto.objector_id}>"
         )
 
-        # 2. 更新或添加字段
+        # 更新或添加字段
         fields_to_update = {
             "当前支持": f"{result_dto.current_supporters} / {result_dto.required_supporters}",
             "所需票数": str(result_dto.required_supporters),

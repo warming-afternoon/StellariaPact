@@ -1,13 +1,13 @@
 from ....share.BaseDto import BaseDto
 
 
-class RaiseObjectionResultDto(BaseDto):
+class ObjectionVotePanelDto(BaseDto):
     """
-    封装发起异议操作的结果。
-    在两阶段提交流程中，此DTO负责从Logic层向Cog层传递所有必要信息。
+    封装创建“异议投票收集面板”所需的所有信息。
+    当一个异议（无论是首次还是后续批准）需要开始收集支持票时，
+    由Logic层构建并传递给Cog层。
     """
 
-    is_first_objection: bool
     objection_id: int
     vote_session_id: int
     objector_id: int

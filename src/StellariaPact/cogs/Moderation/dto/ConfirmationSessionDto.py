@@ -1,9 +1,9 @@
-from dataclasses import dataclass
 from typing import Dict, List
 
+from ....share.BaseDto import BaseDto
 
-@dataclass
-class ConfirmationSessionDto:
+
+class ConfirmationSessionDto(BaseDto):
     """
     用于在事务边界之间安全传递确认会话数据的数据传输对象。
     """

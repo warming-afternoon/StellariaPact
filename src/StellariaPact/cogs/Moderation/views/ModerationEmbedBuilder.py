@@ -7,7 +7,8 @@ from zoneinfo import ZoneInfo
 from ....share.enums.ConfirmationStatus import ConfirmationStatus
 from ..qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
 from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
-from ..qo.BuildFormalVoteEmbedQo import BuildFormalVoteEmbedQo
+from ..qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
+from ..qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
 from ..qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 
 
@@ -113,45 +114,56 @@ class ModerationEmbedBuilder:
         embed = discord.Embed(
             title="新的异议需要审核",
             description=(
-                f"针对提案 **[{qo.proposal_title}]"
-                f"(https://discord.com/channels/{qo.guild_id}/{qo.proposal_thread_id})** "
-                "的一项新异议需要管理员审核。"
+                f"针对提案 [{qo.proposal_title}]"
+                f"(https://discord.com/channels/{qo.guild_id}/{qo.proposal_thread_id}) "
+                "的一项新异议需要管理员审核\n"
+                f"异议发起人: <@{qo.objector_id}>"
             ),
             color=discord.Color.orange(),
         )
-        embed.add_field(name="异议ID", value=str(qo.objection_id), inline=True)
-        embed.add_field(name="提案ID", value=str(qo.proposal_id), inline=True)
-        embed.add_field(name="异议发起人", value=f"<@{qo.objector_id}>", inline=True)
-        embed.add_field(name="异议理由", value=f">>> {qo.objection_reason}", inline=False)
+        embed.add_field(name="异议理由", value=f"{qo.objection_reason}", inline=False)
         return embed
 
     @staticmethod
-    def build_formal_vote_embed(
-        qo: "BuildFormalVoteEmbedQo", bot_user: discord.ClientUser
+    def build_first_objection_embed(
+        qo: "BuildFirstObjectionEmbedQo",
     ) -> discord.Embed:
         """
-        构建正式异议投票的 Embed 消息。
+        构建首次异议的 Embed 消息，用于发起投票。
         """
         embed = discord.Embed(
-            title=f"异议投票：{qo.proposal_title}",
+            title="异议产生票收集中",
             description=(
-                f"对提案 [**{qo.proposal_title}**]({qo.proposal_thread_url}) "
-                "的一项异议已进入正式投票阶段。"
+                f"对提案 [{qo.proposal_title}]({qo.proposal_url}) 的一项异议"
+                "需要收集足够的支持票以进入正式讨论阶段。\n\n"
+                f"**异议发起人**: <@{qo.objector_id}> ({qo.objector_display_name})"
             ),
-            color=discord.Color.blue(),
+            color=discord.Color.yellow(),
         )
-        embed.add_field(name="异议 ID", value=str(qo.objection_id), inline=True)
-        embed.add_field(name="发起人", value=f"<@{qo.objector_id}>", inline=True)
-        embed.add_field(name="异议理由", value=f">>> {qo.objection_reason}", inline=False)
+        embed.add_field(name="异议理由", value=f"{qo.objection_reason}", inline=False)
+        embed.add_field(name="所需票数", value=str(qo.required_votes), inline=True)
+        embed.add_field(name="当前支持", value=f"0 / {qo.required_votes}", inline=True)
+        return embed
+
+    @staticmethod
+    def build_proposal_frozen_embed(qo: "BuildProposalFrozenEmbedQo") -> discord.Embed:
+        """
+        构建提案冻结的通知 Embed。
+        """
+        embed = discord.Embed(
+            title="提案已冻结",
+            description=(
+                "由于一项异议已获得足够的支持票，该提案现已进入冻结状态。\n"
+                "在相关异议得到处理之前，原提案的投票和讨论将暂停。"
+            ),
+            color=discord.Color.orange(),
+        )
         embed.add_field(
-            name="投票规则",
-            value="请所有议事成员就此异议进行投票。点击下方按钮表达您的意见。",
+            name="相关异议帖",
+            value=f"[点击跳转至异议帖]({qo.objection_thread_jump_url})",
             inline=False,
         )
-        embed.set_footer(
-            text=f"由 {bot_user.display_name} 提供支持", icon_url=bot_user.display_avatar.url
-        )
-        embed.timestamp = datetime.now(timezone.utc)
+        embed.set_footer(text="请在异议帖中继续进行讨论和投票。")
         return embed
 
     @staticmethod
@@ -174,7 +186,7 @@ class ModerationEmbedBuilder:
         embed.add_field(name="赞成票", value=str(qo.approve_votes), inline=True)
         embed.add_field(name="反对票", value=str(qo.reject_votes), inline=True)
         embed.add_field(name="总票数", value=str(qo.total_votes), inline=True)
-        embed.add_field(name="异议理由", value=f">>> {qo.objection_reason}", inline=False)
+        embed.add_field(name="异议理由", value=f"{qo.objection_reason}", inline=False)
         embed.set_footer(
             text=f"由 {bot_user.display_name} 提供支持", icon_url=bot_user.display_avatar.url
         )

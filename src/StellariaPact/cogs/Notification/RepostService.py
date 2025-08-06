@@ -72,7 +72,9 @@ class RepostService:
         logger.debug(f"正在为监控器 {monitor.id} 构建并发送 embed...")
         thread_url = f"https://discord.com/channels/{self.bot.config['guild_id']}/{announcement.discussionThreadId}"
         utc_end_time = announcement.endTime.replace(tzinfo=ZoneInfo("UTC"))
-        discord_timestamp = f"<t:{int(utc_end_time.timestamp())}:F>"
+        discord_timestamp = (
+            f"<t:{int(utc_end_time.timestamp())}:F> (<t:{int(utc_end_time.timestamp())}:R>)"
+        )
 
         embed = AnnouncementEmbedBuilder.create_announcement_embed(
             title=announcement.title,

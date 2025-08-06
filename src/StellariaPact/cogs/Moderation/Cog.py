@@ -4,29 +4,19 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import \
-    HandleSupportObjectionResultDto
-from StellariaPact.cogs.Moderation.dto.RaiseObjectionResultDto import \
-    RaiseObjectionResultDto
+from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
+from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import SubsequentObjectionDto
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
-from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
-    BuildAdminReviewEmbedQo
-from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import \
-    BuildConfirmationEmbedQo
-from StellariaPact.cogs.Moderation.views.AbandonReasonModal import \
-    AbandonReasonModal
-from StellariaPact.cogs.Moderation.views.ConfirmationView import \
-    ConfirmationView
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
-    ModerationEmbedBuilder
-from StellariaPact.cogs.Moderation.views.ObjectionAdminReviewView import \
-    ObjectionAdminReviewView
+from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
+from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
+from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.cogs.Moderation.views.ReasonModal import ReasonModal
-from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
-from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
-from StellariaPact.cogs.Voting.views.ObjectionCreationVoteView import \
-    ObjectionCreationVoteView
+from StellariaPact.cogs.Voting.views.ObjectionCreationVoteView import ObjectionCreationVoteView
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
@@ -49,12 +39,9 @@ class Moderation(commands.Cog):
         )
 
     def cog_load(self) -> None:
-        """在 Cog 被添加到 Bot 后，进行依赖注入和初始化。"""
+        """在 Cog 被添加到 Bot 后，进行依赖注入和初始化"""
         self.logic: ModerationLogic = ModerationLogic(self.bot)
         self.bot.tree.add_command(self.kick_proposal_context_menu)
-        # 注册持久化视图
-        self.bot.add_view(ObjectionCreationVoteView(self.bot, self.logic))
-        # logger.info("已注册 ObjectionCreationVoteView 作为持久化视图。")
 
     async def cog_unload(self):
         self.bot.tree.remove_command(
@@ -107,23 +94,6 @@ class Moderation(commands.Cog):
         await self.bot.api_scheduler.submit(
             coro=interaction.response.send_modal(modal), priority=1
         )
-
-    @commands.Cog.listener()
-    async def on_proposal_thread_created(self, thread_id: int, proposer_id: int, title: str):
-        """
-        监听由 Voting cog 分派的提案帖子创建事件。
-        """
-        logger.debug(
-            f"接收到提案创建事件，帖子ID: {thread_id}, 发起人ID: {proposer_id}, 标题: {title}"
-        )
-        try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                await uow.moderation.create_proposal(
-                    thread_id=thread_id, proposer_id=proposer_id, title=title
-                )
-                await uow.commit()
-        except Exception as e:
-            logger.error(f"处理提案创建事件时发生错误 (帖子ID: {thread_id}): {e}", exc_info=True)
 
     @app_commands.command(name="进入执行", description="将提案状态变更为执行中")
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
@@ -228,28 +198,35 @@ class Moderation(commands.Cog):
 
             try:
                 # --- 阶段一: 创建数据库记录 ---
-                # 确定目标帖子ID
                 target_thread_id = self._determine_target_thread_id(interaction, proposal_link)
 
-                # 调用 Logic 层完成数据库操作
+                # 调用 Logic 层，它现在根据情况返回不同类型的 DTO
                 result_dto = await self.logic.handle_raise_objection(
                     user_id=interaction.user.id,
                     target_thread_id=target_thread_id,
                     reason=reason,
                 )
 
-                # --- 阶段二: 与 Discord API 交互并更新 ---
-                if result_dto.is_first_objection:
-                    await self._handle_first_objection_ui(interaction, result_dto)
-                else:
+                # --- 阶段二: 根据结果处理UI ---
+                if isinstance(result_dto, ObjectionVotePanelDto):
+                    # 如果返回 DTO，说明是首次异议，直接创建投票面板
+                    assert isinstance(result_dto, ObjectionVotePanelDto)
+                    await self._create_objection_collection_panel(result_dto, interaction)
+                    final_message = (
+                        "异议已成功发起！\n由于为首次异议，将直接在公示频道开启异议产生票收集。"
+                    )
+                elif isinstance(result_dto, SubsequentObjectionDto):
+                    # 如果返回 SubsequentObjectionDto，说明是后续异议，创建审核UI
+                    assert isinstance(result_dto, SubsequentObjectionDto)
                     await self._handle_subsequent_objection_ui(interaction, result_dto)
+                    final_message = (
+                        "异议已成功发起！\n由于该提案已有其他异议，本次异议需要先由管理员审核。"
+                    )
+                else:
+                    # 兜底，理论上不应发生
+                    final_message = "操作已提交，但返回了未知的处理结果。"
 
                 # --- 最终确认 ---
-                final_message = (
-                    "异议已成功发起！\n由于为首次异议，将直接在公示频道开启异议产生票收集。"
-                    if result_dto.is_first_objection
-                    else "异议已成功发起！\n由于该提案已有其他异议，本次异议需要先由管理员审核。"
-                )
                 await self.bot.api_scheduler.submit(
                     interaction.followup.send(final_message, ephemeral=True), 1
                 )
@@ -281,14 +258,21 @@ class Moderation(commands.Cog):
         else:
             raise ValueError("此命令必须在提案帖子内使用，或通过“提案链接”参数指定目标帖子。")
 
-    async def _handle_first_objection_ui(
-        self, interaction: discord.Interaction, result_dto: RaiseObjectionResultDto
+    async def _create_objection_collection_panel(
+        self, dto: ObjectionVotePanelDto, interaction: discord.Interaction | None = None
     ):
-        """处理首次异议的UI交互（发送投票面板）。"""
-        # 1. 获取频道
+        """通用方法：根据 DTO 在公示频道创建异议收集面板"""
+        # 获取频道
         channel_id_str = self.bot.config.get("channels", {}).get("objection_publicity")
-        if not channel_id_str or not interaction.guild:
-            raise RuntimeError("公示频道未配置或无法获取服务器信息。")
+        guild_id_str = self.bot.config.get("guild_id")
+        guild = (
+            interaction.guild
+            if interaction
+            else self.bot.get_guild(int(guild_id_str if guild_id_str else 0))
+        )
+
+        if not channel_id_str or not guild:
+            raise RuntimeError("公示频道或服务器ID未配置，或无法获取服务器信息。")
         channel = await DiscordUtils.fetch_channel(self.bot, int(channel_id_str))
 
         # 类型守卫，确保公示频道是文本频道
@@ -296,40 +280,35 @@ class Moderation(commands.Cog):
             raise RuntimeError(f"异议公示频道 (ID: {channel_id_str}) 必须是一个文本频道。")
 
         # 构建 Embed 和 View
-        objector = await self.bot.fetch_user(result_dto.objector_id)
-        guild_id = self.bot.config.get("guild_id")
-        if not guild_id:
-            raise RuntimeError("Guild ID 未配置。")
-        proposal_url = f"https://discord.com/channels/{guild_id}/{result_dto.proposal_thread_id}"
+        objector = await self.bot.fetch_user(dto.objector_id)
+        guild_id = guild.id
 
-        embed = discord.Embed(
-            title="异议产生票收集中",
-            description=(
-                f"对提案 **[{result_dto.proposal_title}]({proposal_url})** 的一项异议"
-                "需要收集足够的支持票以进入正式讨论阶段。\n\n"
-                f"**异议发起人**: <@{result_dto.objector_id}> ({objector.display_name})"
-            ),
-            color=discord.Color.yellow(),
+        proposal_url = f"https://discord.com/channels/{guild_id}/{dto.proposal_thread_id}"
+
+        embed_qo = BuildFirstObjectionEmbedQo(
+            proposal_title=dto.proposal_title,
+            proposal_url=proposal_url,
+            objector_id=dto.objector_id,
+            objector_display_name=objector.display_name,
+            objection_reason=dto.objection_reason,
+            required_votes=dto.required_votes,
         )
-        embed.add_field(name="异议理由", value=f"{result_dto.objection_reason}", inline=False)
-        embed.add_field(name="所需票数", value=str(result_dto.required_votes), inline=True)
-        embed.add_field(name="当前支持", value=f"0 / {result_dto.required_votes}", inline=True)
+        embed = ModerationEmbedBuilder.build_first_objection_embed(embed_qo)
 
-        # 创建一个用于本次消息的视图实例
-        view = ObjectionCreationVoteView(self.bot, self.logic)
+        view = ObjectionCreationVoteView(self.bot)
 
-        # 3. 发送消息
+        # 发送消息
         message = await self.bot.api_scheduler.submit(
             channel.send(embed=embed, view=view), priority=5
         )
 
-        # 4. 更新数据库中的 message_id
+        # 更新数据库中的 message_id
         await self.logic.update_vote_session_message_id(
-            session_id=result_dto.vote_session_id, message_id=message.id
+            session_id=dto.vote_session_id, message_id=message.id
         )
 
     async def _handle_subsequent_objection_ui(
-        self, interaction: discord.Interaction, result_dto: RaiseObjectionResultDto
+        self, interaction: discord.Interaction, dto: SubsequentObjectionDto
     ):
         """处理后续异议的UI交互（发送审核面板）。"""
         # 获取频道
@@ -346,225 +325,28 @@ class Moderation(commands.Cog):
         # 构建 Embed 和 View
         guild_id = self.bot.config.get("guild_id")
         if not guild_id:
-            raise RuntimeError("Guild ID 未配置。")
+            raise RuntimeError("服务器 ID (guild_id) 未配置")
 
         embed_qo = BuildAdminReviewEmbedQo(
-            objection_id=result_dto.objection_id,
-            objector_id=result_dto.objector_id,
-            objection_reason=result_dto.objection_reason,
-            proposal_id=result_dto.proposal_id,
-            proposal_title=result_dto.proposal_title,
-            proposal_thread_id=result_dto.proposal_thread_id,
+            objection_id=dto.objection_id,
+            objector_id=dto.objector_id,
+            objection_reason=dto.objection_reason,
+            proposal_id=dto.proposal_id,
+            proposal_title=dto.proposal_title,
+            proposal_thread_id=dto.proposal_thread_id,
             guild_id=int(guild_id),
         )
         embed = ModerationEmbedBuilder.build_admin_review_embed(embed_qo, self.bot.user)
-        view = ObjectionAdminReviewView(self.bot, result_dto.objection_id)
+        view = ObjectionManageView(self.bot)
 
-        # 3. 在论坛频道中创建审核帖子
-        thread_name = f"异议审核 - {result_dto.proposal_title[:50]}"
+        # 创建审核帖子
+        thread_name = f"异议审核 - {dto.proposal_title[:50]}"
         thread_with_message = await self.bot.api_scheduler.submit(
             channel.create_thread(name=thread_name, embed=embed, view=view), priority=3
         )
         thread = thread_with_message[0]
 
-        # 4. 更新数据库中的审核帖子ID
+        # 更新数据库中的审核帖子ID
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.moderation.update_objection_review_thread_id(
-                result_dto.objection_id, thread.id
-            )
+            await uow.moderation.update_objection_review_thread_id(dto.objection_id, thread.id)
             await uow.commit()
-
-
-    @commands.Cog.listener()
-    async def on_objection_vote_finished(
-        self, session_dto: VoteSessionDto, result_dto: VoteStatusDto
-    ):
-        """
-        监听由 VoteCloser 分派的异议投票结束事件。
-        """
-        logger.info(
-            f"接收到异议投票结束事件，异议ID: {session_dto.objectionId}，分派到 logic 层处理。"
-        )
-        try:
-            result = await self.logic.handle_objection_vote_finished(session_dto, result_dto)
-
-            if not result:
-                logger.warning(
-                    f"处理异议投票结束事件 (异议ID: {session_dto.objectionId}) 未返回有效结果。"
-                )
-                return
-
-            if not self.bot.user:
-                logger.error("机器人尚未登录，无法发送结果通知。")
-                return
-
-            channel = self.bot.get_channel(result.channel_id) if result.channel_id else None
-            if not isinstance(channel, discord.TextChannel):
-                logger.error(f"无法找到ID为 {result.channel_id} 的文本频道，或类型不正确。")
-                return
-
-            embed = ModerationEmbedBuilder.build_vote_result_embed(result.embed_qo, self.bot.user)
-
-            # 尝试编辑原消息
-            if result.message_id:
-                try:
-                    original_message = await channel.fetch_message(result.message_id)
-                    await self.bot.api_scheduler.submit(
-                        original_message.edit(embed=embed, view=None), priority=5
-                    )
-                    return  # 成功编辑后即可返回
-                except discord.NotFound:
-                    logger.warning(f"无法找到原始投票消息 {result.message_id}，将发送新消息。")
-                except Exception as e:
-                    logger.error(
-                        f"更新原始投票消息 {result.message_id} 时出错: {e}", exc_info=True
-                    )
-
-            # 如果编辑失败或没有 message_id，则发送新消息
-            await self.bot.api_scheduler.submit(channel.send(embed=embed), priority=5)
-
-        except Exception as e:
-            logger.error(f"在 on_objection_vote_finished 中发生意外错误: {e}", exc_info=True)
-
-    @commands.Cog.listener("on_announcement_finished")
-    async def on_announcement_finished(self, announcement):
-        """
-        监听由 Notification cog 分派的公示结束事件。
-        """
-        logger.info(
-            f"接收到公示结束事件，帖子ID: {announcement.discussionThreadId}，分派到 logic 层处理。"
-        )
-        await self.logic.handle_announcement_finished(announcement)
-
-    @commands.Cog.listener()
-    async def on_objection_goal_reached(self, result_dto: HandleSupportObjectionResultDto):
-        """
-        监听异议支持票数达到目标的事件，创建异议帖。
-        """
-        logger.info(f"异议 {result_dto.objection_id} 已达到目标票数，准备创建异议帖。")
-
-        try:
-            # 获取必要的配置和数据
-            discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
-            if not discussion_channel_id_str:
-                raise RuntimeError("未配置提案讨论频道 (discussion)。")
-
-            discussion_channel = await DiscordUtils.fetch_channel(
-                self.bot, int(discussion_channel_id_str)
-            )
-            if not isinstance(discussion_channel, discord.ForumChannel):
-                raise RuntimeError("提案讨论频道必须是论坛频道。")
-
-            #  构建帖子内容
-            thread_name = f"异议 - {result_dto.proposal_title}"
-            content = (
-                f"**关联提案**: <#{result_dto.proposal_discussion_thread_id}>\n"
-                f"**异议发起人**: <@{result_dto.objector_id}>\n\n"
-                f"**理由**:\n{result_dto.objection_reason}\n\n"
-                f"现在，请就此异议进行正式投票。\n如果赞成票多于反对票，原提案将被推翻。"
-            )
-
-            # 创建异议帖
-            thread_with_message = await self.bot.api_scheduler.submit(
-                discussion_channel.create_thread(name=thread_name, content=content),
-                priority=3,
-            )
-            objection_thread = thread_with_message[0]
-            logger.info(
-                f"成功为异议 {result_dto.objection_id} 创建了异议帖: {objection_thread.id}"
-            )
-
-            # 更新数据库和原提案
-            assert result_dto.objection_id is not None, "Objection ID is required"
-            assert (
-                result_dto.proposal_discussion_thread_id is not None
-            ), "Original proposal thread ID is required"
-            await self.logic.handle_objection_thread_creation(
-                objection_id=result_dto.objection_id,
-                objection_thread_id=objection_thread.id,
-                original_proposal_thread_id=result_dto.proposal_discussion_thread_id,
-            )
-
-            # 更新原提案帖的标签和标题
-            original_thread = await DiscordUtils.fetch_thread(
-                self.bot, result_dto.proposal_discussion_thread_id
-            )
-            if original_thread:
-                # 类型守卫，确保父频道是论坛
-                if not isinstance(original_thread.parent, discord.ForumChannel):
-                    logger.warning(f"帖子 {original_thread.id} 的父频道不是论坛，无法修改标签。")
-                    return
-
-                frozen_tag_id = self.bot.config.get("tags", {}).get("frozen")
-                if not frozen_tag_id:
-                    logger.warning("未在 config.json 中配置 'frozen' 标签ID。")
-                    return
-
-                # 准备新标题和新标签
-                if not result_dto.proposal_title:
-                    logger.warning(f"提案 {result_dto.proposal_id} 缺少标题，无法更新。")
-                    return
-                clean_title = StringUtils.clean_title(result_dto.proposal_title)
-                new_title = f"[冻结中] {clean_title}"
-
-                # 定义状态标签键
-                status_tag_keys = [
-                    "discussion",
-                    "executing",
-                    "finished",
-                    "abandoned",
-                    "rejected",
-                    "objection_voting",
-                ]
-
-                # 计算新标签
-                new_tags = DiscordUtils.calculate_new_tags(
-                    current_tags=original_thread.applied_tags,
-                    forum_tags=original_thread.parent.available_tags,
-                    config=self.bot.config,
-                    target_tag_name="frozen",
-                    status_tag_keys=status_tag_keys,
-                )
-
-                # 只有在标签实际发生变化时才进行编辑
-                if new_tags is not None:
-                    await self.bot.api_scheduler.submit(
-                        original_thread.edit(
-                            name=new_title,
-                            applied_tags=new_tags,
-                            archived=True,
-                            locked=True,
-                        ),
-                        priority=4,
-                    )
-                else:
-                    # 如果标签未变，仍然需要更新标题和状态
-                    await self.bot.api_scheduler.submit(
-                        original_thread.edit(name=new_title, archived=True, locked=True),
-                        priority=4,
-                    )
-                logger.info(f"已将原提案帖 {original_thread.id} 冻结、关闭并锁定。")
-
-                # 在原提案帖发送通知
-                notification_embed = discord.Embed(
-                    title="提案已冻结",
-                    description=(
-                        "由于一项异议已获得足够的支持票，该提案现已进入冻结状态。\n"
-                        "在相关异议得到处理之前，原提案的投票和讨论将暂停。"
-                    ),
-                    color=discord.Color.orange(),
-                )
-                notification_embed.add_field(
-                    name="相关异议帖",
-                    value=f"[点击跳转至异议帖]({objection_thread.jump_url})",
-                    inline=False,
-                )
-                notification_embed.set_footer(text="请在异议帖中继续进行讨论和投票。")
-                await self.bot.api_scheduler.submit(
-                    original_thread.send(embed=notification_embed), priority=4
-                )
-
-        except (RuntimeError, ValueError) as e:
-            logger.error(f"处理 on_objection_goal_reached 事件时出错: {e}")
-        except Exception as e:
-            logger.error(f"处理 on_objection_goal_reached 事件时发生意外错误: {e}", exc_info=True)
