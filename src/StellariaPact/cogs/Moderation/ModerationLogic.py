@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
@@ -11,20 +12,23 @@ from ...share.UnitOfWork import UnitOfWork
 from ..Voting.dto.VoteSessionDto import VoteSessionDto
 from ..Voting.dto.VoteStatusDto import VoteStatusDto
 from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
+from .dto.CollectionExpiredResultDto import CollectionExpiredResultDto
 from .dto.ConfirmationSessionDto import ConfirmationSessionDto
 from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
-from .dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
+from .dto.HandleSupportObjectionResultDto import \
+    HandleSupportObjectionResultDto
 from .dto.ObjectionDto import ObjectionDto
+from .dto.ObjectionReasonUpdateResultDto import ObjectionReasonUpdateResultDto
 from .dto.ObjectionReviewResultDto import ObjectionReviewResultDto
 from .dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from .dto.ObjectionReasonUpdateResultDto import ObjectionReasonUpdateResultDto
+from .dto.ProposalDto import ProposalDto
 from .dto.SubsequentObjectionDto import SubsequentObjectionDto
 from .dto.VoteFinishedResultDto import VoteFinishedResultDto
+from .qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
 from .qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from .qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
-from .qo.CreateObjectionAndVoteSessionShellQo import (
-    CreateObjectionAndVoteSessionShellQo,
-)
+from .qo.CreateObjectionAndVoteSessionShellQo import \
+    CreateObjectionAndVoteSessionShellQo
 from .qo.EditObjectionReasonQo import EditObjectionReasonQo
 from .qo.ObjectionSupportQo import ObjectionSupportQo
 
@@ -100,6 +104,10 @@ class ModerationLogic:
                 else ObjectionStatus.PENDING_REVIEW
             )
 
+            end_time = None
+            if is_first_objection:
+                end_time = datetime.now(timezone.utc) + timedelta(hours=48)
+
             qo = CreateObjectionAndVoteSessionShellQo(
                 proposal_id=proposal_id,
                 objector_id=user_id,
@@ -109,6 +117,7 @@ class ModerationLogic:
                 thread_id=target_thread_id,
                 is_anonymous=False,
                 is_realtime=True,
+                end_time=end_time,
             )
             creation_result_dto = await uow.moderation.create_objection_and_vote_session_shell(qo)
 
@@ -277,6 +286,7 @@ class ModerationLogic:
                     "proposal_title": proposal.title,
                     "proposal_thread_id": proposal.discussionThreadId,
                     "objection_id": objection.id,
+                    "objector_id": objection.objectorId,
                     "objection_reason": objection.reason,
                     "objection_thread_id": objection.objectionThreadId,
                     "is_passed": is_passed,
@@ -294,7 +304,11 @@ class ModerationLogic:
                 proposal_title=extracted_data["proposal_title"],
                 proposal_thread_url=f"https://discord.com/channels/{extracted_data['guild_id']}/{extracted_data['proposal_thread_id']}",
                 objection_id=extracted_data["objection_id"],
+                objector_id=extracted_data["objector_id"],
                 objection_reason=extracted_data["objection_reason"],
+                objection_thread_url=f"https://discord.com/channels/{extracted_data['guild_id']}/{extracted_data['objection_thread_id']}"
+                if extracted_data["objection_thread_id"]
+                else None,
                 is_passed=extracted_data["is_passed"],
                 approve_votes=result_dto.approveVotes,
                 reject_votes=result_dto.rejectVotes,
@@ -315,6 +329,82 @@ class ModerationLogic:
             return None
         except Exception as e:
             logger.exception(f"处理异议投票结束事件 (异议ID: {objection_id}) 时发生意外错误: {e}")
+            return None
+
+    async def handle_objection_collection_expired(
+        self, session_dto: VoteSessionDto, result_dto: VoteStatusDto
+    ) -> Optional[CollectionExpiredResultDto]:
+        """
+        处理异议支持票收集到期事件。
+        """
+        objection_id = session_dto.objectionId
+        if not objection_id:
+            logger.warning(f"投票会话 {session_dto.id} 到期，但没有关联的异议ID。")
+            return None
+
+        try:
+            extracted_data = {}
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                objection = await uow.moderation.get_objection_by_id(objection_id)
+                if not objection:
+                    raise ValueError(f"找不到ID为 {objection_id} 的异议。")
+
+                proposal = await uow.moderation.get_proposal_by_id(objection.proposalId)
+                if not proposal:
+                    raise ValueError(f"找不到异议 {objection_id} 关联的提案。")
+
+                # 核心逻辑：将异议状态更新为“已否决”
+                await uow.moderation.update_objection_status(
+                    objection_id, ObjectionStatus.REJECTED
+                )
+
+                # 预取数据
+                guild_id = self.bot.config.get("guild_id")
+                if not guild_id:
+                    raise RuntimeError("未在 config.json 中配置 'guild_id'。")
+
+                publicity_channel_id_str = self.bot.config.get("channels", {}).get(
+                    "objection_publicity"
+                )
+
+                extracted_data = {
+                    "proposal_title": proposal.title,
+                    "proposal_thread_id": proposal.discussionThreadId,
+                    "objector_id": objection.objectorId,
+                    "objection_reason": objection.reason,
+                    "final_votes": result_dto.totalVotes,
+                    "required_votes": objection.requiredVotes,
+                    "guild_id": guild_id,
+                    "notification_channel_id": int(publicity_channel_id_str)
+                    if publicity_channel_id_str
+                    else None,
+                }
+                await uow.commit()
+
+            # 构建 QO 和 DTO
+            embed_qo = BuildCollectionExpiredEmbedQo(
+                proposal_title=extracted_data["proposal_title"],
+                proposal_url=f"https://discord.com/channels/{extracted_data['guild_id']}/{extracted_data['proposal_thread_id']}",
+                objector_id=extracted_data["objector_id"],
+                objector_display_name=f"<@{extracted_data['objector_id']}>",
+                objection_reason=extracted_data["objection_reason"],
+                final_votes=extracted_data["final_votes"],
+                required_votes=extracted_data["required_votes"],
+            )
+
+            return CollectionExpiredResultDto(
+                embed_qo=embed_qo,
+                notification_channel_id=extracted_data["notification_channel_id"],
+                original_vote_message_id=session_dto.contextMessageId,
+            )
+
+        except (ValueError, RuntimeError) as e:
+            logger.error(f"处理异议 {objection_id} 支持票收集到期事件时发生逻辑错误: {e}")
+            return None
+        except Exception as e:
+            logger.error(
+                f"处理异议 {objection_id} 支持票收集到期事件时发生意外错误: {e}", exc_info=True
+            )
             return None
 
     async def handle_announcement_finished(self, announcement: Announcement):
@@ -405,11 +495,12 @@ class ModerationLogic:
         try:
             panel_dto: ObjectionVotePanelDto | None = None
             objection_dto_for_result: ObjectionDto | None = None
+            proposal_dto_for_result: ProposalDto | None = None
 
             async with UnitOfWork(self.bot.db_handler) as uow:
                 objection = await uow.moderation.get_objection_by_id(objection_id)
                 if not objection or objection.status != ObjectionStatus.PENDING_REVIEW:
-                    raise ValueError("此异议当前无法被批准。")
+                    raise ValueError("此异议未处于审核状态，无法被批准。")
 
                 proposal = await uow.moderation.get_proposal_by_id(objection.proposalId)
                 if not proposal:
@@ -421,10 +512,12 @@ class ModerationLogic:
                 assert proposal.discussionThreadId is not None
 
                 # 为此异议创建新的投票会话
+                end_time = datetime.now(timezone.utc) + timedelta(hours=48)
                 vote_qo = CreateVoteSessionQo(
                     thread_id=proposal.discussionThreadId,
                     objection_id=objection.id,
                     context_message_id=0,  # 占位符，将在UI创建后更新
+                    end_time=end_time,
                 )
                 vote_session_dto = await uow.voting.create_vote_session(vote_qo)
 
@@ -437,7 +530,7 @@ class ModerationLogic:
                 panel_dto = ObjectionVotePanelDto(
                     objection_id=objection.id,
                     vote_session_id=vote_session_dto.id,
-                    objector_id=objection.objector_id,
+                    objector_id=objection.objectorId,
                     objection_reason=objection.reason,
                     required_votes=objection.requiredVotes,
                     proposal_id=proposal.id,
@@ -445,6 +538,7 @@ class ModerationLogic:
                     proposal_thread_id=proposal.discussionThreadId,
                 )
                 objection_dto_for_result = ObjectionDto.from_orm(objection)
+                proposal_dto_for_result = ProposalDto.from_orm(proposal)
 
                 await uow.commit()
 
@@ -454,13 +548,12 @@ class ModerationLogic:
 
             return ObjectionReviewResultDto(
                 success=True,
-                message=(
-                    f"✅ 操作完成：此异议已被 <@{moderator_id}> **批准**。\n"
-                    f"理由: {reason}\n"
-                    "将在公示频道开启异议产生票。"
-                ),
+                message="操作成功",
                 objection=objection_dto_for_result,
-                proposal=None,
+                proposal=proposal_dto_for_result,
+                moderator_id=moderator_id,
+                reason=reason,
+                is_approve=True,
             )
         except ValueError as e:
             return ObjectionReviewResultDto(success=False, message=str(e))
@@ -497,7 +590,7 @@ class ModerationLogic:
                     proposal_id=proposal.id,
                     proposal_title=proposal.title,
                     proposal_thread_id=proposal.discussionThreadId,
-                    objector_id=objection.objector_id,
+                    objector_id=objection.objectorId,
                     new_reason=objection.reason,
                 )
         except (PermissionError, ValueError, RuntimeError) as e:
@@ -519,21 +612,31 @@ class ModerationLogic:
         """
         try:
             objection_dto: ObjectionDto | None = None
+            proposal_dto: ProposalDto | None = None
             async with UnitOfWork(self.bot.db_handler) as uow:
                 objection = await uow.moderation.get_objection_by_id(objection_id)
                 if not objection or objection.status != ObjectionStatus.PENDING_REVIEW:
-                    raise ValueError("此异议当前无法被驳回。")
+                    raise ValueError("此异议未处于审核状态，无法被驳回。")
+
+                proposal = await uow.moderation.get_proposal_by_id(objection.proposalId)
+                if not proposal:
+                    raise ValueError("找不到关联的提案，操作中止。")
 
                 await uow.moderation.update_objection_status(
                     objection_id, ObjectionStatus.REJECTED
                 )
                 objection_dto = ObjectionDto.from_orm(objection)
+                proposal_dto = ProposalDto.from_orm(proposal)
                 await uow.commit()
 
             return ObjectionReviewResultDto(
                 success=True,
-                message=f"❌ 操作完成：此异议已被 <@{moderator_id}> **驳回**。\n理由: {reason}",
+                message="操作成功",
                 objection=objection_dto,
+                proposal=proposal_dto,
+                moderator_id=moderator_id,
+                reason=reason,
+                is_approve=False,
             )
         except ValueError as e:
             return ObjectionReviewResultDto(success=False, message=str(e))

@@ -17,7 +17,7 @@ class Objection(BaseModel, table=True):
     """
 
     proposalId: int = Field(foreign_key="proposal.id", index=True, description="关联的提案ID")
-    objector_id: int = Field(index=True, description="异议发起人的Discord ID")
+    objectorId: int = Field(index=True, description="异议发起人的Discord ID")
     reason: str = Field(description="反对理由")
     objectionThreadId: Optional[int] = Field(
         index=True, default=None, description="异议讨论帖的ID"

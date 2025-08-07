@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Optional
+
 from ....share.BaseDto import BaseDto
 from ....share.enums.ObjectionStatus import ObjectionStatus
 
@@ -15,3 +18,4 @@ class CreateObjectionAndVoteSessionShellQo(BaseDto):
     thread_id: int
     is_anonymous: bool
     is_realtime: bool
+    end_time: Optional[datetime] = None

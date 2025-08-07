@@ -2,12 +2,10 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.views.EditObjectionReasonModal import (
-    EditObjectionReasonModal,
-)
-from StellariaPact.cogs.Moderation.views.ObjectionReviewReasonModal import (
-    ObjectionReviewReasonModal,
-)
+from StellariaPact.cogs.Moderation.views.EditObjectionReasonModal import \
+    EditObjectionReasonModal
+from StellariaPact.cogs.Moderation.views.ObjectionReviewReasonModal import \
+    ObjectionReviewReasonModal
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
@@ -24,15 +22,19 @@ class ObjectionActionView(discord.ui.View):
         objection_id: int,
         is_objector: bool,
         is_admin: bool,
+        channel_id: int,
+        message_id: int,
     ):
         super().__init__(timeout=900)  # 15分钟后超时
         self.bot = bot
         self.objection_id = objection_id
+        self.channel_id = channel_id
+        self.message_id = message_id
 
         # 根据权限动态添加按钮
         if is_objector:
             self._add_objector_buttons()
-        if is_admin:
+        elif is_admin:
             self._add_admin_buttons()
 
     def _add_objector_buttons(self):
@@ -79,6 +81,8 @@ class ObjectionActionView(discord.ui.View):
             objection_id=self.objection_id,
             is_approve=True,
             logic=logic,
+            channel_id=self.channel_id,
+            message_id=self.message_id,
         )
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
 
@@ -90,5 +94,7 @@ class ObjectionActionView(discord.ui.View):
             objection_id=self.objection_id,
             is_approve=False,
             logic=logic,
+            channel_id=self.channel_id,
+            message_id=self.message_id,
         )
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)

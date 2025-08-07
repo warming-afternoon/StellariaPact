@@ -5,6 +5,9 @@ import discord
 
 from ....share.SafeDefer import safeDefer
 from ....share.StellariaPactBot import StellariaPactBot
+from ..qo.BuildObjectionReviewResultEmbedQo import \
+    BuildObjectionReviewResultEmbedQo
+from .ModerationEmbedBuilder import ModerationEmbedBuilder
 
 if TYPE_CHECKING:
     from ..ModerationLogic import ModerationLogic
@@ -32,6 +35,8 @@ class ObjectionReviewReasonModal(discord.ui.Modal):
         objection_id: int,
         is_approve: bool,
         logic: "ModerationLogic",
+        channel_id: int,
+        message_id: int,
     ):
         self.is_approve = is_approve
         action_text = "批准" if is_approve else "驳回"
@@ -40,6 +45,8 @@ class ObjectionReviewReasonModal(discord.ui.Modal):
         self.bot = bot
         self.objection_id = objection_id
         self.logic = logic
+        self.channel_id = channel_id
+        self.message_id = message_id
 
     async def on_submit(self, interaction: discord.Interaction):
         await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
@@ -61,22 +68,59 @@ class ObjectionReviewReasonModal(discord.ui.Modal):
 
             # UI 更新
             if result_dto.success:
-                # 断言消息存在，以帮助类型检查器
-                assert interaction.message is not None, "操作的原始消息不应为 None"
-                view = interaction.message.view  # type: ignore
-                if view:
-                    # 禁用所有按钮
-                    for item in view.children:
-                        if isinstance(item, (discord.ui.Button, discord.ui.Select)):
-                            item.disabled = True
-                    # 更新原始消息
-                    await self.bot.api_scheduler.submit(
-                        interaction.message.edit(content=result_dto.message, view=view),
-                        2,
-                    )
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send("操作成功。", ephemeral=True), 1
+                # 确保我们有足够的信息来构建 embed
+                if (
+                    not result_dto.objection
+                    or not result_dto.proposal
+                    or not result_dto.moderator_id
+                    or not result_dto.reason
+                    or result_dto.is_approve is None
+                ):
+                    # 在访问 id 之前，先断言 objection 不为 None
+                    assert result_dto.objection is not None
+                    logger.error(f"从 logic 返回的 DTO {result_dto.objection.id} 缺少必要信息。")
+                    await interaction.followup.send("处理结果时发生内部错误。", ephemeral=True)
+                    return
+
+                # 获取审核帖频道
+                channel = await self.bot.fetch_channel(self.channel_id)
+                if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+                    logger.warning(f"无法找到频道 {self.channel_id} 或频道类型不正确。")
+                    await interaction.followup.send("无法找到审核帖。", ephemeral=True)
+                    return
+
+                # 构建公开的 embed
+                assert channel.guild is not None, "频道必须在服务器中"
+                if result_dto.proposal.discussionThreadId is None:
+                    logger.error(f"提案 {result_dto.proposal.id} 缺少 discussionThreadId。")
+                    await interaction.followup.send("处理结果时发生内部错误。", ephemeral=True)
+                    return
+
+                qo = BuildObjectionReviewResultEmbedQo(
+                    guild_id=channel.guild.id,
+                    proposal_title=result_dto.proposal.title,
+                    proposal_thread_id=result_dto.proposal.discussionThreadId,
+                    objector_id=result_dto.objection.objectorId,
+                    objection_reason=result_dto.objection.reason,
+                    moderator_id=result_dto.moderator_id,
+                    review_reason=result_dto.reason,
+                    is_approve=result_dto.is_approve,
                 )
+                review_embed = ModerationEmbedBuilder.build_objection_review_result_embed(qo)
+
+                # 在审核帖中发送公开消息，并 @ 发起人
+                content = f"异议审核完成，<@{result_dto.objection.objectorId}>"
+                await self.bot.api_scheduler.submit(
+                    channel.send(content=content, embed=review_embed), 2
+                )
+
+                # 禁用原消息的按钮
+                try:
+                    original_message = await channel.fetch_message(self.message_id)
+                    await self.bot.api_scheduler.submit(original_message.edit(view=None), 2)
+                except (discord.NotFound, discord.Forbidden) as e:
+                    logger.warning(f"无法编辑消息 {self.message_id} 以移除视图: {e}")
+
             else:
                 # 处理业务逻辑层返回的错误
                 await self.bot.api_scheduler.submit(

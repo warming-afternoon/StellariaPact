@@ -15,6 +15,15 @@
     "abandoned": null,
     "rejected": null
   },
+  "status_tag_keys": [
+    "discussion",
+    "executing",
+    "frozen",
+    "objection_voting",
+    "finished",
+    "abandoned",
+    "rejected"
+  ],
   "roles": {
     "councilModerator": null,
     "executionAuditor": null,

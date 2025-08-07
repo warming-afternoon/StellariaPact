@@ -14,3 +14,6 @@ class ObjectionReviewResultDto(BaseDto):
     message: str
     objection: Optional[ObjectionDto] = None
     proposal: Optional[ProposalDto] = None
+    moderator_id: Optional[int] = None
+    reason: Optional[str] = None
+    is_approve: Optional[bool] = None

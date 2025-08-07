@@ -7,24 +7,22 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import (
-    ConfirmationSessionDto,
-)
-from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import (
-    HandleSupportObjectionResultDto,
-)
-from StellariaPact.cogs.Moderation.dto.ObjectionCreationResultDto import (
-    ObjectionCreationResultDto,
-)
-from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
-from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
-from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import (
-    CreateConfirmationSessionQo,
-)
-from StellariaPact.cogs.Moderation.qo.CreateObjectionAndVoteSessionShellQo import (
-    CreateObjectionAndVoteSessionShellQo,
-)
-from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
+from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import \
+    ConfirmationSessionDto
+from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import \
+    HandleSupportObjectionResultDto
+from StellariaPact.cogs.Moderation.dto.ObjectionCreationResultDto import \
+    ObjectionCreationResultDto
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import \
+    ObjectionDetailsDto
+from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import \
+    AbandonProposalQo
+from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import \
+    CreateConfirmationSessionQo
+from StellariaPact.cogs.Moderation.qo.CreateObjectionAndVoteSessionShellQo import \
+    CreateObjectionAndVoteSessionShellQo
+from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import \
+    ObjectionSupportQo
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
 from StellariaPact.models.Objection import Objection
 from StellariaPact.models.Proposal import Proposal
@@ -198,7 +196,7 @@ class ModerationService:
         if not objection:
             raise ValueError(f"未找到ID为 {objection_id} 的异议。")
 
-        if objection.objector_id != user_id:
+        if objection.objectorId != user_id:
             raise PermissionError("只有异议发起人才能修改理由。")
 
         objection.reason = new_reason
@@ -231,7 +229,7 @@ class ModerationService:
         return ObjectionDetailsDto(
             objection_id=objection.id,
             objection_reason=objection.reason,
-            objector_id=objection.objector_id,
+            objector_id=objection.objectorId,
             proposal_id=objection.proposal.id,
             proposal_title=objection.proposal.title,
         )
@@ -262,6 +260,7 @@ class ModerationService:
             contextMessageId=None,  # 设置为空，等待后续更新
             anonymousFlag=qo.is_anonymous,
             realtimeFlag=qo.is_realtime,
+            endTime=qo.end_time,
         )
         self.session.add(new_vote_session)
         await self.session.flush()
@@ -540,6 +539,6 @@ class ModerationService:
             proposal_id=proposal.id,
             proposal_title=proposal.title,
             proposal_discussion_thread_id=proposal.discussionThreadId,
-            objector_id=objection.objector_id,
+            objector_id=objection.objectorId,
             objection_reason=objection.reason,
         )

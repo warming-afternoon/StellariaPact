@@ -5,6 +5,7 @@ import random
 import discord
 from discord.ext import commands, tasks
 
+from StellariaPact.share.enums.ObjectionStatus import ObjectionStatus
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
@@ -40,19 +41,50 @@ class VoteCloser(commands.Cog):
                 try:
                     logger.info(f"正在处理已到期的投票会话: {session_dto.id}")
                     # 步骤 2a: 在独立的事务中计票和关闭
+                    objection_id = None
+                    objection_status = None
+                    result_dto = None
+
                     async with UnitOfWork(self.bot.db_handler) as uow_atomic:
+                        # 在关闭会话前，先获取其关联的异议状态
+                        if session_dto.objectionId:
+                            objection = await uow_atomic.moderation.get_objection_by_id(
+                                session_dto.objectionId
+                            )
+                            if objection:
+                                objection_id = objection.id
+                                objection_status = objection.status
+
                         result_dto = await uow_atomic.voting.tally_and_close_session(
                             session_dto.id
                         )
                         await uow_atomic.commit()
 
-                    # 步骤 2b: 检查是否为异议投票，并分派相应事件
-                    if session_dto.objectionId is not None:
-                        logger.info(
-                            f"投票会话 {session_dto.id} 是一个异议投票。"
-                            "分派 'objection_vote_finished' 事件。"
-                        )
-                        self.bot.dispatch("objection_vote_finished", session_dto, result_dto)
+                    # 步骤 2b: 检查是否为异议投票，并根据异议状态分派不同事件
+                    if objection_id and objection_status and result_dto:
+                        if objection_status == ObjectionStatus.COLLECTING_VOTES:
+                            # 状态为“收集中”的投票过期，意味着支持票收集失败
+                            logger.debug(
+                                f"异议 {objection_id} 的支持票收集已到期。"
+                                "分派 'objection_collection_expired' 事件。"
+                            )
+                            self.bot.dispatch(
+                                "objection_collection_expired", session_dto, result_dto
+                            )
+                        elif objection_status == ObjectionStatus.VOTING:
+                            # 状态为“投票中”的投票过期，是正式的异议投票结束
+                            logger.debug(
+                                f"异议 {objection_id} 的正式投票已结束。"
+                                "分派 'objection_vote_finished' 事件。"
+                            )
+                            self.bot.dispatch(
+                                "objection_vote_finished", session_dto, result_dto
+                            )
+                        else:
+                            logger.warning(
+                                f"投票会话 {session_dto.id} 关联的异议 {objection_id} "
+                                f"处于意外状态 {objection_status}，不分派事件。"
+                            )
                     else:
                         # 对于非异议投票，保留原有的通知逻辑
                         logger.info(

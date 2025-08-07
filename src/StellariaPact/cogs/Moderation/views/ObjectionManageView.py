@@ -2,7 +2,8 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.views.ObjectionActionView import ObjectionActionView
+from StellariaPact.cogs.Moderation.views.ObjectionActionView import \
+    ObjectionActionView
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -65,7 +66,7 @@ class ObjectionManageView(discord.ui.View):
                 )
 
             objection_id = objection.id
-            objector_id = objection.objector_id
+            objector_id = objection.objectorId
 
         assert objection_id is not None, "Objection ID cannot be None"
         assert objector_id is not None, "Objector ID cannot be None"
@@ -91,6 +92,8 @@ class ObjectionManageView(discord.ui.View):
             objection_id=objection_id,
             is_objector=is_objector,
             is_admin=is_admin,
+            channel_id=interaction.channel.id,
+            message_id=interaction.message.id,
         )
         embed = discord.Embed(
             title="异议管理",

@@ -1,26 +1,33 @@
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Literal
 
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
-from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
+from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import \
+    ObjectionSupportQo
+from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import \
+    ObjectionVoteEmbedBuilder
 
-from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import (
-    HandleSupportObjectionResultDto,
-)
+from ....cogs.Moderation.dto.CollectionExpiredResultDto import \
+    CollectionExpiredResultDto
+from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import \
+    HandleSupportObjectionResultDto
 from ....cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
-from ....cogs.Moderation.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
-from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import (
-    BuildProposalFrozenEmbedQo,
-)
+from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
+    BuildAdminReviewEmbedQo
+from ....cogs.Moderation.qo.BuildFirstObjectionEmbedQo import \
+    BuildFirstObjectionEmbedQo
+from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import \
+    BuildProposalFrozenEmbedQo
 from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
-from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from ....cogs.Moderation.views.ModerationEmbedBuilder import \
+    ModerationEmbedBuilder
 from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
-from ....cogs.Voting.views.ObjectionCreationVoteView import ObjectionCreationVoteView
+from ....cogs.Voting.views.ObjectionCreationVoteView import \
+    ObjectionCreationVoteView
 from ....share.DiscordUtils import DiscordUtils
 from ....share.StringUtils import StringUtils
 from ....share.UnitOfWork import UnitOfWork
@@ -97,6 +104,33 @@ class ModerationListener(commands.Cog):
 
         except Exception as e:
             logger.error(f"在 on_objection_vote_finished 中发生意外错误: {e}", exc_info=True)
+
+    @commands.Cog.listener("on_objection_collection_expired")
+    async def on_objection_collection_expired(
+        self, session_dto: VoteSessionDto, result_dto: VoteStatusDto
+    ):
+        """
+        监听由 VoteCloser 分派的异议支持票收集到期事件。
+        """
+        logger.info(
+            f"接收到异议支持票收集到期事件，异议ID: {session_dto.objectionId}，分派到 logic 层处理。"
+        )
+        try:
+            final_result = await self.logic.handle_objection_collection_expired(
+                session_dto, result_dto
+            )
+
+            if not final_result:
+                logger.warning(
+                    f"处理异议支持票收集到期事件 (异议ID: {session_dto.objectionId}) 未返回有效结果。"
+                )
+                return
+
+            # 更新公示频道的投票面板
+            await self._update_publicity_panel_for_collection_expired(final_result)
+
+        except Exception as e:
+            logger.error(f"在 on_objection_collection_expired 中发生意外错误: {e}", exc_info=True)
 
     @commands.Cog.listener("on_announcement_finished")
     async def on_announcement_finished(self, announcement):
@@ -188,23 +222,21 @@ class ModerationListener(commands.Cog):
                     target_tag_name="frozen",
                 )
 
-                # 只有在标签实际发生变化时才进行编辑
+                tasks = []
+                # 准备编辑参数
+                edit_kwargs = {
+                    "name": new_title,
+                    "archived": True,
+                    "locked": True,
+                }
                 if new_tags is not None:
-                    await self.bot.api_scheduler.submit(
-                        original_thread.edit(
-                            name=new_title,
-                            applied_tags=new_tags,
-                            archived=True,
-                            locked=True,
-                        ),
-                        priority=4,
+                    edit_kwargs["applied_tags"] = new_tags
+
+                tasks.append(
+                    self.bot.api_scheduler.submit(
+                        original_thread.edit(**edit_kwargs), priority=4
                     )
-                else:
-                    # 如果标签未变，仍然需要更新标题和状态
-                    await self.bot.api_scheduler.submit(
-                        original_thread.edit(name=new_title, archived=True, locked=True),
-                        priority=4,
-                    )
+                )
                 logger.info(f"已将原提案帖 {original_thread.id} 冻结、关闭并锁定。")
 
                 # 在原提案帖发送通知
@@ -212,9 +244,12 @@ class ModerationListener(commands.Cog):
                     objection_thread_jump_url=objection_thread.jump_url
                 )
                 notification_embed = ModerationEmbedBuilder.build_proposal_frozen_embed(embed_qo)
-                await self.bot.api_scheduler.submit(
-                    original_thread.send(embed=notification_embed), priority=4
+                tasks.append(
+                    self.bot.api_scheduler.submit(
+                        original_thread.send(embed=notification_embed), priority=4
+                    )
                 )
+                await asyncio.gather(*tasks)
 
         except (RuntimeError, ValueError) as e:
             logger.error(f"处理 on_objection_goal_reached 事件时出错: {e}")
@@ -390,6 +425,44 @@ class ModerationListener(commands.Cog):
         else:
             await self.bot.api_scheduler.submit(channel.send(embed=embed), priority=5)
 
+    async def _update_publicity_panel_for_collection_expired(
+        self, result: CollectionExpiredResultDto
+    ):
+        """更新公示频道中的原始投票消息（收集到期场景）"""
+        if not self.bot.user:
+            logger.error("机器人尚未登录，无法更新投票面板。")
+            return
+
+        channel = (
+            await DiscordUtils.fetch_channel(self.bot, result.notification_channel_id)
+            if result.notification_channel_id
+            else None
+        )
+        if not isinstance(channel, discord.TextChannel):
+            logger.error(f"无法找到ID为 {result.notification_channel_id} 的文本频道。")
+            return
+
+        embed = ModerationEmbedBuilder.build_collection_expired_embed(result.embed_qo)
+
+        if result.original_vote_message_id:
+            try:
+                message = await channel.fetch_message(result.original_vote_message_id)
+                await self.bot.api_scheduler.submit(
+                    message.edit(embed=embed, view=None), priority=5
+                )
+            except discord.NotFound:
+                logger.warning(
+                    f"无法找到原始投票消息 {result.original_vote_message_id}，将发送新消息。"
+                )
+                await self.bot.api_scheduler.submit(channel.send(embed=embed), priority=5)
+            except Exception as e:
+                logger.error(
+                    f"更新原始投票消息 {result.original_vote_message_id} 时出错: {e}",
+                    exc_info=True,
+                )
+        else:
+            await self.bot.api_scheduler.submit(channel.send(embed=embed), priority=5)
+
     async def _handle_thread_status_after_vote(self, result):
         """根据投票结果处理原提案和异议帖的状态"""
         original_thread = await DiscordUtils.fetch_thread(
@@ -425,17 +498,15 @@ class ModerationListener(commands.Cog):
                 self.bot.config,
                 "rejected",
             )
-            if new_tags is not None:
-                await self.bot.api_scheduler.submit(
-                    original_thread.edit(
-                        name=new_title, applied_tags=new_tags, archived=True, locked=True
-                    ),
-                    priority=4,
-                )
-            if objection_thread:
-                await self.bot.api_scheduler.submit(
-                    objection_thread.edit(archived=True, locked=True), priority=4
-                )
+            await self.bot.api_scheduler.submit(
+                original_thread.edit(
+                    name=new_title,
+                    applied_tags=new_tags if new_tags is not None else original_thread.applied_tags,
+                    archived=True,
+                    locked=True,
+                ),
+                priority=4,
+            )
         else:
             # 异议失败 -> 原提案解冻，异议帖被否决
             new_title = clean_title
@@ -445,13 +516,15 @@ class ModerationListener(commands.Cog):
                 self.bot.config,
                 "discussion",
             )
-            if new_tags is not None:
-                await self.bot.api_scheduler.submit(
-                    original_thread.edit(
-                        name=new_title, applied_tags=new_tags, archived=False, locked=False
-                    ),
-                    priority=4,
-                )
+            await self.bot.api_scheduler.submit(
+                original_thread.edit(
+                    name=new_title,
+                    applied_tags=new_tags if new_tags is not None else original_thread.applied_tags,
+                    archived=False,
+                    locked=False,
+                ),
+                priority=4,
+            )
             if objection_thread:
                 obj_clean_title = StringUtils.clean_title(objection_thread.name)
                 obj_new_title = f"[已否决] {obj_clean_title}"
@@ -469,11 +542,17 @@ class ModerationListener(commands.Cog):
                             priority=4,
                         )
 
-        # 在原提案帖中同步最终结果
+        # 在原提案帖和异议帖中同步最终结果
         final_embed = ModerationEmbedBuilder.build_vote_result_embed(
             result.embed_qo, self.bot.user
         )
+        # 发送到原帖
         await self.bot.api_scheduler.submit(original_thread.send(embed=final_embed), priority=3)
+        # 如果异议帖存在，也发送到异议帖
+        if objection_thread:
+            await self.bot.api_scheduler.submit(
+                objection_thread.send(embed=final_embed), priority=3
+            )
 
     @commands.Cog.listener("on_objection_creation_vote_cast")
     async def on_objection_creation_vote_cast(

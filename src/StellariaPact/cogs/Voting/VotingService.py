@@ -10,14 +10,17 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from StellariaPact.cogs.Voting.dto.AdjustVoteTimeDto import AdjustVoteTimeDto
 from StellariaPact.cogs.Voting.dto.UserActivityDto import UserActivityDto
 from StellariaPact.cogs.Voting.dto.UserVoteDto import UserVoteDto
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import (VoteDetailDto,
+                                                         VoterInfo)
 from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
+    CreateVoteSessionQo
 from StellariaPact.cogs.Voting.qo.GetVoteDetailsQo import GetVoteDetailsQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
+from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import \
+    UpdateUserActivityQo
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
@@ -33,29 +36,16 @@ class VotingService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def _get_vote_session_by_thread_id(self, thread_id: int) -> Optional[VoteSession]:
-        """
-        (私有) 根据帖子ID获取投票会话。
-        """
-        result = await self.session.exec(
-            select(VoteSession).where(VoteSession.contextThreadId == thread_id)
-        )
-        return result.one_or_none()
-
     async def get_vote_session_by_thread_id(self, thread_id: int) -> Optional[VoteSessionDto]:
         """
         根据帖子ID获取投票会话。
         """
-        session = await self._get_vote_session_by_thread_id(thread_id)
+        statement = select(VoteSession).where(VoteSession.contextThreadId == thread_id)
+        result = await self.session.exec(statement)
+        session = result.one_or_none()
         if not session:
             return None
         return VoteSessionDto.model_validate(session)
-
-    async def get_vote_session_by_id(self, session_id: int) -> Optional[VoteSession]:
-        """
-        根据会话ID获取投票会话。
-        """
-        return await self.session.get(VoteSession, session_id)
 
     async def get_vote_session_by_context_message_id(
         self, message_id: int
@@ -70,13 +60,25 @@ class VotingService:
 
     async def create_vote_session(self, qo: CreateVoteSessionQo) -> VoteSessionDto:
         """
-        在指定的帖子中创建一个新的投票会话。
+        在指定的上下文中创建一个新的投票会话。
         如果已存在，则返回现有会话。
         """
-        existing_session = await self._get_vote_session_by_thread_id(qo.thread_id)
+
+        filters = []
+        if qo.thread_id:
+            filters.append(VoteSession.contextThreadId == qo.thread_id)
+        if qo.objection_id:
+            filters.append(VoteSession.objectionId == qo.objection_id)
+        if qo.context_message_id:
+            filters.append(VoteSession.contextMessageId == qo.context_message_id)
+
+        statement = select(VoteSession).where(*filters)
+        result = await self.session.exec(statement)
+        existing_session = result.one_or_none()
         if existing_session:
             return VoteSessionDto.model_validate(existing_session)
 
+        # 如果没有找到现有会话，则创建新的会话
         data = {
             "contextThreadId": qo.thread_id,
             "objectionId": qo.objection_id,
@@ -110,7 +112,9 @@ class VotingService:
         """
         记录或更新用户的投票。
         """
-        vote_session = await self._get_vote_session_by_thread_id(qo.thread_id)
+        statement = select(VoteSession).where(VoteSession.contextThreadId == qo.thread_id)
+        result = await self.session.exec(statement)
+        vote_session = result.one_or_none()
         if not vote_session:
             return None
 
@@ -137,7 +141,9 @@ class VotingService:
         """
         获取用户在特定投票会话中的投票记录。
         """
-        vote_session = await self._get_vote_session_by_thread_id(thread_id)
+        statement = select(VoteSession).where(VoteSession.contextThreadId == thread_id)
+        result = await self.session.exec(statement)
+        vote_session = result.one_or_none()
         if not vote_session or vote_session.id is None:
             return None
 
@@ -162,7 +168,9 @@ class VotingService:
         """
         根据帖子频道ID删除用户的投票记录 (弃票)。
         """
-        vote_session = await self._get_vote_session_by_thread_id(thread_id)
+        statement = select(VoteSession).where(VoteSession.contextThreadId == thread_id)
+        result = await self.session.exec(statement)
+        vote_session = result.one_or_none()
         if not vote_session:
             return False
 
@@ -330,7 +338,9 @@ class VotingService:
         Raises:
             ValueError: 如果找不到投票或投票已结束。
         """
-        vote_session = await self._get_vote_session_by_thread_id(qo.thread_id)
+        statement = select(VoteSession).where(VoteSession.contextThreadId == qo.thread_id)
+        result = await self.session.exec(statement)
+        vote_session = result.one_or_none()
         if not vote_session:
             raise ValueError("找不到指定的投票会话。")
 
@@ -355,7 +365,9 @@ class VotingService:
 
     async def toggle_anonymous(self, thread_id: int) -> Optional[VoteSessionDto]:
         """切换投票的匿名状态。"""
-        vote_session = await self._get_vote_session_by_thread_id(thread_id)
+        statement = select(VoteSession).where(VoteSession.contextThreadId == thread_id)
+        result = await self.session.exec(statement)
+        vote_session = result.one_or_none()
         if not vote_session:
             return None
 
@@ -365,7 +377,9 @@ class VotingService:
 
     async def toggle_realtime(self, thread_id: int) -> Optional[VoteSessionDto]:
         """切换投票的实时进度状态。"""
-        vote_session = await self._get_vote_session_by_thread_id(thread_id)
+        statement = select(VoteSession).where(VoteSession.contextThreadId == thread_id)
+        result = await self.session.exec(statement)
+        vote_session = result.one_or_none()
         if not vote_session:
             return None
 

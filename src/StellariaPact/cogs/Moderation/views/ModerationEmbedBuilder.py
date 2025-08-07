@@ -1,13 +1,16 @@
 from datetime import datetime, timezone
 from typing import Dict
+from zoneinfo import ZoneInfo
 
 import discord
-from zoneinfo import ZoneInfo
 
 from ....share.enums.ConfirmationStatus import ConfirmationStatus
 from ..qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
+from ..qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
 from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
 from ..qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
+from ..qo.BuildObjectionReviewResultEmbedQo import \
+    BuildObjectionReviewResultEmbedQo
 from ..qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
 from ..qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 
@@ -179,16 +182,80 @@ class ModerationEmbedBuilder:
             title=f"异议投票结果：{result_text}",
             description=(
                 f"关于提案 **[{qo.proposal_title}]({qo.proposal_thread_url})** "
-                f"的异议（ID: {qo.objection_id}）投票已结束。"
+                f"的异议投票已结束。\n\n"
+                f"**异议发起人**: <@{qo.objector_id}>"
             ),
             color=result_color,
         )
+        if qo.objection_thread_url:
+            embed.add_field(
+                name="异议帖",
+                value=f"[点击跳转]({qo.objection_thread_url})",
+                inline=False,
+            )
+        
+        embed.add_field(name="异议理由", value=f"{qo.objection_reason}", inline=False)
+        
         embed.add_field(name="赞成票", value=str(qo.approve_votes), inline=True)
         embed.add_field(name="反对票", value=str(qo.reject_votes), inline=True)
         embed.add_field(name="总票数", value=str(qo.total_votes), inline=True)
+        
+        embed.timestamp = datetime.now(timezone.utc)
+        return embed
+
+    @staticmethod
+    def build_collection_expired_embed(
+        qo: "BuildCollectionExpiredEmbedQo",
+    ) -> discord.Embed:
+        """
+        构建异议产生票收集失败的 Embed 消息。
+        """
+        embed = discord.Embed(
+            title="异议产生票收集失败",
+            description=(
+                f"对提案 [{qo.proposal_title}]({qo.proposal_url}) 的一项异议"
+                "因未能在指定时间内收集到足够的支持票而关闭。\n\n"
+                f"**异议发起人**: <@{qo.objector_id}> ({qo.objector_display_name})"
+            ),
+            color=discord.Color.red(),
+        )
         embed.add_field(name="异议理由", value=f"{qo.objection_reason}", inline=False)
-        embed.set_footer(
-            text=f"由 {bot_user.display_name} 提供支持", icon_url=bot_user.display_avatar.url
+        embed.add_field(name="所需票数", value=str(qo.required_votes), inline=True)
+        embed.add_field(
+            name="最终支持数", value=f"{qo.final_votes} / {qo.required_votes}", inline=True
         )
         embed.timestamp = datetime.now(timezone.utc)
         return embed
+
+    @staticmethod
+    def build_objection_review_result_embed(
+        qo: "BuildObjectionReviewResultEmbedQo",
+    ) -> discord.Embed:
+        """
+        构建异议审核结果的 Embed 消息。
+        """
+        action_text = "批准" if qo.is_approve else "驳回"
+        color = discord.Color.green() if qo.is_approve else discord.Color.red()
+
+        embed = discord.Embed(
+            title=f"异议审核结果：{action_text}",
+            description=(
+                f"针对提案 [{qo.proposal_title}]"
+                f"(https://discord.com/channels/{qo.guild_id}/{qo.proposal_thread_id}) "
+                "的异议已由管理员审核。"
+            ),
+            color=color,
+        )
+
+        embed.add_field(name="异议发起人", value=f"<@{qo.objector_id}>", inline=True)
+        embed.add_field(name="审核管理员", value=f"<@{qo.moderator_id}>", inline=True)
+        embed.add_field(
+            name="原异议理由", value=f"{qo.objection_reason}", inline=False
+        )
+        embed.add_field(
+            name="管理员审核理由", value=f"{qo.review_reason}", inline=False
+        )
+
+        embed.timestamp = datetime.now(timezone.utc)
+        return embed
+
