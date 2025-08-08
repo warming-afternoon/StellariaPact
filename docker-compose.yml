@@ -1,0 +1,12 @@
+services:
+  stellaria-pact:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stellaria-pact-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./data:/app/data

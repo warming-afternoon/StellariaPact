@@ -98,13 +98,14 @@ graph TD
 - 功能: 向社区发布一个官方公示。
 - 权限: `管理组`
 - 流程:
-    1. 管理员使用此命令，并通过弹窗填写公示内容和持续时间。
-    2. Bot 会在议事频道创建一个新的讨论帖，并转发公告到所有指定的通知频道。
-    3. 公示期结束后，若无异议，提案将自动进入 `[执行中]` 状态。
+    1. 管理员使用此命令，设定公示内容、持续时间、公示重放时间间隔、消息间隔
+    2. Bot 会在议事频道创建一个新的讨论帖，并转发公告到所有指定的宣传频道
+    3. 公示期间，若某个宣传频道同时满足时间和消息数门槛，则会在该频道重新播放一次公示
+    4. 公示期结束后，若无异议，提案将自动进入 `[执行中]` 状态
 
 ---
 
-## ⚡ 快速开始
+## ⚡ 快速开始 (windows 部署)
 
 要求: [Python 3.8+](https://www.python.org/downloads/)
 
@@ -114,8 +115,15 @@ graph TD
     cd StellariaPact
     ```
 
-2.  创建并配置 `config.json`
-    复制 `config.json.example` 并重命名为 `config.json`，然后填入你的 Discord Bot Token 等必要信息。
+2.  准备配置文件
+    -   将 `.env.example` 复制为 `.env`，并填入你的 `DISCORD_TOKEN`。
+        ```bash
+        cp .env.example .env
+        ```
+    -   将 `config.json.example` 复制为 `config.json`，并根据你的服务器需求配置角色 ID 等信息。
+        ```bash
+        cp config.json.example config.json
+        ```
 
 3.  运行安装脚本
     这将是您需要运行的唯一的安装命令。它会自动安装所有需要的工具和依赖。
@@ -128,7 +136,6 @@ graph TD
         ```bash
         python setup.py dev
         ```
-    脚本会自动处理好一切，并在结束后询问你是否立即启动机器人。
 
 4.  日常运行
     安装完成后，你可以随时使用以下命令来启动机器人：
@@ -138,7 +145,41 @@ graph TD
 
 ---
 
-## 👨‍💻 开发指南 (For Developers)
+## 🐳 使用 Docker 部署 (linux 部署)
+
+### 要求
+- [Docker](https://docs.docker.com/get-docker/)
+
+### 部署步骤
+
+1.  准备配置文件
+    -   将 `.env.example` 复制为 `.env`，并填入你的 `DISCORD_TOKEN`。
+        ```bash
+        cp .env.example .env
+        ```
+    -   将 `config.json.example` 复制为 `config.json`，并根据你的服务器需求配置角色 ID 等信息。
+        ```bash
+        cp config.json.example config.json
+        ```
+
+2.  构建并启动容器 (日常运行)
+    使用 `docker compose` 在后台构建并启动容器：
+    ```bash
+    docker compose up --build -d
+    ```
+
+3.  查看日志
+    你可以使用以下命令来实时查看机器人的日志：
+    ```bash
+    docker compose logs -f
+    ```
+
+4.  停止容器
+    如果需要停止机器人，运行：
+    ```bash
+    docker compose down
+    ```
+## ‍💻 开发指南 (For Developers)
 
 `python setup.py dev` 命令会自动为你安装所有开发工具（如 `ruff`, `pre-commit`）并设置好 Git 钩子。
 
