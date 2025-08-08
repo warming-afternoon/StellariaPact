@@ -5,8 +5,12 @@ import discord
 from ....share.SafeDefer import safeDefer
 from ....share.StellariaPactBot import StellariaPactBot
 from ....share.UnitOfWork import UnitOfWork
+from ..dto.VoteDetailDto import VoteDetailDto
 from ..EligibilityService import EligibilityService
+from ..qo.DeleteVoteQo import DeleteVoteQo
+from ..qo.RecordVoteQo import RecordVoteQo
 from .ObjectionFormalVoteChoiceView import ObjectionFormalVoteChoiceView
+from .ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +39,9 @@ class ObjectionFormalVoteView(discord.ui.View):
         """
         await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
 
-        if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
+        if not interaction.channel or not isinstance(
+            interaction.channel, (discord.Thread, discord.TextChannel)
+        ):
             await self.bot.api_scheduler.submit(
                 interaction.followup.send("此功能仅在异议帖子内可用。", ephemeral=True), 1
             )
@@ -47,28 +53,118 @@ class ObjectionFormalVoteView(discord.ui.View):
             )
             return
 
+        # 将原始消息ID存储在局部变量中，以便回调可以捕获它
+        original_message_id = interaction.message.id
+
         try:
+            # 本地导入以打破循环依赖
+            from typing import cast
+
+            from .. import Voting
+
+            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+            if not voting_cog:
+                raise ValueError("投票系统组件未就绪。")
+
+            # -----------------
+            # 定义回调和辅助函数
+            # -----------------
+            async def _update_public_panel(vote_details: VoteDetailDto):
+                """根据提供的投票详情更新主投票面板。"""
+                # 使用 isinstance 进行更严格的类型检查，以消除 Pylance 警告
+                if not isinstance(
+                    interaction.channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)
+                ):
+                    logger.warning(
+                        f"Attempted to update public panel in a non-messageable channel type: {type(interaction.channel)}"
+                    )
+                    return
+                try:
+                    public_message = await interaction.channel.fetch_message(original_message_id)
+                    if not public_message.embeds:
+                        return
+
+                    original_embed = public_message.embeds[0]
+                    new_embed = ObjectionVoteEmbedBuilder.update_formal_embed(
+                        original_embed, vote_details
+                    )
+                    await self.bot.api_scheduler.submit(
+                        public_message.edit(embed=new_embed), 2
+                    )
+                except (discord.NotFound, discord.Forbidden):
+                    logger.warning(f"无法获取或编辑原始投票消息 {original_message_id}")
+                except Exception as e:
+                    logger.error(f"更新主投票面板时出错: {e}", exc_info=True)
+
+            async def _on_vote_callback(
+                inner_interaction: discord.Interaction, choice: int
+            ):
+                """处理同意或反对投票的回调"""
+                await safeDefer(inner_interaction)
+                try:
+                    vote_details = await voting_cog.logic.record_vote_and_get_details(
+                        RecordVoteQo(
+                            user_id=inner_interaction.user.id,
+                            message_id=original_message_id,
+                            choice=choice,
+                        )
+                    )
+                    if inner_interaction.message:
+                        new_embed = inner_interaction.message.embeds[0]
+                        choice_text = "✅ 同意异议" if choice == 1 else "❌ 反对异议"
+                        new_embed.set_field_at(3, name="当前投票", value=choice_text, inline=False)
+                        await self.bot.api_scheduler.submit(
+                            inner_interaction.edit_original_response(embed=new_embed), 1
+                        )
+                    await _update_public_panel(vote_details)
+                except Exception as e:
+                    logger.error(f"记录投票时出错: {e}", exc_info=True)
+                    if not inner_interaction.response.is_done():
+                        await inner_interaction.followup.send("记录投票时出错。", ephemeral=True)
+
+            async def _on_abstain_callback(inner_interaction: discord.Interaction):
+                """处理弃权投票的回调"""
+                await safeDefer(inner_interaction)
+                try:
+                    vote_details = await voting_cog.logic.delete_vote_and_get_details(
+                        DeleteVoteQo(
+                            user_id=inner_interaction.user.id,
+                            message_id=original_message_id,
+                        )
+                    )
+                    if inner_interaction.message:
+                        new_embed = inner_interaction.message.embeds[0]
+                        new_embed.set_field_at(3, name="当前投票", value="未投票", inline=False)
+                        await self.bot.api_scheduler.submit(
+                            inner_interaction.edit_original_response(embed=new_embed), 1
+                        )
+                    await _update_public_panel(vote_details)
+                    await inner_interaction.followup.send("您已成功弃权。", ephemeral=True)
+                except Exception as e:
+                    logger.error(f"弃权时发生错误: {e}", exc_info=True)
+                    if not inner_interaction.response.is_done():
+                        await inner_interaction.followup.send("弃权时发生错误。", ephemeral=True)
+
+            # -----------------
+            # 主逻辑
+            # -----------------
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 1. 获取投票会话信息
                 vote_session = await uow.voting.get_vote_session_by_context_message_id(
-                    interaction.message.id
+                    original_message_id
                 )
                 if not vote_session or not vote_session.id:
                     raise ValueError("找不到此投票的会话信息。")
 
-                # 2. 检查用户在异议帖中的发言数以确定资格
                 user_activity = await uow.voting.check_user_eligibility(
                     user_id=interaction.user.id, thread_id=interaction.channel.id
                 )
                 is_eligible = EligibilityService.is_eligible(user_activity)
                 message_count = user_activity.messageCount if user_activity else 0
 
-                # 3. 检查用户当前是否已投票
                 user_vote = await uow.voting.get_user_vote_by_session_id(
                     user_id=interaction.user.id, session_id=vote_session.id
                 )
 
-            # 4. 构建临时Embed
             if user_vote is None:
                 current_vote_status = "未投票"
             elif user_vote.choice == 1:
@@ -91,12 +187,11 @@ class ObjectionFormalVoteView(discord.ui.View):
             )
             embed.add_field(name="当前投票", value=current_vote_status, inline=False)
 
-            # 5. 创建并发送带有选择按钮的临时视图
             choice_view = ObjectionFormalVoteChoiceView(
-                bot=self.bot,
-                original_message_id=interaction.message.id,
                 is_eligible=is_eligible,
-                thread_id=interaction.channel.id,
+                on_agree=lambda i: _on_vote_callback(i, 1),
+                on_disagree=lambda i: _on_vote_callback(i, 0),
+                on_abstain=_on_abstain_callback,
             )
             await self.bot.api_scheduler.submit(
                 interaction.followup.send(embed=embed, view=choice_view, ephemeral=True), 1

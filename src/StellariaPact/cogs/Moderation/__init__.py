@@ -2,13 +2,15 @@ import asyncio
 import logging
 
 from StellariaPact.cogs.Moderation.Cog import Moderation
-from StellariaPact.cogs.Moderation.listeners.ModerationListener import ModerationListener
-from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
-from StellariaPact.cogs.Voting.views.ObjectionCreationVoteView import (
-    ObjectionCreationVoteView,
-)
+from StellariaPact.cogs.Moderation.listeners.ModerationListener import \
+    ModerationListener
+from StellariaPact.cogs.Moderation.views.ConfirmationView import \
+    ConfirmationView
+from StellariaPact.cogs.Moderation.views.ObjectionManageView import \
+    ObjectionManageView
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+
+from .views.ObjectionCreationVoteView import ObjectionCreationVoteView
 
 logger = logging.getLogger(__name__)
 

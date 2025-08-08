@@ -46,10 +46,10 @@ class ModerationLogic:
         处理异议帖创建后的数据库更新和通知。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            # 1. 更新异议记录，关联新的帖子ID
+            # 更新异议记录，关联新的帖子ID
             await uow.moderation.update_objection_thread_id(objection_id, objection_thread_id)
 
-            # 2. 更新原提案状态为“冻结中”
+            # 更新原提案状态为“冻结中”
             await uow.moderation.update_proposal_status_by_thread_id(
                 original_proposal_thread_id, ProposalStatus.FROZEN
             )
@@ -580,7 +580,7 @@ class ModerationLogic:
                 if not qo.interaction.guild:
                     raise RuntimeError("交互不包含服务器信息。")
 
-                # 3. 将数据打包到 DTO
+                # 将数据打包到 DTO
                 return ObjectionReasonUpdateResultDto(
                     success=True,
                     message="异议理由已成功更新。",

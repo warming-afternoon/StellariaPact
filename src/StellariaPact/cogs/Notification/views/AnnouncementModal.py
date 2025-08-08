@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import ui
-from zoneinfo import ZoneInfo
 
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
@@ -64,11 +64,11 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
         )
 
         try:
-            # 1. 数据验证
+            # 数据验证
             title = self.title_input.value
             content = self.content_input.value
 
-            # 2. 准备视图和时间数据
+            # 准备视图和时间数据
             start_time_utc = datetime.now(ZoneInfo("UTC"))
             timezone = self.bot.config.get("timezone", "UTC")
             end_time = self.bot.time_utils.get_utc_end_time(
@@ -78,7 +78,7 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
             end_time_timestamp = int(utc_aware_end_time.timestamp())
             discord_timestamp = f"<t:{end_time_timestamp}:F> (<t:{end_time_timestamp}:R>)"
 
-            # 3. 使用 Builder 构建视图元素
+            # 使用 Builder 构建视图元素
             thread_content = AnnouncementEmbedBuilder.create_thread_content(
                 title=title,
                 content=content,
@@ -86,7 +86,7 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
                 author_id=interaction.user.id,
             )
 
-            # 4. 将所有数据和视图元素委托给 Cog
+            # 将所有数据和视图元素委托给 Cog
             await self.cog.create_announcement_workflow(
                 interaction=interaction,
                 title=title,

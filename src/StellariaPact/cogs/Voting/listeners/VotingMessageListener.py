@@ -1,15 +1,15 @@
+import asyncio
 import logging
+from typing import cast
 
 import discord
 import regex as re
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-from StellariaPact.cogs.Voting.qo.GetVoteDetailsQo import GetVoteDetailsQo
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
-from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.UnitOfWork import UnitOfWork
+from ....share.StellariaPactBot import StellariaPactBot
+from ..Cog import Voting
+from ..qo.UpdateUserActivityQo import UpdateUserActivityQo
+from ..views.VoteEmbedBuilder import VoteEmbedBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -67,15 +67,16 @@ class VotingMessageListener(commands.Cog):
             return
 
         try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                await uow.voting.update_user_activity(
-                    UpdateUserActivityQo(
-                        user_id=message.author.id,
-                        thread_id=message.channel.id,
-                        change=1,
-                    )
-                )
-                await uow.commit()
+            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+            if not voting_cog:
+                return
+
+            qo = UpdateUserActivityQo(
+                user_id=message.author.id,
+                thread_id=message.channel.id,
+                change=1,
+            )
+            await voting_cog.logic.handle_message_creation(qo)
         except Exception as e:
             logger.error(
                 f"更新用户 {message.author.id} 在帖子 {message.channel.id} 的活动时出错: {e}",
@@ -100,73 +101,57 @@ class VotingMessageListener(commands.Cog):
             return
 
         try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                # 更新用户活动计数
-                user_activity = await uow.voting.update_user_activity(
-                    UpdateUserActivityQo(
-                        user_id=message.author.id,
-                        thread_id=message.channel.id,
-                        change=-1,
+            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+            if not voting_cog:
+                return
+
+            # 调用核心逻辑
+            qo = UpdateUserActivityQo(
+                user_id=message.author.id,
+                thread_id=message.channel.id,
+                change=-1,
+            )
+            details_to_update = await voting_cog.logic.handle_message_deletion(qo)
+
+            # 如果没有返回详情，说明无需更新 UI
+            if not details_to_update:
+                return
+
+            # 并行更新所有需要更新的投票面板
+            thread = message.channel
+            update_tasks = []
+            for details in details_to_update:
+                if details.context_message_id:
+                    try:
+                        msg = await thread.fetch_message(details.context_message_id)
+                        new_embed = VoteEmbedBuilder.create_vote_panel_embed(
+                            topic=thread.name,
+                            anonymous_flag=details.is_anonymous,
+                            realtime_flag=details.realtime_flag,
+                            end_time=details.end_time,
+                            vote_details=details,
+                        )
+                        update_tasks.append(msg.edit(embed=new_embed))
+                    except discord.NotFound:
+                        logger.warning(
+                            f"在帖子 {thread.id} 中未找到投票消息 {details.context_message_id}，无法更新面板。"
+                        )
+                    except IndexError:
+                        logger.warning(
+                            f"投票消息 {details.context_message_id} 缺少 embed，无法更新。"
+                        )
+
+            if update_tasks:
+                await asyncio.gather(
+                    *(
+                        self.bot.api_scheduler.submit(task, priority=2)
+                        for task in update_tasks
                     )
-                )
-
-                # 检查用户是否还有投票资格
-                if EligibilityService.is_eligible(user_activity):
-                    await uow.commit()  # 即使资格没变，也要提交活动计数的变化
-                    return
-
-                # 如果没有资格，则尝试删除他们的投票
-                vote_deleted = await uow.voting.delete_user_vote(
-                    user_id=message.author.id, thread_id=message.channel.id
-                )
-
-                # 如果没有实际删除投票（因为他们本来就没投），则无需更新面板
-                if not vote_deleted:
-                    await uow.commit()
-                    return
-
-                # --- 从这里开始，用户的投票被确实删除了 ---
-                vote_session = await uow.voting.get_vote_session_by_thread_id(message.channel.id)
-                if not vote_session or not vote_session.realtimeFlag:
-                    await uow.commit()
-                    return
-
-                # 获取最新的投票详情
-                vote_details = await uow.voting.get_vote_details(
-                    GetVoteDetailsQo(thread_id=message.channel.id)
-                )
-
-                # 提交数据库事务，确保后续 API 调用失败时数据也能保存
-                await uow.commit()
-
-            # --- 数据库事务已提交，现在开始与 Discord API 交互 ---
-            try:
-                if not vote_session.contextMessageId:
-                    return
-
-                thread = self.bot.get_channel(
-                    message.channel.id
-                ) or await self.bot.api_scheduler.submit(
-                    self.bot.fetch_channel(message.channel.id), priority=3
-                )
-                if not isinstance(thread, discord.Thread):
-                    return
-
-                public_message = await self.bot.api_scheduler.submit(
-                    thread.fetch_message(vote_session.contextMessageId), priority=3
-                )
-                new_embed = VoteEmbedBuilder.update_vote_counts_embed(
-                    public_message.embeds[0], vote_details
-                )
-                await self.bot.api_scheduler.submit(
-                    public_message.edit(embed=new_embed), priority=2
                 )
                 logger.info(
                     f"用户 {message.author.id} 因资格失效，"
-                    f"其在帖子 {message.channel.id} 的投票已被撤销并更新面板。"
+                    f"其在帖子 {thread.id} 的投票已被撤销并更新了 {len(update_tasks)} 个面板。"
                 )
-            except discord.NotFound:
-                logger.warning(f"在帖子 {message.channel.id} 中未找到原始投票消息，无法更新面板。")
 
         except Exception as e:
             logger.error(

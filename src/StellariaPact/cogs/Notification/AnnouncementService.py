@@ -4,7 +4,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from StellariaPact.cogs.Notification.dto.AnnouncementDto import AnnouncementDto
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
+    CreateAnnouncementQo
 from StellariaPact.models.Announcement import Announcement
 
 
@@ -32,7 +33,7 @@ class AnnouncementService:
             title=qo.title,
             content=qo.content,
             endTime=qo.endTime,
-            status=1,  # 1: 进行中
+            status=1,  # 进行中
         )
 
         self.session.add(new_announcement)
@@ -92,5 +93,5 @@ class AnnouncementService:
         """
         announcement = await self.session.get(Announcement, announcement_id)
         if announcement:
-            announcement.status = 0  # 0: 已结束
+            announcement.status = 0  # 已结束
             self.session.add(announcement)

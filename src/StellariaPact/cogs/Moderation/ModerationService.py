@@ -469,7 +469,7 @@ class ModerationService:
         Raises:
             ValueError: 如果找不到投票会话或关联的异议/提案。
         """
-        # 1. 数据读取与验证（一次性预加载所有关联数据）
+        # 数据读取与验证（一次性预加载所有关联数据）
         vote_session_statement = (
             select(VoteSession)
             .where(VoteSession.contextMessageId == qo.messageId)
@@ -494,7 +494,7 @@ class ModerationService:
         assert objection.id is not None, "Objection ID cannot be None."
         assert proposal.id is not None, "Proposal ID cannot be None."
 
-        # 2. 检查用户投票状态
+        # 检查用户投票状态
         user_vote_statement = select(UserVote).where(
             UserVote.sessionId == vote_session.id, UserVote.userId == qo.userId
         )
@@ -503,7 +503,7 @@ class ModerationService:
         user_has_voted = user_vote is not None
         user_action_result: str
 
-        # 3. 根据动作执行写操作
+        # 根据动作执行写操作
         if qo.action == "support":
             if user_has_voted:
                 user_action_result = "already_supported"
@@ -520,13 +520,13 @@ class ModerationService:
 
         await self.session.flush()
 
-        # 4. 获取最新票数
+        # 获取最新票数
         count_statement = (
             select(func.count()).select_from(UserVote).where(UserVote.sessionId == vote_session.id)
         )
         current_supporters = (await self.session.exec(count_statement)).one()
 
-        # 5. 组装并返回DTO
+        # 组装并返回DTO
         return HandleSupportObjectionResultDto(
             current_supporters=current_supporters,
             required_supporters=objection.requiredVotes,

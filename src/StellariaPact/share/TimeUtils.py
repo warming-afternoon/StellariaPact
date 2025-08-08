@@ -1,7 +1,6 @@
 import logging
 import re
 from datetime import datetime, timedelta
-
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger("stellaria_pact.time_utils")
@@ -31,10 +30,10 @@ class TimeUtils:
             Exception: 如果在转换过程中发生错误，则重新抛出。
         """
         try:
-            # 1. 如果未提供起始时间，则获取当前带时区信息的 UTC 时间
+            # 如果未提供起始时间，则获取当前带时区信息的 UTC 时间
             now_utc = start_time if start_time else datetime.now(ZoneInfo("UTC"))
 
-            # 2. 转换为目标本地时区
+            # 转换为目标本地时区
             try:
                 target_zone = ZoneInfo(target_tz)
             except ZoneInfoNotFoundError:
@@ -43,13 +42,13 @@ class TimeUtils:
 
             now_local = now_utc.astimezone(target_zone)
 
-            # 3. 在本地时区下计算结束时间
+            # 在本地时区下计算结束时间
             end_time_local = now_local + timedelta(hours=duration_hours)
 
-            # 4. 将本地结束时间转换回 UTC
+            # 将本地结束时间转换回 UTC
             end_time_utc = end_time_local.astimezone(ZoneInfo("UTC"))
 
-            # 5. 返回一个不含时区信息的 "naive" datetime 对象，以便存入数据库
+            # 返回一个不含时区信息的 "naive" datetime 对象，以便存入数据库
             return end_time_utc.replace(tzinfo=None)
 
         except Exception as e:

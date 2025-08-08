@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Literal
 
@@ -26,12 +25,11 @@ from ....cogs.Moderation.views.ModerationEmbedBuilder import \
     ModerationEmbedBuilder
 from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
-from ....cogs.Voting.views.ObjectionCreationVoteView import \
-    ObjectionCreationVoteView
 from ....share.DiscordUtils import DiscordUtils
 from ....share.StringUtils import StringUtils
 from ....share.UnitOfWork import UnitOfWork
 from ..ModerationLogic import ModerationLogic
+from ..views.ObjectionCreationVoteView import ObjectionCreationVoteView
 
 if TYPE_CHECKING:
     from ....share.StellariaPactBot import StellariaPactBot
@@ -222,7 +220,17 @@ class ModerationListener(commands.Cog):
                     target_tag_name="frozen",
                 )
 
-                tasks = []
+                # 在原提案帖发送通知
+                embed_qo = BuildProposalFrozenEmbedQo(
+                    objection_thread_jump_url=objection_thread.jump_url
+                )
+                notification_embed = ModerationEmbedBuilder.build_proposal_frozen_embed(
+                    embed_qo
+                )
+                await self.bot.api_scheduler.submit(
+                    original_thread.send(embed=notification_embed), priority=4
+                )
+
                 # 准备编辑参数
                 edit_kwargs = {
                     "name": new_title,
@@ -232,24 +240,10 @@ class ModerationListener(commands.Cog):
                 if new_tags is not None:
                     edit_kwargs["applied_tags"] = new_tags
 
-                tasks.append(
-                    self.bot.api_scheduler.submit(
-                        original_thread.edit(**edit_kwargs), priority=4
-                    )
+                await self.bot.api_scheduler.submit(
+                    original_thread.edit(**edit_kwargs), priority=4
                 )
                 logger.info(f"已将原提案帖 {original_thread.id} 冻结、关闭并锁定。")
-
-                # 在原提案帖发送通知
-                embed_qo = BuildProposalFrozenEmbedQo(
-                    objection_thread_jump_url=objection_thread.jump_url
-                )
-                notification_embed = ModerationEmbedBuilder.build_proposal_frozen_embed(embed_qo)
-                tasks.append(
-                    self.bot.api_scheduler.submit(
-                        original_thread.send(embed=notification_embed), priority=4
-                    )
-                )
-                await asyncio.gather(*tasks)
 
         except (RuntimeError, ValueError) as e:
             logger.error(f"处理 on_objection_goal_reached 事件时出错: {e}")
@@ -487,6 +481,21 @@ class ModerationListener(commands.Cog):
             logger.error("机器人尚未登录，无法发送结果通知。")
             return
 
+        # 准备最终结果的 Embed
+        final_embed = ModerationEmbedBuilder.build_vote_result_embed(
+            result.embed_qo, self.bot.user
+        )
+
+        # 发送所有通知
+        await self.bot.api_scheduler.submit(
+            original_thread.send(embed=final_embed), priority=3
+        )
+        if objection_thread:
+            await self.bot.api_scheduler.submit(
+                objection_thread.send(embed=final_embed), priority=3
+            )
+
+        # 根据投票结果，执行后续的帖子状态变更
         clean_title = StringUtils.clean_title(original_thread.name)
 
         if result.is_passed:
@@ -501,7 +510,9 @@ class ModerationListener(commands.Cog):
             await self.bot.api_scheduler.submit(
                 original_thread.edit(
                     name=new_title,
-                    applied_tags=new_tags if new_tags is not None else original_thread.applied_tags,
+                    applied_tags=new_tags
+                    if new_tags is not None
+                    else original_thread.applied_tags,
                     archived=True,
                     locked=True,
                 ),
@@ -509,6 +520,13 @@ class ModerationListener(commands.Cog):
             )
         else:
             # 异议失败 -> 原提案解冻，异议帖被否决
+
+            # 解冻原提案
+            if original_thread.archived:
+                await self.bot.api_scheduler.submit(
+                    original_thread.edit(archived=False), priority=4
+                )
+
             new_title = clean_title
             new_tags = DiscordUtils.calculate_new_tags(
                 original_thread.applied_tags,
@@ -519,18 +537,23 @@ class ModerationListener(commands.Cog):
             await self.bot.api_scheduler.submit(
                 original_thread.edit(
                     name=new_title,
-                    applied_tags=new_tags if new_tags is not None else original_thread.applied_tags,
-                    archived=False,
+                    applied_tags=new_tags
+                    if new_tags is not None
+                    else original_thread.applied_tags,
                     locked=False,
                 ),
                 priority=4,
             )
+
+            # 将异议帖标记为否决并归档
             if objection_thread:
                 obj_clean_title = StringUtils.clean_title(objection_thread.name)
                 obj_new_title = f"[已否决] {obj_clean_title}"
                 rejected_tag_id_str = self.bot.config.get("tags", {}).get("rejected")
                 if rejected_tag_id_str:
-                    rejected_tag = original_thread.parent.get_tag(int(rejected_tag_id_str))
+                    rejected_tag = original_thread.parent.get_tag(
+                        int(rejected_tag_id_str)
+                    )
                     if rejected_tag:
                         await self.bot.api_scheduler.submit(
                             objection_thread.edit(
@@ -541,18 +564,6 @@ class ModerationListener(commands.Cog):
                             ),
                             priority=4,
                         )
-
-        # 在原提案帖和异议帖中同步最终结果
-        final_embed = ModerationEmbedBuilder.build_vote_result_embed(
-            result.embed_qo, self.bot.user
-        )
-        # 发送到原帖
-        await self.bot.api_scheduler.submit(original_thread.send(embed=final_embed), priority=3)
-        # 如果异议帖存在，也发送到异议帖
-        if objection_thread:
-            await self.bot.api_scheduler.submit(
-                objection_thread.send(embed=final_embed), priority=3
-            )
 
     @commands.Cog.listener("on_objection_creation_vote_cast")
     async def on_objection_creation_vote_cast(
@@ -574,7 +585,7 @@ class ModerationListener(commands.Cog):
         )
 
         try:
-            # 1. 准备QO并调用Logic层
+            # 准备QO并调用Logic层
             qo = ObjectionSupportQo(
                 userId=interaction.user.id,
                 messageId=interaction.message.id,
@@ -586,7 +597,7 @@ class ModerationListener(commands.Cog):
             else:
                 result_dto = await self.logic.handle_withdraw_support(qo)
 
-            # 2. 根据返回的DTO更新UI
+            # 根据返回的DTO更新UI
             original_embed = interaction.message.embeds[0]
             guild_id = self.bot.config.get("guild_id")
             if not guild_id:
@@ -613,7 +624,7 @@ class ModerationListener(commands.Cog):
                 )
                 await self.bot.api_scheduler.submit(interaction.message.edit(embed=new_embed), 2)
 
-            # 3. 根据返回的DTO提供精确的用户反馈
+            # 根据返回的DTO提供精确的用户反馈
             feedback_messages = {
                 "supported": "成功支持该异议！",
                 "withdrew": "成功撤回支持。",

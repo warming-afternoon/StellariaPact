@@ -3,13 +3,12 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Voting.dto.AdjustVoteTimeDto import AdjustVoteTimeDto
-from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
-from StellariaPact.cogs.Voting.qo.GetVoteDetailsQo import GetVoteDetailsQo
-from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
-from StellariaPact.share.SafeDefer import safeDefer
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
+
+from ....share.SafeDefer import safeDefer
+from ....share.StellariaPactBot import StellariaPactBot
+from ..qo.AdjustVoteTimeQo import AdjustVoteTimeQo
+from ..views.VoteEmbedBuilder import VoteEmbedBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -43,79 +42,79 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
             return
 
         try:
+
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 1. 更新数据库
-                qo = AdjustVoteTimeQo(thread_id=self.thread_id, hours_to_adjust=hours_to_adjust)
-                result_dto: AdjustVoteTimeDto = await uow.voting.adjust_vote_time(qo)
-                vote_session = result_dto.vote_session
+                # 直接调用服务层来更新时间
+                qo = AdjustVoteTimeQo(
+                    thread_id=self.thread_id, hours_to_adjust=hours_to_adjust
+                )
+                result_dto = await uow.voting.adjust_vote_time(qo)
                 old_end_time = result_dto.old_end_time
-                new_end_time = vote_session.endTime
+                new_end_time = result_dto.vote_session.endTime
+                context_message_id = result_dto.vote_session.contextMessageId
+                await uow.commit()
 
-            if not new_end_time:
-                # This should not happen if the service logic is correct
-                raise ValueError("调整时间后未能获取新的结束时间。")
+            if not new_end_time or not context_message_id:
+                raise ValueError("调整时间后未能获取到必要信息。")
 
-            # 2. 准备更新主投票面板
+            # 准备 Discord API 调用
             tasks = []
-            if (
-                vote_session.contextMessageId
-                and interaction.channel
-                and isinstance(interaction.channel, discord.abc.Messageable)
+            if interaction.channel and isinstance(
+                interaction.channel, discord.Thread
             ):
+                # 准备主面板更新
                 try:
-                    # 类型检查，确保 channel 是 Thread
-                    if not isinstance(interaction.channel, discord.Thread):
-                        logger.warning("AdjustTimeModal 只能在帖子中使用。")
-                        return
-
-                    # 获取主投票消息
-                    main_vote_message = await self.bot.api_scheduler.submit(
-                        interaction.channel.fetch_message(vote_session.contextMessageId),
-                        priority=3,
+                    main_vote_message = await interaction.channel.fetch_message(
+                        context_message_id
                     )
+                    original_embed = main_vote_message.embeds[0]
+                    new_embed = original_embed.copy()
 
-                    # 如果是实时投票，需要获取票数详情
-                    vote_details = None
-                    if vote_session.realtimeFlag:
-                        vote_details = await uow.voting.get_vote_details(
-                            GetVoteDetailsQo(thread_id=self.thread_id)
+                    # 动态查找并更新截止时间字段
+                    time_field_found = False
+                    for i, field in enumerate(new_embed.fields):
+                        if field.name == "截止时间":
+                            new_ts = int(new_end_time.timestamp())
+                            new_embed.set_field_at(
+                                i,
+                                name="截止时间",
+                                value=f"<t:{new_ts}:F> (<t:{new_ts}:R>)",
+                                inline=field.inline,
+                            )
+                            time_field_found = True
+                            break
+                    
+                    if not time_field_found:
+                        # 如果没有找到，就添加一个新的
+                        new_ts = int(new_end_time.timestamp())
+                        new_embed.add_field(
+                            name="截止时间",
+                            value=f"<t:{new_ts}:F> (<t:{new_ts}:R>)",
+                            inline=False,
                         )
 
-                    # 使用 VoteEmbedBuilder 重新构建整个 embed
-                    updated_embed = VoteEmbedBuilder.create_vote_panel_embed(
-                        topic=interaction.channel.name,
-                        anonymous_flag=vote_session.anonymousFlag,
-                        realtime_flag=vote_session.realtimeFlag,
-                        end_time=vote_session.endTime,
-                        vote_details=vote_details,
-                    )
+                    tasks.append(main_vote_message.edit(embed=new_embed))
 
-                    # 添加更新主面板的任务
-                    tasks.append(
-                        self.bot.api_scheduler.submit(
-                            main_vote_message.edit(embed=updated_embed), priority=5
-                        )
-                    )
-                except (discord.NotFound, IndexError) as e:
+                except (discord.NotFound, IndexError, ValueError) as e:
                     logger.warning(f"无法更新主投票面板: {e}")
 
-            # 3. 准备发送公开通知
-            if interaction.channel and isinstance(interaction.channel, discord.abc.Messageable):
+                # 准备公开通知
                 notification_embed = VoteEmbedBuilder.create_time_adjustment_embed(
                     operator=interaction.user,
                     hours=hours_to_adjust,
                     old_time=old_end_time,
                     new_time=new_end_time,
                 )
-                tasks.append(
-                    self.bot.api_scheduler.submit(
-                        interaction.channel.send(embed=notification_embed), priority=5
+                tasks.append(interaction.channel.send(embed=notification_embed))
+
+            # 并行执行所有 Discord API 调用
+            if tasks:
+                await asyncio.gather(
+                    *(
+                        self.bot.api_scheduler.submit(task, priority=5)
+                        for task in tasks
                     )
                 )
-
-            # 4. 并行执行所有 Discord API 调用
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
 
         except Exception as e:
             logger.error(f"调整投票时间时出错: {e}", exc_info=True)

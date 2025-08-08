@@ -7,6 +7,8 @@ from discord.ext import commands
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
+from .logic.VotingLogic import VotingLogic
+
 logger = logging.getLogger("stellaria_pact.voting")
 
 
@@ -17,6 +19,7 @@ class Voting(commands.Cog):
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
+        self.logic = VotingLogic(bot)
 
     async def cog_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
@@ -84,7 +87,7 @@ class Voting(commands.Cog):
 
     #     try:
     #         async with UnitOfWork(self.bot.db_handler) as uow:
-    #             # 1. 构建 UI
+    #             # 构建 UI
     #             view = VoteView(self.bot)
     #             embed = VoteEmbedBuilder.create_initial_vote_embed(
     #                 topic=topic,
@@ -93,12 +96,12 @@ class Voting(commands.Cog):
     #                 anonymous=anonymous,
     #             )
 
-    #             # 2. 发送 API 请求
+    #             # 发送 API 请求
     #             message = await self.bot.api_scheduler.submit(
     #                 interaction.channel.send(embed=embed, view=view), priority=2
     #             )
 
-    #             # 3. 执行数据库操作
+    #             # 执行数据库操作
     #             qo = CreateVoteSessionQo(
     #                 thread_id=interaction.channel.id,
     #                 context_message_id=message.id,
@@ -107,7 +110,7 @@ class Voting(commands.Cog):
     #             )
     #             await uow.voting.create_vote_session(qo)
 
-    #         # 4. 发送最终确认
+    #         # 发送最终确认
     #         await self.bot.api_scheduler.submit(
     #             coro=interaction.followup.send(f"投票 '{topic}' 已成功启动！", ephemeral=True),
     #             priority=1,

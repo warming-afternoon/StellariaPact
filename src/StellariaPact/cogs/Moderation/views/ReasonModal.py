@@ -2,7 +2,8 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
+    ModerationEmbedBuilder
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -57,7 +58,7 @@ class ReasonModal(discord.ui.Modal, title="操作理由"):
                 return
 
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 1. 前置检查：防止重复操作
+                # 前置检查：防止重复操作
                 activity = await uow.moderation.get_user_activity(
                     user_id=self.kicked_user.id, thread_id=thread.id
                 )
@@ -77,7 +78,7 @@ class ReasonModal(discord.ui.Modal, title="操作理由"):
                     is_valid=False,
                 )
 
-            # 3. 创建并发送公开的处罚公示
+            # 创建并发送公开的处罚公示
             embed = ModerationEmbedBuilder.create_kick_embed(
                 moderator=moderator,
                 kicked_user=self.kicked_user,

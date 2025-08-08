@@ -123,10 +123,10 @@ class ConfirmationView(discord.ui.View):
             )
             updated_status = updated_session.status
 
-            if updated_status == 1:  # 1: 已完成
+            if updated_status == 1:  # 已完成
                 proposal = await uow.moderation.get_proposal_by_id(updated_session.targetId)
                 if proposal:
-                    proposal.status = 1  # 1: 执行中
+                    proposal.status = 1  # 执行中
                     thread_id_to_update = proposal.discussionThreadId
                     proposal_title_to_update = proposal.title
 

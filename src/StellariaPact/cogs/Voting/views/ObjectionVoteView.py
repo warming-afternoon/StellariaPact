@@ -1,10 +1,10 @@
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import discord
 
 from ....share.SafeDefer import safeDefer
-from ....share.UnitOfWork import UnitOfWork
+from ..Cog import Voting
 from ..qo.RecordVoteQo import RecordVoteQo
 
 if TYPE_CHECKING:
@@ -38,15 +38,24 @@ class ObjectionVoteView(discord.ui.View):
             return
 
         try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                # 在 Service 层处理业务逻辑
-                await uow.voting.record_user_vote(
-                    RecordVoteQo(
-                        user_id=interaction.user.id,
-                        thread_id=interaction.channel.id,
-                        choice=choice,
-                    )
+            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+            if not voting_cog:
+                await interaction.followup.send(
+                    "投票系统组件未就绪，请联系管理员。", ephemeral=True
                 )
+                return
+
+            if not interaction.message:
+                await interaction.followup.send("无法找到原始投票消息。", ephemeral=True)
+                return
+
+            await voting_cog.logic.record_vote_and_get_details(
+                RecordVoteQo(
+                    user_id=interaction.user.id,
+                    message_id=interaction.message.id,
+                    choice=choice,
+                )
+            )
             await self.bot.api_scheduler.submit(
                 interaction.followup.send("您的投票已记录！", ephemeral=True), priority=1
             )

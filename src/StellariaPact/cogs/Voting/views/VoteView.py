@@ -1,13 +1,14 @@
-import asyncio
+
+from typing import cast
 
 import discord
 
-from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-from StellariaPact.cogs.Voting.views.VotingChoiceView import VotingChoiceView
-from StellariaPact.share.auth.RoleGuard import RoleGuard
-from StellariaPact.share.SafeDefer import safeDefer
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.UnitOfWork import UnitOfWork
+from ....share.auth.RoleGuard import RoleGuard
+from ....share.SafeDefer import safeDefer
+from ....share.StellariaPactBot import StellariaPactBot
+from ..Cog import Voting
+from ..EligibilityService import EligibilityService
+from ..views.VotingChoiceView import VotingChoiceView
 
 
 class VoteView(discord.ui.View):
@@ -43,68 +44,70 @@ class VoteView(discord.ui.View):
             )
             return
 
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            # 获取用户的投票资格和当前投票状态
-            user_activity, user_vote, vote_session = await asyncio.gather(
-                uow.voting.check_user_eligibility(
-                    user_id=interaction.user.id, thread_id=interaction.channel.id
-                ),
-                uow.voting.get_user_vote(
-                    user_id=interaction.user.id, thread_id=interaction.channel.id
-                ),
-                uow.voting.get_vote_session_by_thread_id(thread_id=interaction.channel.id),
+        voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+        if not voting_cog:
+            await interaction.followup.send("投票系统组件未就绪，请联系管理员。", ephemeral=True)
+            return
+
+        try:
+            panel_data = await voting_cog.logic.prepare_voting_choice_data(
+                user_id=interaction.user.id,
+                thread_id=interaction.channel.id,
+                message_id=interaction.message.id,
             )
 
-            message_count = user_activity.messageCount if user_activity else 0
-            is_eligible = EligibilityService.is_eligible(user_activity)
-
-            if user_vote is None:
+            if panel_data.current_vote_choice is None:
                 current_vote_status = "未投票"
-            elif user_vote.choice == 1:
+            elif panel_data.current_vote_choice == 1:
                 current_vote_status = "✅ 赞成"
             else:
                 current_vote_status = "❌ 反对"
 
             embed = discord.Embed(
                 title="投票管理",
-                color=discord.Color.green() if is_eligible else discord.Color.red(),
+                color=discord.Color.green()
+                if panel_data.is_eligible
+                else discord.Color.red(),
             )
-            embed.add_field(name="当前发言数", value=f"{message_count}", inline=True)
+            embed.add_field(
+                name="当前发言数", value=f"{panel_data.message_count}", inline=True
+            )
             embed.add_field(
                 name="要求发言数",
                 value=f"≥ {EligibilityService.REQUIRED_MESSAGES}",
                 inline=True,
             )
             embed.add_field(
-                name="资格状态", value="✅ 合格" if is_eligible else "❌ 不合格", inline=True
+                name="资格状态",
+                value="✅ 合格" if panel_data.is_eligible else "❌ 不合格",
+                inline=True,
             )
             embed.add_field(name="当前投票", value=current_vote_status, inline=False)
-            if user_activity and not user_activity.validation:
+            if panel_data.is_validation_revoked:
                 embed.description = "注意：您的投票资格已被撤销。"
 
-            is_vote_active = vote_session.status == 1 if vote_session else False
-            if not is_vote_active:
+            if not panel_data.is_vote_active:
                 embed.add_field(name="投票状态", value="**已结束**", inline=False)
                 embed.color = discord.Color.dark_grey()
 
             is_admin = RoleGuard.hasRoles(
                 interaction, "councilModerator", "executionAuditor", "stewards"
             )
-            # 如果用户不合格且不是管理员，则只显示状态，不显示任何按钮
-            if not is_eligible and not is_admin:
+            if not panel_data.is_eligible and not is_admin:
                 await self.bot.api_scheduler.submit(
                     interaction.followup.send(embed=embed, ephemeral=True), priority=1
                 )
                 return
 
-            # 对于合格用户或管理员，创建并发送带有相应按钮的视图
             view_to_send = VotingChoiceView(
                 interaction,
                 interaction.message.id,
-                is_eligible=is_eligible,
-                is_vote_active=is_vote_active,
+                is_eligible=panel_data.is_eligible,
+                is_vote_active=panel_data.is_vote_active,
             )
             await self.bot.api_scheduler.submit(
                 interaction.followup.send(embed=embed, view=view_to_send, ephemeral=True),
                 priority=1,
             )
+        except Exception as e:
+            await interaction.followup.send(f"处理投票管理面板时出错: {e}", ephemeral=True)

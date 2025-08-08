@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import discord
 from sqlmodel.ext.asyncio.session import AsyncSession
-from zoneinfo import ZoneInfo
 
 from StellariaPact.models.Announcement import Announcement
-from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
+from StellariaPact.models.AnnouncementChannelMonitor import \
+    AnnouncementChannelMonitor
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 from .AnnouncementMonitorService import AnnouncementMonitorService
@@ -36,7 +37,7 @@ class RepostService:
         """
         logger.debug(f"开始处理单个重复播报，监控器 ID: {monitor.id}...")
 
-        # 1. 获取主公示信息
+        # 获取主公示信息
         announcement = await self.session.get(Announcement, monitor.announcementId)
         if not announcement:
             logger.warning(
@@ -53,7 +54,7 @@ class RepostService:
             )
             return
 
-        # 2. 获取所需 Discord 对象 (如果找不到会引发异常)
+        # 获取所需 Discord 对象 (如果找不到会引发异常)
         logger.debug(f"正在为监控器 {monitor.id} 获取 Discord 对象...")
         channel = self.bot.get_channel(monitor.channelId) or await self.bot.fetch_channel(
             monitor.channelId
@@ -89,7 +90,7 @@ class RepostService:
         await self.bot.api_scheduler.submit(coro=channel.send(embed=embed), priority=5)
         logger.info(f"已提交API请求，在频道 {channel.id} 重播公示 {announcement.id}。")
 
-        # 4. 更新监控器状态
+        # 更新监控器状态
         logger.debug(f"正在更新监控器 {monitor.id} 的数据库状态...")
         monitor.messageCountSinceLast = 0
         monitor.lastRepostAt = datetime.now(timezone.utc)

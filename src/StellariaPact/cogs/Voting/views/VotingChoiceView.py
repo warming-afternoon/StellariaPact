@@ -1,9 +1,11 @@
 from asyncio.log import logger
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, cast
 
 import discord
 
-from StellariaPact.cogs.Voting.qo.GetVoteDetailsQo import GetVoteDetailsQo
+from StellariaPact.cogs.Voting.Cog import Voting
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
+from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 from StellariaPact.cogs.Voting.views.AdjustTimeModal import AdjustTimeModal
 from StellariaPact.cogs.Voting.views.ConfirmationView import ConfirmationView
@@ -11,7 +13,6 @@ from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.UnitOfWork import UnitOfWork
 
 
 class VotingChoiceView(discord.ui.View):
@@ -77,117 +78,76 @@ class VotingChoiceView(discord.ui.View):
         toggle_realtime_button.callback = self.toggle_realtime_callback
         self.add_item(toggle_realtime_button)
 
-    async def _update_main_vote_panel(self, vote_session=None):
-        """获取最新数据并更新主投票面板"""
+    async def _update_vote_panel_embed(self, vote_details: VoteDetailDto):
+        """使用提供的 vote_details DTO 更新主投票面板的嵌入。"""
         try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                # 如果没有直接提供 vote_session，则从数据库中获取
-                if vote_session is None:
-                    vote_session = await uow.voting.get_vote_session_by_thread_id(self.thread_id)
-
-                if not vote_session:
-                    logger.warning(
-                        f"无法找到投票会话 (thread_id: {self.thread_id})，无法更新主面板。"
-                    )
-                    return
-
-                vote_details = None
-                if vote_session.realtimeFlag:
-                    # 在同一个UoW中获取投票详情
-                    vote_details = await uow.voting.get_vote_details(
-                        GetVoteDetailsQo(thread_id=self.thread_id)
-                    )
-
-                if not vote_session.contextMessageId:
-                    logger.warning(
-                        f"投票会话 {vote_session.id} 没有关联的主消息ID，无法更新面板。"
-                    )
-                    return
-
-                thread = self.bot.get_channel(self.thread_id) or await self.bot.fetch_channel(
-                    self.thread_id
-                )
-                if not thread or not isinstance(thread, discord.Thread):
-                    logger.warning(f"找不到投票帖 (ID: {self.thread_id})")
-                    return
-
-                original_message = await thread.fetch_message(vote_session.contextMessageId)
-                new_embed = VoteEmbedBuilder.create_vote_panel_embed(
-                    topic=thread.name,
-                    anonymous_flag=vote_session.anonymousFlag,
-                    realtime_flag=vote_session.realtimeFlag,
-                    end_time=vote_session.endTime,
-                    vote_details=vote_details,
-                )
-                await self.bot.api_scheduler.submit(
-                    original_message.edit(embed=new_embed), priority=2
-                )
-        except discord.NotFound:
-            logger.warning("原始投票消息未找到, 跳过更新")
-        except Exception as e:
-            logger.error(f"更新主投票面板时出错: {e}", exc_info=True)
-
-    async def _update_public_vote_counts(self, vote_details):
-        """使用 VoteEmbedBuilder 更新面向公众的投票消息。"""
-        if not vote_details.realtime_flag:
-            return
-
-        try:
+            # 使用存储的 thread_id 以确保可靠性
             thread = self.bot.get_channel(self.thread_id) or await self.bot.fetch_channel(
                 self.thread_id
             )
-            if not thread or not isinstance(thread, discord.Thread):
+            if not isinstance(thread, discord.Thread):
+                logger.warning(f"找不到投票帖 (ID: {self.thread_id})")
                 return
 
-            original_message = await thread.fetch_message(self.original_message_id)
+            # original_message_id 是公共投票面板的消息ID
+            public_panel_message = await thread.fetch_message(self.original_message_id)
 
-            new_embed = VoteEmbedBuilder.update_vote_counts_embed(
-                original_message.embeds[0], vote_details
+            new_embed = VoteEmbedBuilder.create_vote_panel_embed(
+                topic=thread.name,
+                anonymous_flag=vote_details.is_anonymous,
+                realtime_flag=vote_details.realtime_flag,
+                end_time=vote_details.end_time,
+                vote_details=vote_details,
             )
-
-            await self.bot.api_scheduler.submit(original_message.edit(embed=new_embed), priority=2)
+            await self.bot.api_scheduler.submit(
+                public_panel_message.edit(embed=new_embed), priority=2
+            )
         except discord.NotFound:
             logger.warning(f"原始投票消息 (ID: {self.original_message_id}) 未找到, 跳过更新")
         except Exception as e:
             logger.error(
-                f"更新公共投票消息 (ID: {self.original_message_id}) 时出错: {e}",
+                f"更新投票面板 (ID: {self.original_message_id}) 时出错: {e}",
                 exc_info=True,
             )
 
     async def _record_vote(self, interaction: discord.Interaction, choice: int):
         await safeDefer(interaction)
         try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                await uow.voting.record_user_vote(
-                    RecordVoteQo(
-                        user_id=interaction.user.id,
-                        thread_id=self.thread_id,
-                        choice=choice,
-                    )
-                )
-                vote_details = await uow.voting.get_vote_details(
-                    GetVoteDetailsQo(thread_id=self.thread_id)
-                )
-
-            if not interaction.message:
+            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+            if not voting_cog:
+                await interaction.followup.send("投票系统组件未就绪，请联系管理员。", ephemeral=True)
                 return
-            new_embed = interaction.message.embeds[0]
-            new_embed.set_field_at(
-                3, name="当前投票", value="✅ 赞成" if choice == 1 else "❌ 反对", inline=False
+
+            
+            vote_details = await voting_cog.logic.record_vote_and_get_details(
+                RecordVoteQo(
+                    user_id=interaction.user.id,
+                    message_id=self.original_message_id,
+                    choice=choice,
+                )
             )
 
-            await self.bot.api_scheduler.submit(
-                interaction.edit_original_response(embed=new_embed, view=self), priority=1
-            )
-            await self.bot.api_scheduler.submit(
-                self._update_public_vote_counts(vote_details), priority=2
-            )
+            # 更新私有面板
+            if interaction.message:
+                new_embed = interaction.message.embeds[0]
+                new_embed.set_field_at(
+                    3,
+                    name="当前投票",
+                    value=f"{'✅' if choice == 1 else '❌'} {'赞成' if choice == 1 else '反对'}",
+                    inline=False,
+                )
+                await self.bot.api_scheduler.submit(
+                    interaction.edit_original_response(embed=new_embed, view=self),
+                    priority=1,
+                )
+
+            # 更新公共面板
+            await self._update_vote_panel_embed(vote_details)
+
         except Exception as e:
-            logger.error(f"Error recording vote: {e}", exc_info=True)
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("记录投票时出错。", ephemeral=True),
-                priority=1,
-            )
+            logger.error(f"记录投票时发生错误: {e}", exc_info=True)
+            if not interaction.response.is_done():
+                await interaction.followup.send("记录投票时发生错误。", ephemeral=True)
 
     @discord.ui.button(label="赞成", style=discord.ButtonStyle.success, row=0)
     async def approve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -201,34 +161,35 @@ class VotingChoiceView(discord.ui.View):
     async def abstain_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await safeDefer(interaction)
         try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                deleted = await uow.voting.delete_user_vote(
-                    user_id=interaction.user.id, thread_id=self.thread_id
+            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+            if not voting_cog:
+                await interaction.followup.send("投票系统组件未就绪，请联系管理员。", ephemeral=True)
+                return
+
+            # 调用新的核心业务逻辑
+            vote_details = await voting_cog.logic.delete_vote_and_get_details(
+                DeleteVoteQo(
+                    user_id=interaction.user.id,
+                    message_id=self.original_message_id,
                 )
-                vote_details = await uow.voting.get_vote_details(
-                    GetVoteDetailsQo(thread_id=self.thread_id)
+            )
+
+            # 更新私有面板
+            if interaction.message:
+                new_embed = interaction.message.embeds[0]
+                new_embed.set_field_at(3, name="当前投票", value="未投票", inline=False)
+                await self.bot.api_scheduler.submit(
+                    interaction.edit_original_response(embed=new_embed, view=self),
+                    priority=1,
                 )
 
-            if not interaction.message:
-                return
-            new_embed = interaction.message.embeds[0]
-            new_embed.set_field_at(3, name="当前投票", value="未投票", inline=False)
+            # 更新公共面板
+            await self._update_vote_panel_embed(vote_details)
 
-            # Concurrently update the interaction message and the public message
-            await self.bot.api_scheduler.submit(
-                interaction.edit_original_response(embed=new_embed, view=self), priority=1
-            )
-            if not deleted:
-                return
-            await self.bot.api_scheduler.submit(
-                self._update_public_vote_counts(vote_details), priority=2
-            )
         except Exception as e:
-            logger.error(f"Error abstaining from vote: {e}", exc_info=True)
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("弃票时发生错误。", ephemeral=True),
-                priority=1,
-            )
+            logger.error(f"弃权时发生错误: {e}", exc_info=True)
+            if not interaction.response.is_done():
+                await interaction.followup.send("弃权时发生错误。", ephemeral=True)
 
     async def adjust_time_callback(self, interaction: discord.Interaction):
         """Callback for the dynamically added 'Adjust Time' button."""
@@ -238,25 +199,24 @@ class VotingChoiceView(discord.ui.View):
     async def _handle_toggle_anonymous(self, interaction: discord.Interaction):
         """处理切换匿名投票的逻辑"""
         try:
-            if not interaction.channel or not isinstance(
-                interaction.channel, (discord.TextChannel, discord.Thread)
-            ):
+            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+            if not voting_cog or not interaction.channel:
                 return
 
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                vote_session = await uow.voting.toggle_anonymous(self.thread_id)
-                if not vote_session:
-                    return
-                # 更新主面板，并直接传递最新的 vote_session
-                await self._update_main_vote_panel(vote_session)
-
-            # 发送公开通知
-            embed = VoteEmbedBuilder.create_setting_changed_embed(
-                setting_name="匿名投票",
-                new_status="开启" if vote_session.anonymousFlag else "关闭",
-                changed_by=interaction.user,
+            vote_details = await voting_cog.logic.toggle_anonymous(
+                self.original_message_id
             )
-            await self.bot.api_scheduler.submit(interaction.channel.send(embed=embed), priority=3)
+            await self._update_vote_panel_embed(vote_details)
+
+            if isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
+                embed = VoteEmbedBuilder.create_setting_changed_embed(
+                    setting_name="匿名投票",
+                    new_status="开启" if vote_details.is_anonymous else "关闭",
+                    changed_by=interaction.user,
+                )
+                await self.bot.api_scheduler.submit(
+                    interaction.channel.send(embed=embed), priority=3
+                )
         except Exception as e:
             logger.error(f"处理切换匿名投票时出错: {e}", exc_info=True)
             await self.bot.api_scheduler.submit(
@@ -267,24 +227,24 @@ class VotingChoiceView(discord.ui.View):
     async def _handle_toggle_realtime(self, interaction: discord.Interaction):
         """处理切换实时票数显示的逻辑"""
         try:
-            if not interaction.channel or not isinstance(
-                interaction.channel, (discord.TextChannel, discord.Thread)
-            ):
+            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+            if not voting_cog or not interaction.channel:
                 return
 
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                vote_session = await uow.voting.toggle_realtime(self.thread_id)
-                if not vote_session:
-                    return
-                # 更新主面板，并直接传递最新的 vote_session
-                await self._update_main_vote_panel(vote_session)
-
-            embed = VoteEmbedBuilder.create_setting_changed_embed(
-                setting_name="实时票数",
-                new_status="开启" if vote_session.realtimeFlag else "关闭",
-                changed_by=interaction.user,
+            vote_details = await voting_cog.logic.toggle_realtime(
+                self.original_message_id
             )
-            await self.bot.api_scheduler.submit(interaction.channel.send(embed=embed), priority=3)
+            await self._update_vote_panel_embed(vote_details)
+
+            if isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
+                embed = VoteEmbedBuilder.create_setting_changed_embed(
+                    setting_name="实时票数",
+                    new_status="开启" if vote_details.realtime_flag else "关闭",
+                    changed_by=interaction.user,
+                )
+                await self.bot.api_scheduler.submit(
+                    interaction.channel.send(embed=embed), priority=3
+                )
         except Exception as e:
             logger.error(f"处理切换实时票数时出错: {e}", exc_info=True)
             await self.bot.api_scheduler.submit(
@@ -317,14 +277,14 @@ class VotingChoiceView(discord.ui.View):
 
     async def toggle_anonymous_callback(self, interaction: discord.Interaction):
         """处理“切换匿名”按钮点击事件，发起二次确认"""
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            vote_session = await uow.voting.get_vote_session_by_thread_id(self.thread_id)
-            if not vote_session:
-                return await self.bot.api_scheduler.submit(
-                    interaction.response.send_message("找不到投票会话。", ephemeral=True),
-                    priority=1,
-                )
-            current_status = vote_session.anonymousFlag
+        voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+        if not voting_cog:
+            return
+
+        is_anonymous, _ = await voting_cog.logic.get_vote_flags(
+            self.original_message_id
+        )
+        current_status = is_anonymous
 
         await self._create_and_send_confirmation(
             interaction, "匿名投票", current_status, self._handle_toggle_anonymous
@@ -332,14 +292,14 @@ class VotingChoiceView(discord.ui.View):
 
     async def toggle_realtime_callback(self, interaction: discord.Interaction):
         """处理“切换实时”按钮点击事件，发起二次确认"""
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            vote_session = await uow.voting.get_vote_session_by_thread_id(self.thread_id)
-            if not vote_session:
-                return await self.bot.api_scheduler.submit(
-                    interaction.response.send_message("找不到投票会话。", ephemeral=True),
-                    priority=1,
-                )
-            current_status = vote_session.realtimeFlag
+        voting_cog = cast(Voting, self.bot.get_cog("Voting"))
+        if not voting_cog:
+            return
+
+        _, is_realtime = await voting_cog.logic.get_vote_flags(
+            self.original_message_id
+        )
+        current_status = is_realtime
 
         await self._create_and_send_confirmation(
             interaction, "实时票数", current_status, self._handle_toggle_realtime

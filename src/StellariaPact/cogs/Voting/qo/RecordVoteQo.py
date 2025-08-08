@@ -7,5 +7,5 @@ class RecordVoteQo(SQLModel):
     """
 
     user_id: int
-    thread_id: int
+    message_id: int
     choice: int
