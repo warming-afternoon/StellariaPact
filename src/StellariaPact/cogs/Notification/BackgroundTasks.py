@@ -6,8 +6,11 @@ import discord
 from discord.ext import commands, tasks
 from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.AnnouncementMonitorService import AnnouncementMonitorService
+from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
+    AnnouncementMonitorService,
+)
 from StellariaPact.cogs.Notification.RepostService import RepostService
+from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -46,35 +49,45 @@ class BackgroundTasks(commands.Cog):
         每分钟检查一次需要重复播报的公示。
         """
         logger.debug("正在执行定时任务: 检查需要重复播报的公示...")
+        pending_monitor_ids = []
         try:
+            # 在一个简短的事务中安全地获取所有待处理的监控ID
             async with UnitOfWork(self.bot.db_handler) as uow:
                 monitor_service = AnnouncementMonitorService(uow.session)
-                repost_service = RepostService(self.bot, uow.session)
-
                 pending_monitors = await monitor_service.get_pending_reposts()
+                pending_monitor_ids = [m.id for m in pending_monitors if m.id is not None]
 
-                if not pending_monitors:
-                    logger.debug("没有找到需要重复播报的公示。")
-                    return
+            if not pending_monitor_ids:
+                logger.debug("没有找到需要重复播报的公示。")
+                return
 
-                logger.info(
-                    f"发现 {len(pending_monitors)} 个待处理的重复播报: "
-                    f"{[m.id for m in pending_monitors]}"
-                )
-
-                for monitor in pending_monitors:
-                    monitor_id = monitor.id  # 在事务提交前回显ID，避免惰性加载问题
-                    try:
-                        logger.debug(f"正在处理监控器 ID: {monitor_id}...")
-                        await repost_service.process_single_repost(monitor)
-                        await uow.commit()  # 为每个成功的播报提交事务
-                        logger.info(f"成功处理并提交了监控器 ID: {monitor_id}")
-                    except Exception as e:
-                        logger.error(f"处理监控器 ID {monitor_id} 时发生错误: {e}", exc_info=True)
-                        await uow.rollback()  # 如果出错则回滚当前监控器的更改
+            logger.info(f"发现 {len(pending_monitor_ids)} 个待处理的重复播报: {pending_monitor_ids}")
 
         except Exception as e:
-            logger.error(f"检查重复播报任务时发生严重错误: {e}", exc_info=True)
+            logger.error(f"获取待处理播报列表时发生严重错误: {e}", exc_info=True)
+            return
+
+        # 遍历ID列表，为每个监控执行独立的原子操作
+        for monitor_id in pending_monitor_ids:
+            try:
+                logger.debug(f"正在处理监控器 ID: {monitor_id}...")
+                async with UnitOfWork(self.bot.db_handler) as uow_atomic:
+                    repost_service = RepostService(self.bot, uow_atomic.session)
+                    # 在新的事务中重新获取monitor对象
+                    monitor_to_process = await uow_atomic.session.get(
+                        AnnouncementChannelMonitor, monitor_id
+                    )
+                    if not monitor_to_process:
+                        logger.warning(f"在处理前无法找到监控器 ID: {monitor_id}，可能已被处理。")
+                        continue
+
+                    await repost_service.process_single_repost(monitor_to_process)
+                    await uow_atomic.commit()
+                logger.debug(f"成功处理并提交了监控器 ID: {monitor_id}")
+
+            except Exception as e:
+                logger.error(f"处理监控器 ID {monitor_id} 时发生错误: {e}", exc_info=True)
+                # 单个任务失败，记录日志并继续处理下一个
 
     @tasks.loop(minutes=1)
     async def check_announcements(self):
