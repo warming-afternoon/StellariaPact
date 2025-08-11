@@ -60,6 +60,7 @@ class AbandonReasonModal(discord.ui.Modal):
             reason=self.reason.value,
         )
         await self.bot.api_scheduler.submit(interaction.channel.send(embed=embed), 1)
+        await asyncio.sleep(0.05)
 
         # 准备更新帖子状态和标签
         clean_title = StringUtils.clean_title(interaction.channel.name)

@@ -192,7 +192,6 @@ class Moderation(commands.Cog):
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
     @app_commands.command(name="发起异议", description="对一个提案发起异议")
-    @RoleGuard.requireRoles("stewards")
     async def raise_objection(self, interaction: discord.Interaction):
         """
         处理 /发起异议 命令。
