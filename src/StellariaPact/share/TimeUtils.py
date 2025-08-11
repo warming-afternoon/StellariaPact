@@ -59,9 +59,9 @@ class TimeUtils:
     def parse_discord_timestamp(content: str) -> datetime | None:
         """
         从消息内容中解析 Discord 的截止时间戳。
-        截止时间格式为 <t:UNIX时间戳:F>
+        截止时间格式为"截止时间: <t:UNIX时间戳:F>"
         """
-        match = re.search(r"<t:(\d+):F>", content)
+        match = re.search(r"截止时间[:：\s*]*<[tT]:(\d+):[fF]>", content)
         if match:
             timestamp = int(match.group(1))
             # 返回一个不含时区信息的 "naive" datetime 对象
