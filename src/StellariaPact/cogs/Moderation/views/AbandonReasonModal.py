@@ -3,7 +3,8 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
+from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import \
+    AbandonProposalQo
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -58,7 +59,7 @@ class AbandonReasonModal(discord.ui.Modal):
             moderator=interaction.user,
             reason=self.reason.value,
         )
-        tasks.append(self.bot.api_scheduler.submit(interaction.channel.send(embed=embed), 1))
+        await self.bot.api_scheduler.submit(interaction.channel.send(embed=embed), 1)
 
         # 准备更新帖子状态和标签
         clean_title = StringUtils.clean_title(interaction.channel.name)
@@ -75,14 +76,14 @@ class AbandonReasonModal(discord.ui.Modal):
             if new_tags is not None:
                 edit_payload["applied_tags"] = new_tags
 
-        tasks.append(self.bot.api_scheduler.submit(interaction.channel.edit(**edit_payload), 2))
+        await self.bot.api_scheduler.submit(interaction.channel.edit(**edit_payload), 2)
 
-        # 准备最终确认消息
-        tasks.append(
-            self.bot.api_scheduler.submit(
-                interaction.followup.send("提案已成功废弃。", ephemeral=True), 1
-            )
-        )
+        # # 准备最终确认消息
+        # tasks.append(
+        #     self.bot.api_scheduler.submit(
+        #         interaction.followup.send("提案已成功废弃。", ephemeral=True), 1
+        #     )
+        # )
 
         # 执行所有API调用
         await asyncio.gather(*tasks)

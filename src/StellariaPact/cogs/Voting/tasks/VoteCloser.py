@@ -2,7 +2,6 @@ import asyncio
 import logging
 import random
 
-import discord
 from discord.ext import commands, tasks
 
 from StellariaPact.share.enums.ObjectionStatus import ObjectionStatus
@@ -85,42 +84,13 @@ class VoteCloser(commands.Cog):
                                 f"投票会话 {session_dto.id} 关联的异议 {objection_id} "
                                 f"处于意外状态 {objection_status}，不分派事件。"
                             )
-                    else:
-                        # 对于非异议投票，保留原有的通知逻辑
-                        logger.info(
-                            f"投票会话 {session_dto.id} 是一个普通投票。在原帖中发送结果。"
+                    elif result_dto:
+                        # 对于非异议投票，分派一个通用事件
+                        logger.debug(
+                            f"普通投票 {session_dto.id} 已结束。"
+                            "分派 'vote_finished' 事件。"
                         )
-                        thread = self.bot.get_channel(session_dto.contextThreadId)
-                        if isinstance(thread, discord.Thread):
-                            roles_to_mention = []
-                            role_ids = self.bot.config.get("roles", {})
-                            moderator_id = role_ids.get("councilModerator")
-                            auditor_id = role_ids.get("executionAuditor")
-                            if moderator_id:
-                                roles_to_mention.append(f"<@&{moderator_id}>")
-                            if auditor_id:
-                                roles_to_mention.append(f"<@&{auditor_id}>")
-
-                            mention_string = " ".join(roles_to_mention)
-                            embed = discord.Embed(
-                                title="投票已结束",
-                                color=discord.Color.dark_grey(),
-                            )
-
-                            embed.add_field(
-                                name="赞成", value=f"{result_dto.approveVotes}", inline=True
-                            )
-                            embed.add_field(
-                                name="反对", value=f"{result_dto.rejectVotes}", inline=True
-                            )
-                            embed.add_field(
-                                name="总票数", value=f"{result_dto.totalVotes}", inline=True
-                            )
-
-                            await self.bot.api_scheduler.submit(
-                                thread.send(content=mention_string, embed=embed),
-                                priority=5,
-                            )
+                        self.bot.dispatch("vote_finished", session_dto, result_dto)
                 except Exception as e:
                     logger.error(f"处理投票会话 {session_dto.id} 时出错: {e}", exc_info=True)
                     # 单个会话处理失败，记录日志并继续处理下一个

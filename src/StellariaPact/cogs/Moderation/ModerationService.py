@@ -15,12 +15,15 @@ from StellariaPact.cogs.Moderation.dto.ObjectionCreationResultDto import \
     ObjectionCreationResultDto
 from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import \
     ObjectionDetailsDto
+from StellariaPact.cogs.Moderation.dto.ObjectionDto import ObjectionDto
 from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import \
     AbandonProposalQo
 from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import \
     CreateConfirmationSessionQo
 from StellariaPact.cogs.Moderation.qo.CreateObjectionAndVoteSessionShellQo import \
     CreateObjectionAndVoteSessionShellQo
+from StellariaPact.cogs.Moderation.qo.CreateObjectionQo import \
+    CreateObjectionQo
 from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import \
     ObjectionSupportQo
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
@@ -208,7 +211,6 @@ class ModerationService:
     async def get_objection_by_thread_id(self, thread_id: int) -> Optional[ObjectionDetailsDto]:
         """
         根据异议帖子ID获取异议的详细信息，包括其关联的提案。
-        使用预加载（eager loading）来避免懒加载问题。
         """
         statement = (
             select(Objection)
@@ -225,7 +227,7 @@ class ModerationService:
         assert objection.id is not None, "Objection ID should not be None"
         assert objection.proposal.id is not None, "Associated Proposal ID should not be None"
 
-        # 将模型数据打包到 DTO 中，以实现层间解耦
+        # 将模型数据打包到 DTO 中
         return ObjectionDetailsDto(
             objection_id=objection.id,
             objection_reason=objection.reason,
@@ -233,6 +235,22 @@ class ModerationService:
             proposal_id=objection.proposal.id,
             proposal_title=objection.proposal.title,
         )
+
+    async def create_objection(self, qo: CreateObjectionQo) -> ObjectionDto:
+        """
+        创建一个新的异议，并返回其 DTO。
+        """
+        new_objection = Objection(
+            proposalId=qo.proposal_id,
+            objectorId=qo.objector_id,
+            reason=qo.reason,
+            requiredVotes=qo.required_votes,
+            status=qo.status,
+        )
+        self.session.add(new_objection)
+        await self.session.flush()
+        dto = ObjectionDto.model_validate(new_objection)
+        return dto
 
     async def create_objection_and_vote_session_shell(
         self, qo: CreateObjectionAndVoteSessionShellQo

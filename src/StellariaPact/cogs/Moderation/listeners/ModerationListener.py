@@ -481,19 +481,10 @@ class ModerationListener(commands.Cog):
             logger.error("机器人尚未登录，无法发送结果通知。")
             return
 
-        # 准备最终结果的 Embed
-        final_embed = ModerationEmbedBuilder.build_vote_result_embed(
-            result.embed_qo, self.bot.user
-        )
-
         # 发送所有通知
-        await self.bot.api_scheduler.submit(
-            original_thread.send(embed=final_embed), priority=3
-        )
+        await self._send_paginated_vote_results(original_thread, result)
         if objection_thread:
-            await self.bot.api_scheduler.submit(
-                objection_thread.send(embed=final_embed), priority=3
-            )
+            await self._send_paginated_vote_results(objection_thread, result)
 
         # 根据投票结果，执行后续的帖子状态变更
         clean_title = StringUtils.clean_title(original_thread.name)
@@ -564,6 +555,40 @@ class ModerationListener(commands.Cog):
                             ),
                             priority=4,
                         )
+
+    async def _send_paginated_vote_results(
+        self, channel: discord.TextChannel | discord.Thread, result
+    ):
+        """根据投票结果，发送主结果面板和分页的投票人列表。"""
+        if not self.bot.user:
+            logger.error("机器人尚未登录，无法发送结果通知。")
+            return
+
+        # 发送主结果 Embed
+        main_embed = ModerationEmbedBuilder.build_vote_result_embed(
+            result.embed_qo, self.bot.user
+        )
+        await self.bot.api_scheduler.submit(channel.send(embed=main_embed), priority=3)
+
+        # # 准备并发送分页的投票人列表
+        # voter_embeds = []
+        # if result.approve_voter_ids:
+        #     voter_embeds.extend(
+        #         ModerationEmbedBuilder.build_voter_list_embeds(
+        #             "✅ 赞成方", result.approve_voter_ids, discord.Color.green()
+        #         )
+        #     )
+        # if result.reject_voter_ids:
+        #     voter_embeds.extend(
+        #         ModerationEmbedBuilder.build_voter_list_embeds(
+        #             "❌ 反对方", result.reject_voter_ids, discord.Color.red()
+        #         )
+        #     )
+
+        # # Discord 一次最多发送 10 个 embeds
+        # for i in range(0, len(voter_embeds), 10):
+        #     chunk = voter_embeds[i : i + 10]
+        #     await self.bot.api_scheduler.submit(channel.send(embeds=chunk), priority=3)
 
     @commands.Cog.listener("on_objection_creation_vote_cast")
     async def on_objection_creation_vote_cast(

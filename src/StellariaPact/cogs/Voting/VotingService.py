@@ -235,6 +235,12 @@ class VotingService:
         vote_session.status = 0  # 已结束
         await self.session.flush()
 
+        voters_dto_list = (
+            [UserVoteDto.model_validate(vote) for vote in all_votes]
+            if not vote_session.anonymousFlag
+            else []
+        )
+
         return VoteStatusDto(
             is_anonymous=vote_session.anonymousFlag,
             realtime_flag=vote_session.realtimeFlag,
@@ -243,6 +249,7 @@ class VotingService:
             totalVotes=len(all_votes),
             approveVotes=approve_votes,
             rejectVotes=reject_votes,
+            voters=voters_dto_list,
         )
 
     async def update_user_activity(self, qo: UpdateUserActivityQo) -> UserActivityDto:

@@ -7,7 +7,11 @@ from discord.ext import commands
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
+from ...share.StringUtils import StringUtils
+from .dto.VoteSessionDto import VoteSessionDto
+from .dto.VoteStatusDto import VoteStatusDto
 from .logic.VotingLogic import VotingLogic
+from .views.VoteEmbedBuilder import VoteEmbedBuilder
 
 logger = logging.getLogger("stellaria_pact.voting")
 
@@ -123,3 +127,61 @@ class Voting(commands.Cog):
     #     except Exception as e:
     #         logger.error(f"启动投票时发生命令特定错误: {e}", exc_info=True)
     #         raise e
+
+    @commands.Cog.listener()
+    async def on_vote_finished(
+        self, session: "VoteSessionDto", result: "VoteStatusDto"
+    ):
+        """
+        监听通用投票结束事件，并发送最终结果。
+        """
+        try:
+            thread = self.bot.get_channel(
+                session.contextThreadId
+            ) or await self.bot.fetch_channel(session.contextThreadId)
+            if not isinstance(thread, discord.Thread):
+                logger.warning(f"无法为投票会话 {session.id} 找到有效的帖子。")
+                return
+
+            topic = StringUtils.clean_title(thread.name)
+
+            # 构建主结果 Embed
+            result_embed = VoteEmbedBuilder.build_vote_result_embed(topic, result)
+
+            all_embeds_to_send = [result_embed]
+
+            # 如果不是匿名投票，则构建并添加投票者名单
+            if not result.is_anonymous and result.voters:
+                approve_voter_ids = [v.userId for v in result.voters if v.choice == 1]
+                reject_voter_ids = [v.userId for v in result.voters if v.choice == 0]
+
+                if approve_voter_ids:
+                    approve_embeds = VoteEmbedBuilder.build_voter_list_embeds(
+                        title="赞成票投票人",
+                        voter_ids=approve_voter_ids,
+                        color=discord.Color.green(),
+                    )
+                    all_embeds_to_send.extend(approve_embeds)
+
+                if reject_voter_ids:
+                    reject_embeds = VoteEmbedBuilder.build_voter_list_embeds(
+                        title="反对票投票人",
+                        voter_ids=reject_voter_ids,
+                        color=discord.Color.red(),
+                    )
+                    all_embeds_to_send.extend(reject_embeds)
+
+            # 分批发送所有 Embeds
+            # Discord 一次最多发送 10 个 embeds
+            for i in range(0, len(all_embeds_to_send), 10):
+                chunk = all_embeds_to_send[i : i + 10]
+                await self.bot.api_scheduler.submit(
+                    thread.send(embeds=chunk),
+                    priority=5,
+                )
+
+        except Exception as e:
+            logger.error(
+                f"处理 'on_vote_finished' 事件时出错 (会话ID: {session.id}): {e}",
+                exc_info=True,
+            )

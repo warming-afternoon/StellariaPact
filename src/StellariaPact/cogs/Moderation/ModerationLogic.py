@@ -29,6 +29,7 @@ from .qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from .qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
 from .qo.CreateObjectionAndVoteSessionShellQo import \
     CreateObjectionAndVoteSessionShellQo
+from .qo.CreateObjectionQo import CreateObjectionQo
 from .qo.EditObjectionReasonQo import EditObjectionReasonQo
 from .qo.ObjectionSupportQo import ObjectionSupportQo
 
@@ -108,24 +109,22 @@ class ModerationLogic:
             if is_first_objection:
                 end_time = datetime.now(timezone.utc) + timedelta(hours=48)
 
-            qo = CreateObjectionAndVoteSessionShellQo(
-                proposal_id=proposal_id,
-                objector_id=user_id,
-                reason=reason,
-                required_votes=required_votes,
-                status=initial_status,
-                thread_id=target_thread_id,
-                is_anonymous=False,
-                is_realtime=True,
-                end_time=end_time,
-            )
-            creation_result_dto = await uow.moderation.create_objection_and_vote_session_shell(qo)
-
-            # 提交事务
-            await uow.commit()
-
-            # 根据是否首次异议，返回不同类型的 DTO
             if is_first_objection:
+                # 对于首次异议，同时创建异议和投票会话
+                shell_qo = CreateObjectionAndVoteSessionShellQo(
+                    proposal_id=proposal_id,
+                    objector_id=user_id,
+                    reason=reason,
+                    required_votes=required_votes,
+                    status=initial_status,
+                    thread_id=target_thread_id,
+                    is_anonymous=False,
+                    is_realtime=True,
+                    end_time=end_time,
+                )
+                creation_result_dto = (
+                    await uow.moderation.create_objection_and_vote_session_shell(shell_qo)
+                )
                 # 准备返回给 Cog 层的 DTO 用于创建投票面板
                 return ObjectionVotePanelDto(
                     objection_id=creation_result_dto.objection_id,
@@ -138,9 +137,18 @@ class ModerationLogic:
                     proposal_thread_id=target_thread_id,
                 )
             else:
+                # 对于后续异议，只创建异议记录，等待审核
+                objection_qo = CreateObjectionQo(
+                    proposal_id=proposal_id,
+                    objector_id=user_id,
+                    reason=reason,
+                    required_votes=required_votes,
+                    status=initial_status,
+                )
+                objection_dto = await uow.moderation.create_objection(objection_qo)
                 # 准备返回给 Cog 层的 DTO 用于创建审核UI
                 return SubsequentObjectionDto(
-                    objection_id=creation_result_dto.objection_id,
+                    objection_id=objection_dto.id,
                     objector_id=user_id,
                     objection_reason=reason,
                     proposal_id=proposal_id,
@@ -241,6 +249,14 @@ class ModerationLogic:
             return None
 
         try:
+            # 调试日志
+            logger.info(
+                f"处理投票结束: is_anonymous={result_dto.is_anonymous}, "
+                f"voters_count={len(result_dto.voters) if result_dto.voters else 0}"
+            )
+            if result_dto.voters:
+                logger.debug(f"Voters data: {[v.dict() for v in result_dto.voters]}")
+
             # 用于存储从事务中安全提取的数据
             extracted_data = {}
 
@@ -315,6 +331,16 @@ class ModerationLogic:
                 total_votes=result_dto.totalVotes,
             )
 
+            approve_voter_ids = None
+            reject_voter_ids = None
+            if not result_dto.is_anonymous and result_dto.voters:
+                approve_voter_ids = [
+                    v.userId for v in result_dto.voters if v.choice == 1
+                ]
+                reject_voter_ids = [
+                    v.userId for v in result_dto.voters if v.choice == 0
+                ]
+
             return VoteFinishedResultDto(
                 embed_qo=result_qo,
                 is_passed=extracted_data["is_passed"],
@@ -322,6 +348,8 @@ class ModerationLogic:
                 objection_thread_id=extracted_data["objection_thread_id"],
                 notification_channel_id=extracted_data["notification_channel_id"],
                 original_vote_message_id=session_dto.contextMessageId,
+                approve_voter_ids=approve_voter_ids,
+                reject_voter_ids=reject_voter_ids,
             )
 
         except (ValueError, RuntimeError) as e:

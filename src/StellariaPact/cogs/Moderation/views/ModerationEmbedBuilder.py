@@ -215,7 +215,7 @@ class ModerationEmbedBuilder:
             description=(
                 f"对提案 [{qo.proposal_title}]({qo.proposal_url}) 的一项异议"
                 "因未能在指定时间内收集到足够的支持票而关闭。\n\n"
-                f"**异议发起人**: <@{qo.objector_id}> ({qo.objector_display_name})"
+                f"**异议发起人**: <@{qo.objector_id}>"
             ),
             color=discord.Color.red(),
         )
@@ -256,6 +256,29 @@ class ModerationEmbedBuilder:
             name="管理员审核理由", value=f"{qo.review_reason}", inline=False
         )
 
-        embed.timestamp = datetime.now(timezone.utc)
         return embed
+
+    @staticmethod
+    def build_voter_list_embeds(
+        title: str, voter_ids: list[int], color: discord.Color
+    ) -> list[discord.Embed]:
+        """
+        将一个长的投票者列表分割成多个 Embed。
+        """
+        embeds = []
+        # 每 40 个 ID 创建一个 Embed，以确保不超过字符限制
+        chunk_size = 40
+        
+        for i in range(0, len(voter_ids), chunk_size):
+            chunk = voter_ids[i : i + chunk_size]
+            description = "\n".join(f"<@{user_id}>" for user_id in chunk)
+            
+            embed = discord.Embed(
+                title=f"{title} ({i + 1} - {i + len(chunk)})",
+                description=description,
+                color=color,
+            )
+            embeds.append(embed)
+            
+        return embeds
 

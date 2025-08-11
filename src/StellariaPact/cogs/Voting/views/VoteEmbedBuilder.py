@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Optional
-
-import discord
 from zoneinfo import ZoneInfo
 
+import discord
+
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
+from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 
 
@@ -184,3 +187,45 @@ class VoteEmbedBuilder:
             color=discord.Color.blue(),
         )
         return embed
+
+    @staticmethod
+    def build_vote_result_embed(
+        topic: str, result: "VoteStatusDto"
+    ) -> discord.Embed:
+        """
+        构建通用投票结果的 Embed 消息。
+        """
+        embed = discord.Embed(
+            title=f"{topic} 的投票已结束",
+            color=discord.Color.dark_grey(),
+        )
+
+        embed.add_field(name="赞成", value=f"{result.approveVotes}", inline=True)
+        embed.add_field(name="反对", value=f"{result.rejectVotes}", inline=True)
+        embed.add_field(name="总票数", value=f"{result.totalVotes}", inline=True)
+        
+        return embed
+
+    @staticmethod
+    def build_voter_list_embeds(
+        title: str, voter_ids: list[int], color: discord.Color
+    ) -> list[discord.Embed]:
+        """
+        将一个长的投票者列表分割成多个 Embed。
+        """
+        embeds = []
+        # 每 40 个 ID 创建一个 Embed，以确保不超过字符限制
+        chunk_size = 40
+        
+        for i in range(0, len(voter_ids), chunk_size):
+            chunk = voter_ids[i : i + chunk_size]
+            description = "\n".join(f"<@{user_id}>" for user_id in chunk)
+            
+            embed = discord.Embed(
+                title=f"{title} ({i + 1} - {i + len(chunk)})",
+                description=description,
+                color=color,
+            )
+            embeds.append(embed)
+            
+        return embeds

@@ -1,6 +1,7 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
+from StellariaPact.cogs.Voting.dto.UserVoteDto import UserVoteDto
 from StellariaPact.share.BaseDto import BaseDto
 
 
@@ -16,3 +17,4 @@ class VoteStatusDto(BaseDto):
     totalVotes: int
     approveVotes: int  # 赞成票
     rejectVotes: int  # 反对票
+    voters: Optional[List[UserVoteDto]] = []
