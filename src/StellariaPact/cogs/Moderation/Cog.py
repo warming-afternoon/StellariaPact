@@ -253,6 +253,52 @@ class Moderation(commands.Cog):
         modal.on_submit = on_submit
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
+    @app_commands.command(name="进行索引", description="手动为一个错过的提案帖创建投票面板和数据库记录")
+    # @RoleGuard.requireRoles("councilModerator", "stewards")
+    async def index_proposal(self, interaction: discord.Interaction):
+        """
+        Manually indexes a proposal thread. This is useful if the bot missed the
+        on_thread_create event.
+        """
+        await self.bot.api_scheduler.submit(
+            interaction.response.defer(ephemeral=True, thinking=True), 1
+        )
+
+        # 1. Validation Checks
+        if not isinstance(interaction.channel, discord.Thread):
+            return await self.bot.api_scheduler.submit(
+                interaction.followup.send("此命令只能在帖子内使用。", ephemeral=True), 1
+            )
+
+        discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
+        if not discussion_channel_id_str or interaction.channel.parent_id != int(discussion_channel_id_str):
+            return await self.bot.api_scheduler.submit(
+                interaction.followup.send("此命令只能在指定的议事区帖子内使用。", ephemeral=True), 1
+            )
+
+        try:
+            # 2. 检测是否已索引
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                existing_proposal = await uow.moderation.get_proposal_by_thread_id(interaction.channel.id)
+                if existing_proposal:
+                    return await self.bot.api_scheduler.submit(
+                        interaction.followup.send("这个帖子已经被索引过了。", ephemeral=True), 1
+                    )
+
+            
+            await self.logic.manually_index_proposal_thread(interaction.channel)
+
+            
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("帖子已成功索引！投票面板已创建。", ephemeral=True), 1
+            )
+
+        except Exception as e:
+            logger.error(f"手动索引帖子 {interaction.channel.id} 时发生错误: {e}", exc_info=True)
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send(f"索引失败，发生了一个错误: {e}", ephemeral=True), 1
+            )
+
     def _determine_target_thread_id(
         self, interaction: discord.Interaction, proposal_link: str
     ) -> int:
