@@ -1,8 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-import re
-import discord
 
 from sqlalchemy.exc import IntegrityError
 
@@ -14,11 +12,6 @@ from ...share.UnitOfWork import UnitOfWork
 from ..Voting.dto.VoteSessionDto import VoteSessionDto
 from ..Voting.dto.VoteStatusDto import VoteStatusDto
 from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
-from ..Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
-from ..Voting.views.VoteView import VoteView
-from ...share.DiscordUtils import DiscordUtils
-from ...share.StringUtils import StringUtils
-from ...share.TimeUtils import TimeUtils
 from .dto.CollectionExpiredResultDto import CollectionExpiredResultDto
 from .dto.ConfirmationSessionDto import ConfirmationSessionDto
 from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
@@ -675,77 +668,3 @@ class ModerationLogic:
             )
         except ValueError as e:
             return ObjectionReviewResultDto(success=False, message=str(e))
-
-    async def manually_index_proposal_thread(self, thread: discord.Thread):
-        """
-        Orchestrates the process of manually indexing a proposal thread.
-        This involves creating the proposal record, updating the thread,
-        and creating the voting panel and session.
-        """
-        # 1. Get starter message to extract info
-        try:
-            starter_message = await thread.fetch_message(thread.id)
-        except discord.NotFound:
-            raise ValueError("找不到帖子的启动消息，无法进行索引。")
-
-        # 2. Parse proposer ID from starter message
-        match = re.search(r"<@(\d+)>", starter_message.content)
-        if not match:
-            raise ValueError("在启动消息中未找到有效的提案人 (@mention)，无法进行索引。")
-        proposer_id = int(match.group(1))
-        clean_title = StringUtils.clean_title(thread.name)
-
-        # 3. Update thread status (title and tags)
-        new_title = f"[讨论中] {clean_title}"
-        edit_payload = {"name": new_title}
-        if isinstance(thread.parent, discord.ForumChannel):
-            new_tags = DiscordUtils.calculate_new_tags(
-                current_tags=thread.applied_tags,
-                forum_tags=thread.parent.available_tags,
-                config=self.bot.config,
-                target_tag_name="discussion",
-            )
-            if new_tags is not None:
-                edit_payload["applied_tags"] = new_tags
-        
-        await self.bot.api_scheduler.submit(thread.edit(**edit_payload), priority=3)
-
-        # 4. Create and send vote panel
-        end_time = TimeUtils.parse_discord_timestamp(starter_message.content)
-        if end_time is None:
-            target_tz = self.bot.config.get("timezone", "UTC")
-            end_time = TimeUtils.get_utc_end_time(duration_hours=48, target_tz=target_tz)
-        
-        view = VoteView(self.bot)
-        embed = VoteEmbedBuilder.create_initial_vote_embed(
-            topic=clean_title,
-            author=None,
-            realtime=True,
-            anonymous=True,
-            end_time=end_time,
-        )
-
-        vote_panel_message = await self.bot.api_scheduler.submit(
-            thread.send(embed=embed, view=view), priority=5
-        )
-
-        # 5. Create database records in a single transaction
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            # Create Proposal record
-            await uow.moderation.create_proposal(
-                thread_id=thread.id, proposer_id=proposer_id, title=clean_title
-            )
-
-            # Create VoteSession record
-            vote_qo = CreateVoteSessionQo(
-                thread_id=thread.id,
-                context_message_id=vote_panel_message.id,
-                realtime=True,
-                anonymous=True,
-                end_time=end_time,
-            )
-            await uow.voting.create_vote_session(vote_qo)
-
-            await uow.commit()
-
-        logger.info(f"已通过手动命令成功索引帖子 '{thread.name}' (ID: {thread.id})。")
