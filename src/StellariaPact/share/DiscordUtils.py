@@ -1,9 +1,13 @@
+import asyncio
 import logging
-from typing import List, Optional, Sequence
+from typing import TYPE_CHECKING, List, Optional, Sequence
 
 import discord
 
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+
+if TYPE_CHECKING:
+    from ..cogs.Voting.views.VotingChoiceView import VotingChoiceView
 
 logger = logging.getLogger(__name__)
 
@@ -119,3 +123,38 @@ class DiscordUtils:
             return None
 
         return new_tags
+
+
+async def send_private_panel(
+    bot: "StellariaPactBot",
+    interaction: discord.Interaction,
+    embed: discord.Embed,
+    view: discord.ui.View,
+):
+    """
+    尝试通过私信发送一个面板，如果失败则回退到临时的私密消息。
+    """
+    try:
+        # 尝试发送私信
+        message = await bot.api_scheduler.submit(
+            interaction.user.send(embed=embed, view=view), priority=1
+        )
+        # 如果视图有关联的 message 属性，则进行设置
+        if hasattr(view, "message"):
+            voting_view: "VotingChoiceView" = view  # type: ignore
+            voting_view.message = message
+
+    except discord.Forbidden:
+        # 私信被屏蔽，回退到发送私密消息
+        await bot.api_scheduler.submit(
+            interaction.followup.send(embed=embed, view=view, ephemeral=True),
+            priority=1,
+        )
+    except Exception as e:
+        # 处理其他可能的异常
+        logger.error(f"发送私密面板时发生未知错误: {e}", exc_info=True)
+        if not interaction.response.is_done():
+            await bot.api_scheduler.submit(
+                interaction.followup.send("发送管理面板时出错，请重试。", ephemeral=True),
+                priority=1,
+            )

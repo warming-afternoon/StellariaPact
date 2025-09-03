@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 import discord
 
 if TYPE_CHECKING:
-    from ....share.StellariaPactBot import StellariaPactBot
+    pass
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class ObjectionFormalVoteChoiceView(discord.ui.View):
         on_disagree: Callable[[discord.Interaction], Awaitable[None]],
         on_abstain: Callable[[discord.Interaction], Awaitable[None]],
     ):
-        super().__init__(timeout=900)
+        super().__init__(timeout=890)
         self.on_agree_callback = on_agree
         self.on_disagree_callback = on_disagree
         self.on_abstain_callback = on_abstain

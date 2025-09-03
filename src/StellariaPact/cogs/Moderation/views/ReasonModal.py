@@ -2,8 +2,7 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
-    ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork

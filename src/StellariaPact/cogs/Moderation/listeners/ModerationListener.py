@@ -4,25 +4,17 @@ from typing import TYPE_CHECKING, Literal
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import \
-    ObjectionSupportQo
-from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import \
-    ObjectionVoteEmbedBuilder
+from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
+from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
 
-from ....cogs.Moderation.dto.CollectionExpiredResultDto import \
-    CollectionExpiredResultDto
-from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import \
-    HandleSupportObjectionResultDto
+from ....cogs.Moderation.dto.CollectionExpiredResultDto import CollectionExpiredResultDto
+from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
 from ....cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
-    BuildAdminReviewEmbedQo
-from ....cogs.Moderation.qo.BuildFirstObjectionEmbedQo import \
-    BuildFirstObjectionEmbedQo
-from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import \
-    BuildProposalFrozenEmbedQo
+from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
+from ....cogs.Moderation.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
+from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
 from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
-from ....cogs.Moderation.views.ModerationEmbedBuilder import \
-    ModerationEmbedBuilder
+from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from ....share.DiscordUtils import DiscordUtils
@@ -224,9 +216,7 @@ class ModerationListener(commands.Cog):
                 embed_qo = BuildProposalFrozenEmbedQo(
                     objection_thread_jump_url=objection_thread.jump_url
                 )
-                notification_embed = ModerationEmbedBuilder.build_proposal_frozen_embed(
-                    embed_qo
-                )
+                notification_embed = ModerationEmbedBuilder.build_proposal_frozen_embed(embed_qo)
                 await self.bot.api_scheduler.submit(
                     original_thread.send(embed=notification_embed), priority=4
                 )
@@ -285,7 +275,7 @@ class ModerationListener(commands.Cog):
                 interaction.followup.send("更新理由时发生未知错误。", ephemeral=True), 1
             )
 
-    # --- Private Methods ---
+    # --- 私有方法 ---
 
     async def _update_review_embed(self, dto):
         """根据更新后的数据，找到并更新审核帖子中的 embed"""
@@ -317,14 +307,10 @@ class ModerationListener(commands.Cog):
                 objector_id=dto.objector_id,
                 objection_reason=dto.new_reason,
             )
-            new_embed = ModerationEmbedBuilder.build_admin_review_embed(
-                embed_qo, self.bot.user
-            )
+            new_embed = ModerationEmbedBuilder.build_admin_review_embed(embed_qo, self.bot.user)
 
             # 编辑消息
-            await self.bot.api_scheduler.submit(
-                original_message.edit(embed=new_embed), priority=3
-            )
+            await self.bot.api_scheduler.submit(original_message.edit(embed=new_embed), priority=3)
             logger.info(f"成功更新了审核帖子 {dto.review_thread_id} 中的异议理由。")
 
         except StopAsyncIteration:
@@ -542,9 +528,7 @@ class ModerationListener(commands.Cog):
                 obj_new_title = f"[已否决] {obj_clean_title}"
                 rejected_tag_id_str = self.bot.config.get("tags", {}).get("rejected")
                 if rejected_tag_id_str:
-                    rejected_tag = original_thread.parent.get_tag(
-                        int(rejected_tag_id_str)
-                    )
+                    rejected_tag = original_thread.parent.get_tag(int(rejected_tag_id_str))
                     if rejected_tag:
                         await self.bot.api_scheduler.submit(
                             objection_thread.edit(
@@ -565,9 +549,7 @@ class ModerationListener(commands.Cog):
             return
 
         # 发送主结果 Embed
-        main_embed = ModerationEmbedBuilder.build_vote_result_embed(
-            result.embed_qo, self.bot.user
-        )
+        main_embed = ModerationEmbedBuilder.build_vote_result_embed(result.embed_qo, self.bot.user)
         await self.bot.api_scheduler.submit(channel.send(embed=main_embed), priority=3)
 
         # # 准备并发送分页的投票人列表

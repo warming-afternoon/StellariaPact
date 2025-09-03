@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 import discord
 from discord import ui
+from zoneinfo import ZoneInfo
 
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 

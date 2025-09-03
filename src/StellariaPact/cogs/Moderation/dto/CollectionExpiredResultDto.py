@@ -1,7 +1,6 @@
 from typing import Optional
 
-from ....cogs.Moderation.qo.BuildCollectionExpiredEmbedQo import \
-    BuildCollectionExpiredEmbedQo
+from ....cogs.Moderation.qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
 from ....share.BaseDto import BaseDto
 
 

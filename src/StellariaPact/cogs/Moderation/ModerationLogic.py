@@ -15,8 +15,7 @@ from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from .dto.CollectionExpiredResultDto import CollectionExpiredResultDto
 from .dto.ConfirmationSessionDto import ConfirmationSessionDto
 from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
-from .dto.HandleSupportObjectionResultDto import \
-    HandleSupportObjectionResultDto
+from .dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
 from .dto.ObjectionDto import ObjectionDto
 from .dto.ObjectionReasonUpdateResultDto import ObjectionReasonUpdateResultDto
 from .dto.ObjectionReviewResultDto import ObjectionReviewResultDto
@@ -27,8 +26,7 @@ from .dto.VoteFinishedResultDto import VoteFinishedResultDto
 from .qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
 from .qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from .qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
-from .qo.CreateObjectionAndVoteSessionShellQo import \
-    CreateObjectionAndVoteSessionShellQo
+from .qo.CreateObjectionAndVoteSessionShellQo import CreateObjectionAndVoteSessionShellQo
 from .qo.CreateObjectionQo import CreateObjectionQo
 from .qo.EditObjectionReasonQo import EditObjectionReasonQo
 from .qo.ObjectionSupportQo import ObjectionSupportQo
@@ -122,8 +120,8 @@ class ModerationLogic:
                     is_realtime=True,
                     end_time=end_time,
                 )
-                creation_result_dto = (
-                    await uow.moderation.create_objection_and_vote_session_shell(shell_qo)
+                creation_result_dto = await uow.moderation.create_objection_and_vote_session_shell(
+                    shell_qo
                 )
                 # 准备返回给 Cog 层的 DTO 用于创建投票面板
                 return ObjectionVotePanelDto(
@@ -315,7 +313,6 @@ class ModerationLogic:
                 # 提交事务
                 await uow.commit()
 
-            # 在事务外使用预取的数据构建 DTO
             result_qo = BuildVoteResultEmbedQo(
                 proposal_title=extracted_data["proposal_title"],
                 proposal_thread_url=f"https://discord.com/channels/{extracted_data['guild_id']}/{extracted_data['proposal_thread_id']}",
@@ -334,12 +331,8 @@ class ModerationLogic:
             approve_voter_ids = None
             reject_voter_ids = None
             if not result_dto.is_anonymous and result_dto.voters:
-                approve_voter_ids = [
-                    v.userId for v in result_dto.voters if v.choice == 1
-                ]
-                reject_voter_ids = [
-                    v.userId for v in result_dto.voters if v.choice == 0
-                ]
+                approve_voter_ids = [v.userId for v in result_dto.voters if v.choice == 1]
+                reject_voter_ids = [v.userId for v in result_dto.voters if v.choice == 0]
 
             return VoteFinishedResultDto(
                 embed_qo=result_qo,
@@ -625,9 +618,7 @@ class ModerationLogic:
             logger.warning(f"更新异议理由时发生错误: {e}")
             return ObjectionReasonUpdateResultDto(success=False, message=str(e))
         except Exception as e:
-            logger.error(
-                f"更新异议 {qo.objection_id} 理由时发生未知错误: {e}", exc_info=True
-            )
+            logger.error(f"更新异议 {qo.objection_id} 理由时发生未知错误: {e}", exc_info=True)
             return ObjectionReasonUpdateResultDto(
                 success=False, message="更新理由时发生未知错误，请联系管理员。"
             )

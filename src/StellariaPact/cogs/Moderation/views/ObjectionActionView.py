@@ -2,10 +2,10 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.views.EditObjectionReasonModal import \
-    EditObjectionReasonModal
-from StellariaPact.cogs.Moderation.views.ObjectionReviewReasonModal import \
-    ObjectionReviewReasonModal
+from StellariaPact.cogs.Moderation.views.EditObjectionReasonModal import EditObjectionReasonModal
+from StellariaPact.cogs.Moderation.views.ObjectionReviewReasonModal import (
+    ObjectionReviewReasonModal,
+)
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class ObjectionActionView(discord.ui.View):
         channel_id: int,
         message_id: int,
     ):
-        super().__init__(timeout=900)  # 15分钟后超时
+        super().__init__(timeout=890)  # 15分钟后超时
         self.bot = bot
         self.objection_id = objection_id
         self.channel_id = channel_id

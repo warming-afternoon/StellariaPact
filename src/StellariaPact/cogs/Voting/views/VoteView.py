@@ -1,14 +1,15 @@
-
 from typing import cast
 
 import discord
+
+from StellariaPact.share.DiscordUtils import send_private_panel
 
 from ....share.auth.RoleGuard import RoleGuard
 from ....share.SafeDefer import safeDefer
 from ....share.StellariaPactBot import StellariaPactBot
 from ..Cog import Voting
-from ..EligibilityService import EligibilityService
 from ..views.VotingChoiceView import VotingChoiceView
+from .VoteEmbedBuilder import VoteEmbedBuilder
 
 
 class VoteView(discord.ui.View):
@@ -56,39 +57,9 @@ class VoteView(discord.ui.View):
                 message_id=interaction.message.id,
             )
 
-            if panel_data.current_vote_choice is None:
-                current_vote_status = "未投票"
-            elif panel_data.current_vote_choice == 1:
-                current_vote_status = "✅ 赞成"
-            else:
-                current_vote_status = "❌ 反对"
-
-            embed = discord.Embed(
-                title="投票管理",
-                color=discord.Color.green()
-                if panel_data.is_eligible
-                else discord.Color.red(),
+            embed = VoteEmbedBuilder.create_management_panel_embed(
+                jump_url=interaction.message.jump_url, panel_data=panel_data
             )
-            embed.add_field(
-                name="当前发言数", value=f"{panel_data.message_count}", inline=True
-            )
-            embed.add_field(
-                name="要求发言数",
-                value=f"≥ {EligibilityService.REQUIRED_MESSAGES}",
-                inline=True,
-            )
-            embed.add_field(
-                name="资格状态",
-                value="✅ 合格" if panel_data.is_eligible else "❌ 不合格",
-                inline=True,
-            )
-            embed.add_field(name="当前投票", value=current_vote_status, inline=False)
-            if panel_data.is_validation_revoked:
-                embed.description = "注意：您的投票资格已被撤销。"
-
-            if not panel_data.is_vote_active:
-                embed.add_field(name="投票状态", value="**已结束**", inline=False)
-                embed.color = discord.Color.dark_grey()
 
             is_admin = RoleGuard.hasRoles(
                 interaction, "councilModerator", "executionAuditor", "stewards"
@@ -99,15 +70,13 @@ class VoteView(discord.ui.View):
                 )
                 return
 
-            view_to_send = VotingChoiceView(
+            choice_view = VotingChoiceView(
                 interaction,
                 interaction.message.id,
                 is_eligible=panel_data.is_eligible,
                 is_vote_active=panel_data.is_vote_active,
+                logic=voting_cog.logic,
             )
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send(embed=embed, view=view_to_send, ephemeral=True),
-                priority=1,
-            )
+            await send_private_panel(self.bot, interaction, embed=embed, view=choice_view)
         except Exception as e:
             await interaction.followup.send(f"处理投票管理面板时出错: {e}", ephemeral=True)

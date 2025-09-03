@@ -42,12 +42,9 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
             return
 
         try:
-
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 直接调用服务层来更新时间
-                qo = AdjustVoteTimeQo(
-                    thread_id=self.thread_id, hours_to_adjust=hours_to_adjust
-                )
+                qo = AdjustVoteTimeQo(thread_id=self.thread_id, hours_to_adjust=hours_to_adjust)
                 result_dto = await uow.voting.adjust_vote_time(qo)
                 old_end_time = result_dto.old_end_time
                 new_end_time = result_dto.vote_session.endTime
@@ -59,14 +56,13 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
 
             # 准备 Discord API 调用
             tasks = []
-            if interaction.channel and isinstance(
-                interaction.channel, discord.Thread
-            ):
+            thread_channel = self.bot.get_channel(self.thread_id) or await self.bot.fetch_channel(
+                self.thread_id
+            )
+            if isinstance(thread_channel, discord.Thread):
                 # 准备主面板更新
                 try:
-                    main_vote_message = await interaction.channel.fetch_message(
-                        context_message_id
-                    )
+                    main_vote_message = await thread_channel.fetch_message(context_message_id)
                     original_embed = main_vote_message.embeds[0]
                     new_embed = original_embed.copy()
 
@@ -83,7 +79,7 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
                             )
                             time_field_found = True
                             break
-                    
+
                     if not time_field_found:
                         # 如果没有找到，就添加一个新的
                         new_ts = int(new_end_time.timestamp())
@@ -105,15 +101,12 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
                     old_time=old_end_time,
                     new_time=new_end_time,
                 )
-                tasks.append(interaction.channel.send(embed=notification_embed))
+                tasks.append(thread_channel.send(embed=notification_embed))
 
             # 并行执行所有 Discord API 调用
             if tasks:
                 await asyncio.gather(
-                    *(
-                        self.bot.api_scheduler.submit(task, priority=5)
-                        for task in tasks
-                    )
+                    *(self.bot.api_scheduler.submit(task, priority=5) for task in tasks)
                 )
 
         except Exception as e:

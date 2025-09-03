@@ -1,7 +1,6 @@
 from typing import List, Optional
 
-from ....cogs.Moderation.qo.BuildVoteResultEmbedQo import \
-    BuildVoteResultEmbedQo
+from ....cogs.Moderation.qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from ....share.BaseDto import BaseDto
 
 

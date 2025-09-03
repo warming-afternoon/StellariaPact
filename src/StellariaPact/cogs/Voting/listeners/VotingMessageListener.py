@@ -36,16 +36,10 @@ class VotingMessageListener(commands.Cog):
         # 移除所有空白字符，然后检查是否为纯表情
         content_without_whitespace = re.sub(r"\s", "", content)
         if self.emoji_pattern.match(content_without_whitespace):
-            # logger.debug(f"消息被过滤: 内容是纯表情 ('{content}')")
             return False
 
         # 检查长度
         is_long_enough = len(content_without_whitespace) > 5
-        # if not is_long_enough:
-        #     logger.debug(f"消息被过滤: 长度不足 ({len(content)} <= 5)'")
-        # else:
-        #     pass
-        #     # logger.debug(f"消息验证通过: '{content}'")
 
         return is_long_enough
 
@@ -143,10 +137,7 @@ class VotingMessageListener(commands.Cog):
 
             if update_tasks:
                 await asyncio.gather(
-                    *(
-                        self.bot.api_scheduler.submit(task, priority=2)
-                        for task in update_tasks
-                    )
+                    *(self.bot.api_scheduler.submit(task, priority=2) for task in update_tasks)
                 )
                 logger.info(
                     f"用户 {message.author.id} 因资格失效，"

@@ -3,8 +3,7 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import \
-    AbandonProposalQo
+from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot

@@ -61,7 +61,9 @@ class BackgroundTasks(commands.Cog):
                 logger.debug("没有找到需要重复播报的公示。")
                 return
 
-            logger.info(f"发现 {len(pending_monitor_ids)} 个待处理的重复播报: {pending_monitor_ids}")
+            logger.info(
+                f"发现 {len(pending_monitor_ids)} 个待处理的重复播报: {pending_monitor_ids}"
+            )
 
         except Exception as e:
             logger.error(f"获取待处理播报列表时发生严重错误: {e}", exc_info=True)

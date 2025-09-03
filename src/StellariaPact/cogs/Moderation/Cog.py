@@ -4,27 +4,17 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import \
-    ObjectionVotePanelDto
-from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import \
-    SubsequentObjectionDto
+from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
+from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import SubsequentObjectionDto
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
-from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
-    BuildAdminReviewEmbedQo
-from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import \
-    BuildConfirmationEmbedQo
-from StellariaPact.cogs.Moderation.qo.BuildFirstObjectionEmbedQo import \
-    BuildFirstObjectionEmbedQo
-from StellariaPact.cogs.Moderation.views.AbandonReasonModal import \
-    AbandonReasonModal
-from StellariaPact.cogs.Moderation.views.ConfirmationView import \
-    ConfirmationView
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
-    ModerationEmbedBuilder
-from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import \
-    ObjectionCreationVoteView
-from StellariaPact.cogs.Moderation.views.ObjectionManageView import \
-    ObjectionManageView
+from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
+from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
+from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import ObjectionCreationVoteView
+from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.cogs.Moderation.views.ReasonModal import ReasonModal
 from StellariaPact.share.auth.RoleGuard import RoleGuard

@@ -76,9 +76,7 @@ class VoteCloser(commands.Cog):
                                 f"异议 {objection_id} 的正式投票已结束。"
                                 "分派 'objection_vote_finished' 事件。"
                             )
-                            self.bot.dispatch(
-                                "objection_vote_finished", session_dto, result_dto
-                            )
+                            self.bot.dispatch("objection_vote_finished", session_dto, result_dto)
                         else:
                             logger.warning(
                                 f"投票会话 {session_dto.id} 关联的异议 {objection_id} "
@@ -87,8 +85,7 @@ class VoteCloser(commands.Cog):
                     elif result_dto:
                         # 对于非异议投票，分派一个通用事件
                         logger.debug(
-                            f"普通投票 {session_dto.id} 已结束。"
-                            "分派 'vote_finished' 事件。"
+                            f"普通投票 {session_dto.id} 已结束。分派 'vote_finished' 事件。"
                         )
                         self.bot.dispatch("vote_finished", session_dto, result_dto)
                 except Exception as e:

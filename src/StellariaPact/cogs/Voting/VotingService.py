@@ -13,13 +13,14 @@ from StellariaPact.cogs.Voting.dto.UserVoteDto import UserVoteDto
 from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
-    CreateVoteSessionQo
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import \
-    UpdateUserActivityQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
+from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
+
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
+from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,7 @@ class VotingService:
             return None
         return VoteSessionDto.model_validate(session)
 
-    async def get_all_vote_sessions_by_thread_id(
-        self, thread_id: int
-    ) -> Sequence[VoteSessionDto]:
+    async def get_all_vote_sessions_by_thread_id(self, thread_id: int) -> Sequence[VoteSessionDto]:
         """根据帖子ID获取所有投票会话。"""
         statement = select(VoteSession).where(VoteSession.contextThreadId == thread_id)
         result = await self.session.exec(statement)
@@ -62,6 +61,32 @@ class VotingService:
             select(VoteSession).where(VoteSession.contextMessageId == message_id)
         )
         return result.one_or_none()
+
+    async def get_vote_session_with_details(self, message_id: int) -> Optional[VoteSession]:
+        """
+        根据消息ID获取投票会话，并预加载所有关联的 UserVotes。
+        """
+        statement = (
+            select(VoteSession)
+            .where(VoteSession.contextMessageId == message_id)
+            .options(selectinload(VoteSession.userVotes))  # type: ignore
+        )
+        result = await self.session.exec(statement)
+        return result.one_or_none()
+
+    async def get_all_sessions_in_thread_with_details(
+        self, thread_id: int
+    ) -> Sequence[VoteSession]:
+        """
+        获取帖子内所有的投票会话，并预加载每个会话的投票详情。
+        """
+        statement = (
+            select(VoteSession)
+            .where(VoteSession.contextThreadId == thread_id)
+            .options(selectinload(VoteSession.userVotes))  # type: ignore
+        )
+        result = await self.session.exec(statement)
+        return result.all()
 
     async def create_vote_session(self, qo: CreateVoteSessionQo) -> VoteSessionDto:
         """
@@ -96,6 +121,52 @@ class VotingService:
         self.session.add(new_session)
         await self.session.flush()
         return VoteSessionDto.model_validate(new_session)
+
+    async def record_vote(self, qo: RecordVoteQo) -> VoteSession:
+        """
+        记录或更新用户的投票。
+        """
+        vote_session = await self.get_vote_session_with_details(qo.message_id)
+        if not vote_session:
+            raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
+
+        existing_vote = next(
+            (vote for vote in vote_session.userVotes if vote.userId == qo.user_id),
+            None,
+        )
+
+        if existing_vote:
+            existing_vote.choice = qo.choice
+            self.session.add(existing_vote)
+        else:
+            if vote_session.id is None:
+                raise ValueError("无法为没有 ID 的会话记录投票。")
+            new_vote = UserVote(
+                sessionId=vote_session.id, userId=qo.user_id, choice=qo.choice
+            )
+            self.session.add(new_vote)
+            vote_session.userVotes.append(new_vote)
+
+        return vote_session
+
+    async def delete_vote(self, user_id: int, message_id: int) -> Optional[VoteSession]:
+        """
+        删除用户的投票。
+        """
+        vote_session = await self.get_vote_session_with_details(message_id)
+        if not vote_session:
+            return None
+
+        user_vote_to_delete = next(
+            (vote for vote in vote_session.userVotes if vote.userId == user_id),
+            None,
+        )
+
+        if user_vote_to_delete:
+            await self.session.delete(user_vote_to_delete)
+            vote_session.userVotes.remove(user_vote_to_delete)
+
+        return vote_session
 
     async def check_user_eligibility(
         self, user_id: int, thread_id: int
@@ -170,7 +241,8 @@ class VotingService:
 
         # 找到用户在这些会话中的所有投票
         votes_statement = select(UserVote).where(
-            UserVote.userId == user_id, UserVote.sessionId.in_(session_ids)  # type: ignore
+            UserVote.userId == user_id,
+            UserVote.sessionId.in_(session_ids),  # type: ignore
         )
         votes_result = await self.session.exec(votes_statement)
         votes_to_delete = votes_result.all()
@@ -328,27 +400,62 @@ class VotingService:
             vote_session=VoteSessionDto.model_validate(vote_session), old_end_time=old_end_time
         )
 
-    async def toggle_anonymous(self, thread_id: int) -> Optional[VoteSessionDto]:
+    async def toggle_anonymous(self, message_id: int) -> Optional[VoteSession]:
         """切换投票的匿名状态。"""
-        statement = select(VoteSession).where(VoteSession.contextThreadId == thread_id)
-        result = await self.session.exec(statement)
-        vote_session = result.one_or_none()
+        vote_session = await self.get_vote_session_with_details(message_id)
         if not vote_session:
             return None
 
         vote_session.anonymousFlag = not vote_session.anonymousFlag
-        await self.session.flush()
-        return VoteSessionDto.model_validate(vote_session)
+        self.session.add(vote_session)
+        return vote_session
 
-    async def toggle_realtime(self, thread_id: int) -> Optional[VoteSessionDto]:
-        """切换投票的实时进度状态。"""
-        statement = select(VoteSession).where(VoteSession.contextThreadId == thread_id)
-        result = await self.session.exec(statement)
-        vote_session = result.one_or_none()
+    async def toggle_realtime(self, message_id: int) -> Optional[VoteSession]:
+        """切换投票的实时进度状态"""
+        vote_session = await self.get_vote_session_with_details(message_id)
         if not vote_session:
             return None
 
         vote_session.realtimeFlag = not vote_session.realtimeFlag
-        await self.session.flush()
-        return VoteSessionDto.model_validate(vote_session)
+        self.session.add(vote_session)
+        return vote_session
 
+    async def get_vote_flags(self, message_id: int) -> Optional[tuple[bool, bool]]:
+        """
+        以轻量级方式仅获取投票会话的匿名和实时标志。
+        """
+        statement = select(VoteSession.anonymousFlag, VoteSession.realtimeFlag).where(
+            VoteSession.contextMessageId == message_id
+        )
+        result = await self.session.exec(statement)
+        flags = result.one_or_none()
+        if not flags:
+            return None
+        return flags[0], flags[1]
+
+    @staticmethod
+    def get_vote_details_dto(vote_session: VoteSession) -> VoteDetailDto:
+        """
+        根据给定的 VoteSession 对象（包含预加载的 userVotes）构建 VoteDetailDto。
+        """
+        all_votes = vote_session.userVotes
+        approve_votes = sum(1 for vote in all_votes if vote.choice == 1)
+        reject_votes = sum(1 for vote in all_votes if vote.choice == 0)
+
+        voters = []
+        if not vote_session.anonymousFlag:
+            voters = [
+                VoterInfo(user_id=vote.userId, choice=vote.choice) for vote in all_votes
+            ]
+
+        return VoteDetailDto(
+            is_anonymous=vote_session.anonymousFlag,
+            realtime_flag=vote_session.realtimeFlag,
+            end_time=vote_session.endTime,
+            context_message_id=vote_session.contextMessageId,
+            status=vote_session.status,
+            total_votes=len(all_votes),
+            approve_votes=approve_votes,
+            reject_votes=reject_votes,
+            voters=voters,
+        )

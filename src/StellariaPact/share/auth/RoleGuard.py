@@ -51,10 +51,9 @@ class RoleGuard:
     def hasRoles(interaction: discord.Interaction, *required_role_keys: str) -> bool:
         """
         检查交互的发起者是否拥有指定的身份组之一。
-        这是一个直接返回布尔值的状态检查函数，非常适合在UI逻辑（如按钮回调）中使用。
 
         Args:
-            interaction: The interaction object from a command or component.
+            interaction: 交互的 interaction 对象
             *required_role_keys: 一个或多个在 config.json 中定义的身份组键名。
 
         Returns:
@@ -65,7 +64,7 @@ class RoleGuard:
             return False
 
         if not hasattr(interaction.client, "config"):
-            raise RuntimeError("Bot instance does not have a 'config' attribute.")
+            raise RuntimeError("Bot 不存在 'config' 属性")
 
         bot: StellariaPactBot = interaction.client
         config_roles = bot.config.get("roles", {})

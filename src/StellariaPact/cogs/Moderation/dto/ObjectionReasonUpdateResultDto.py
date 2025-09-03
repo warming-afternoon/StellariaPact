@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Optional
 
 from StellariaPact.share.BaseDto import BaseDto

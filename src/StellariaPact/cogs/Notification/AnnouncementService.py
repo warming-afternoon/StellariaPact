@@ -4,8 +4,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from StellariaPact.cogs.Notification.dto.AnnouncementDto import AnnouncementDto
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
-    CreateAnnouncementQo
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
 from StellariaPact.models.Announcement import Announcement
 
 

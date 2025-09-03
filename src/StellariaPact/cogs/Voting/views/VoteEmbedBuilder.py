@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 import discord
+from zoneinfo import ZoneInfo
 
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
+from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 
 
@@ -55,7 +56,7 @@ class VoteEmbedBuilder:
             )
 
         embed.set_footer(
-            text=f"投票资格：在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}"
+            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度大于5"
         )
         return embed
 
@@ -96,7 +97,7 @@ class VoteEmbedBuilder:
             )
 
         embed.set_footer(
-            text=f"投票资格：在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}"
+            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度大于5"
         )
         return embed
 
@@ -189,9 +190,7 @@ class VoteEmbedBuilder:
         return embed
 
     @staticmethod
-    def build_vote_result_embed(
-        topic: str, result: "VoteStatusDto"
-    ) -> discord.Embed:
+    def build_vote_result_embed(topic: str, result: "VoteStatusDto") -> discord.Embed:
         """
         构建通用投票结果的 Embed 消息。
         """
@@ -203,7 +202,7 @@ class VoteEmbedBuilder:
         embed.add_field(name="赞成", value=f"{result.approveVotes}", inline=True)
         embed.add_field(name="反对", value=f"{result.rejectVotes}", inline=True)
         embed.add_field(name="总票数", value=f"{result.totalVotes}", inline=True)
-        
+
         return embed
 
     @staticmethod
@@ -216,16 +215,62 @@ class VoteEmbedBuilder:
         embeds = []
         # 每 40 个 ID 创建一个 Embed，以确保不超过字符限制
         chunk_size = 40
-        
+
         for i in range(0, len(voter_ids), chunk_size):
             chunk = voter_ids[i : i + chunk_size]
             description = "\n".join(f"<@{user_id}>" for user_id in chunk)
-            
+
             embed = discord.Embed(
                 title=f"{title} ({i + 1} - {i + len(chunk)})",
                 description=description,
                 color=color,
             )
             embeds.append(embed)
-            
+
         return embeds
+
+    @staticmethod
+    def create_management_panel_embed(
+        jump_url: str,
+        panel_data: VotingChoicePanelDto,
+        base_title: str = "投票管理",
+        approve_text: str = "✅ 赞成",
+        reject_text: str = "❌ 反对",
+    ) -> discord.Embed:
+        """
+        创建统一的、私密的投票管理面板 Embed。
+        """
+
+        embed = discord.Embed(
+            title=f"对 {jump_url} 的{base_title}",
+            color=discord.Color.green() if panel_data.is_eligible else discord.Color.red(),
+        )
+
+        embed.add_field(name="当前发言数", value=f"{panel_data.message_count}", inline=True)
+        embed.add_field(
+            name="要求发言数",
+            value=f"≥ {EligibilityService.REQUIRED_MESSAGES}",
+            inline=True,
+        )
+        embed.add_field(
+            name="资格状态",
+            value="✅ 合格" if panel_data.is_eligible else "❌ 不合格",
+            inline=True,
+        )
+
+        if panel_data.current_vote_choice is None:
+            current_vote_status = "未投票"
+        elif panel_data.current_vote_choice == 1:
+            current_vote_status = approve_text
+        else:
+            current_vote_status = reject_text
+        embed.add_field(name="当前投票", value=current_vote_status, inline=False)
+
+        if panel_data.is_validation_revoked:
+            embed.description = "注意：您的投票资格已被撤销。"
+
+        if not panel_data.is_vote_active:
+            embed.add_field(name="投票状态", value="**已结束**", inline=False)
+            embed.color = discord.Color.dark_grey()
+
+        return embed

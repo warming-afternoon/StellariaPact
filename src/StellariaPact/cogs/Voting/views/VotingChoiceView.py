@@ -3,13 +3,13 @@ from typing import Awaitable, Callable, cast
 
 import discord
 
-from StellariaPact.cogs.Voting.Cog import Voting
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 from StellariaPact.cogs.Voting.views.AdjustTimeModal import AdjustTimeModal
 from StellariaPact.cogs.Voting.views.ConfirmationView import ConfirmationView
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
+from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -29,12 +29,15 @@ class VotingChoiceView(discord.ui.View):
         original_message_id: int,
         is_eligible: bool,
         is_vote_active: bool,
+        logic: VotingLogic,
     ):
-        super().__init__(timeout=900)  # 15分钟后超时
+        super().__init__(timeout=890)  # 15分钟后超时
         self.bot: StellariaPactBot = interaction.client  # type: ignore
+        self.logic = logic
         self.thread_id = interaction.channel.id  # type: ignore
         self.original_message_id = original_message_id
         self.is_vote_active = is_vote_active
+        self.message: discord.Message | None = None
 
         # 如果用户无资格，或者投票已结束，则禁用投票按钮
         if not is_eligible or not is_vote_active:
@@ -42,7 +45,7 @@ class VotingChoiceView(discord.ui.View):
             self.reject_button.disabled = True
             self.abstain_button.disabled = True
 
-        # Dynamically add admin button if the user has the required roles
+        # 如果拥有对应权限，则添加 时间/匿名/实时 的调整按钮
         if RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor"):
             self._add_admin_buttons()
 
@@ -113,13 +116,7 @@ class VotingChoiceView(discord.ui.View):
     async def _record_vote(self, interaction: discord.Interaction, choice: int):
         await safeDefer(interaction)
         try:
-            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
-            if not voting_cog:
-                await interaction.followup.send("投票系统组件未就绪，请联系管理员。", ephemeral=True)
-                return
-
-            
-            vote_details = await voting_cog.logic.record_vote_and_get_details(
+            vote_details = await self.logic.record_vote_and_get_details(
                 RecordVoteQo(
                     user_id=interaction.user.id,
                     message_id=self.original_message_id,
@@ -161,13 +158,8 @@ class VotingChoiceView(discord.ui.View):
     async def abstain_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await safeDefer(interaction)
         try:
-            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
-            if not voting_cog:
-                await interaction.followup.send("投票系统组件未就绪，请联系管理员。", ephemeral=True)
-                return
-
             # 调用新的核心业务逻辑
-            vote_details = await voting_cog.logic.delete_vote_and_get_details(
+            vote_details = await self.logic.delete_vote_and_get_details(
                 DeleteVoteQo(
                     user_id=interaction.user.id,
                     message_id=self.original_message_id,
@@ -192,31 +184,39 @@ class VotingChoiceView(discord.ui.View):
                 await interaction.followup.send("弃权时发生错误。", ephemeral=True)
 
     async def adjust_time_callback(self, interaction: discord.Interaction):
-        """Callback for the dynamically added 'Adjust Time' button."""
+        """调整时间按钮的回调"""
         modal = AdjustTimeModal(self.bot, self.thread_id)
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
+
+    async def _post_public_announcement(self, embed: discord.Embed):
+        """在原始投票帖中发送一个公开的通知 Embed"""
+        try:
+            thread_channel = self.bot.get_channel(self.thread_id) or await self.bot.fetch_channel(
+                self.thread_id
+            )
+
+            if isinstance(thread_channel, discord.Thread):
+                await self.bot.api_scheduler.submit(thread_channel.send(embed=embed), priority=3)
+            else:
+                logger.warning(f"无法发送公开通知，因为 ID {self.thread_id} 不是一个有效的帖子。")
+        except discord.NotFound:
+            logger.warning(f"无法发送公开通知，因为帖子 {self.thread_id} 未找到，可能已被删除。")
+        except Exception as e:
+            logger.error(f"发送公开通知到帖子 {self.thread_id} 时出错: {e}", exc_info=True)
 
     async def _handle_toggle_anonymous(self, interaction: discord.Interaction):
         """处理切换匿名投票的逻辑"""
         try:
-            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
-            if not voting_cog or not interaction.channel:
-                return
-
-            vote_details = await voting_cog.logic.toggle_anonymous(
-                self.original_message_id
-            )
+            vote_details = await self.logic.toggle_anonymous(self.original_message_id)
             await self._update_vote_panel_embed(vote_details)
 
-            if isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
-                embed = VoteEmbedBuilder.create_setting_changed_embed(
-                    setting_name="匿名投票",
-                    new_status="开启" if vote_details.is_anonymous else "关闭",
-                    changed_by=interaction.user,
-                )
-                await self.bot.api_scheduler.submit(
-                    interaction.channel.send(embed=embed), priority=3
-                )
+            embed = VoteEmbedBuilder.create_setting_changed_embed(
+                setting_name="匿名投票",
+                new_status="开启" if vote_details.is_anonymous else "关闭",
+                changed_by=interaction.user,
+            )
+            await self._post_public_announcement(embed)
+
         except Exception as e:
             logger.error(f"处理切换匿名投票时出错: {e}", exc_info=True)
             await self.bot.api_scheduler.submit(
@@ -227,24 +227,15 @@ class VotingChoiceView(discord.ui.View):
     async def _handle_toggle_realtime(self, interaction: discord.Interaction):
         """处理切换实时票数显示的逻辑"""
         try:
-            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
-            if not voting_cog or not interaction.channel:
-                return
-
-            vote_details = await voting_cog.logic.toggle_realtime(
-                self.original_message_id
-            )
+            vote_details = await self.logic.toggle_realtime(self.original_message_id)
             await self._update_vote_panel_embed(vote_details)
 
-            if isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
-                embed = VoteEmbedBuilder.create_setting_changed_embed(
-                    setting_name="实时票数",
-                    new_status="开启" if vote_details.realtime_flag else "关闭",
-                    changed_by=interaction.user,
-                )
-                await self.bot.api_scheduler.submit(
-                    interaction.channel.send(embed=embed), priority=3
-                )
+            embed = VoteEmbedBuilder.create_setting_changed_embed(
+                setting_name="实时票数",
+                new_status="开启" if vote_details.realtime_flag else "关闭",
+                changed_by=interaction.user,
+            )
+            await self._post_public_announcement(embed)
         except Exception as e:
             logger.error(f"处理切换实时票数时出错: {e}", exc_info=True)
             await self.bot.api_scheduler.submit(
@@ -277,13 +268,7 @@ class VotingChoiceView(discord.ui.View):
 
     async def toggle_anonymous_callback(self, interaction: discord.Interaction):
         """处理“切换匿名”按钮点击事件，发起二次确认"""
-        voting_cog = cast(Voting, self.bot.get_cog("Voting"))
-        if not voting_cog:
-            return
-
-        is_anonymous, _ = await voting_cog.logic.get_vote_flags(
-            self.original_message_id
-        )
+        is_anonymous, _ = await self.logic.get_vote_flags(self.original_message_id)
         current_status = is_anonymous
 
         await self._create_and_send_confirmation(
@@ -292,15 +277,26 @@ class VotingChoiceView(discord.ui.View):
 
     async def toggle_realtime_callback(self, interaction: discord.Interaction):
         """处理“切换实时”按钮点击事件，发起二次确认"""
-        voting_cog = cast(Voting, self.bot.get_cog("Voting"))
-        if not voting_cog:
-            return
-
-        _, is_realtime = await voting_cog.logic.get_vote_flags(
-            self.original_message_id
-        )
+        _, is_realtime = await self.logic.get_vote_flags(self.original_message_id)
         current_status = is_realtime
 
         await self._create_and_send_confirmation(
             interaction, "实时票数", current_status, self._handle_toggle_realtime
         )
+
+    async def on_timeout(self) -> None:
+        """
+        当视图超时后自动调用此方法。
+        """
+        if self.message:  # 确保我们有消息对象
+            try:
+                # 删除消息
+                await self.bot.api_scheduler.submit(
+                    self.message.delete(),
+                    priority=5,
+                )
+            except discord.NotFound:
+                # 如果消息已被用户删除，则忽略
+                pass
+            except Exception as e:
+                logger.error(f"删除超时的私信投票面板时出错: {e}")

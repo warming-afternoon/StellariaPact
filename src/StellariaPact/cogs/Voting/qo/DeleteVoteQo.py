@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 class DeleteVoteQo(BaseModel):
     """
-    QO for deleting a user's vote.
+    删除用户投票
     """
 
     user_id: int

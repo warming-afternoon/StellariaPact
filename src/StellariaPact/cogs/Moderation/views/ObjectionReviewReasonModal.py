@@ -5,8 +5,7 @@ import discord
 
 from ....share.SafeDefer import safeDefer
 from ....share.StellariaPactBot import StellariaPactBot
-from ..qo.BuildObjectionReviewResultEmbedQo import \
-    BuildObjectionReviewResultEmbedQo
+from ..qo.BuildObjectionReviewResultEmbedQo import BuildObjectionReviewResultEmbedQo
 from .ModerationEmbedBuilder import ModerationEmbedBuilder
 
 if TYPE_CHECKING:

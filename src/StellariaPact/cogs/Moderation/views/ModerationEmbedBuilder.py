@@ -1,16 +1,15 @@
 from datetime import datetime, timezone
 from typing import Dict
-from zoneinfo import ZoneInfo
 
 import discord
+from zoneinfo import ZoneInfo
 
 from ....share.enums.ConfirmationStatus import ConfirmationStatus
 from ..qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
 from ..qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
 from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
 from ..qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
-from ..qo.BuildObjectionReviewResultEmbedQo import \
-    BuildObjectionReviewResultEmbedQo
+from ..qo.BuildObjectionReviewResultEmbedQo import BuildObjectionReviewResultEmbedQo
 from ..qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
 from ..qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 
@@ -193,13 +192,13 @@ class ModerationEmbedBuilder:
                 value=f"[点击跳转]({qo.objection_thread_url})",
                 inline=False,
             )
-        
+
         embed.add_field(name="异议理由", value=f"{qo.objection_reason}", inline=False)
-        
+
         embed.add_field(name="赞成票", value=str(qo.approve_votes), inline=True)
         embed.add_field(name="反对票", value=str(qo.reject_votes), inline=True)
         embed.add_field(name="总票数", value=str(qo.total_votes), inline=True)
-        
+
         embed.timestamp = datetime.now(timezone.utc)
         return embed
 
@@ -249,12 +248,8 @@ class ModerationEmbedBuilder:
 
         embed.add_field(name="异议发起人", value=f"<@{qo.objector_id}>", inline=True)
         embed.add_field(name="审核管理员", value=f"<@{qo.moderator_id}>", inline=True)
-        embed.add_field(
-            name="原异议理由", value=f"{qo.objection_reason}", inline=False
-        )
-        embed.add_field(
-            name="管理员审核理由", value=f"{qo.review_reason}", inline=False
-        )
+        embed.add_field(name="原异议理由", value=f"{qo.objection_reason}", inline=False)
+        embed.add_field(name="管理员审核理由", value=f"{qo.review_reason}", inline=False)
 
         return embed
 
@@ -268,17 +263,16 @@ class ModerationEmbedBuilder:
         embeds = []
         # 每 40 个 ID 创建一个 Embed，以确保不超过字符限制
         chunk_size = 40
-        
+
         for i in range(0, len(voter_ids), chunk_size):
             chunk = voter_ids[i : i + chunk_size]
             description = "\n".join(f"<@{user_id}>" for user_id in chunk)
-            
+
             embed = discord.Embed(
                 title=f"{title} ({i + 1} - {i + len(chunk)})",
                 description=description,
                 color=color,
             )
             embeds.append(embed)
-            
-        return embeds
 
+        return embeds

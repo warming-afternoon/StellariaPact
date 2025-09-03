@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
-    CreateVoteSessionQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.share.DiscordUtils import DiscordUtils
@@ -17,7 +16,7 @@ from StellariaPact.share.TimeUtils import TimeUtils
 
 from ....share.UnitOfWork import UnitOfWork
 from ...Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
-from ..logic.VotingLogic import VotingLogic
+from ..VotingLogic import VotingLogic
 
 if TYPE_CHECKING:
     pass
