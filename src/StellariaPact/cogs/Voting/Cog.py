@@ -1,23 +1,27 @@
-from datetime import datetime
 import logging
+from datetime import datetime
+from functools import partial
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
+from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
+from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
+from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
+from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
+from StellariaPact.cogs.Voting.views.ObjectionFormalVoteChoiceView import \
+    ObjectionFormalVoteChoiceView
+from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import \
+    ObjectionVoteEmbedBuilder
+from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
+from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.share.auth.MissingRole import MissingRole
+from StellariaPact.share.DiscordUtils import send_private_panel
+from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from ...share.DiscordUtils import send_private_panel
-from ...share.SafeDefer import safeDefer
-from ...share.StringUtils import StringUtils
-from .dto.VoteDetailDto import VoteDetailDto
-from .dto.VoteSessionDto import VoteSessionDto
-from .dto.VoteStatusDto import VoteStatusDto
-from .qo.DeleteVoteQo import DeleteVoteQo
-from .qo.RecordVoteQo import RecordVoteQo
-from .views.ObjectionFormalVoteChoiceView import ObjectionFormalVoteChoiceView
-from .views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
-from .views.VoteEmbedBuilder import VoteEmbedBuilder
-from .VotingLogic import VotingLogic
+from StellariaPact.share.StringUtils import StringUtils
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +130,7 @@ class Voting(commands.Cog):
                 f"处理 'on_vote_finished' 事件时出错 (会话ID: {session.id}): {e}",
                 exc_info=True,
             )
+
     @commands.Cog.listener()
     async def on_vote_settings_changed(
         self,
@@ -175,7 +180,6 @@ class Voting(commands.Cog):
                 exc_info=True,
             )
 
-
     # -------------------------
     # 异议-正式投票 监听器
     # -------------------------
@@ -200,21 +204,20 @@ class Voting(commands.Cog):
 
         # 更新公开面板
         try:
-            thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(
-                thread_id
-            )
+            thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
             if not isinstance(thread, (discord.TextChannel, discord.Thread)):
                 logger.warning(f"无法为投票 {vote_details.context_message_id} 找到有效的帖子。")
                 return
 
+            if vote_details.context_message_id is None:
+                logger.warning(f"vote_details.context_message_id 为 None，无法获取公共消息。")
+                return
             public_message = await thread.fetch_message(vote_details.context_message_id)
             if not public_message.embeds:
                 return
 
             original_embed = public_message.embeds[0]
-            new_embed = ObjectionVoteEmbedBuilder.update_formal_embed(
-                original_embed, vote_details
-            )
+            new_embed = ObjectionVoteEmbedBuilder.update_formal_embed(original_embed, vote_details)
             await self.bot.api_scheduler.submit(public_message.edit(embed=new_embed), 2)
         except (discord.NotFound, discord.Forbidden):
             logger.warning(
@@ -222,6 +225,26 @@ class Voting(commands.Cog):
             )
         except Exception as e:
             logger.error(f"更新主投票面板时出错: {e}", exc_info=True)
+
+    async def _dispatch_formal_vote_event(
+        self,
+        interaction: discord.Interaction,
+        original_message_id: int,
+        thread_id: int,
+        event_name: str,
+        choice: int | None = None,  # choice 变为可选参数
+    ):
+        """
+        异步辅助方法，用于分发正式投票事件。
+        现在它是一个真正的协程，符合 View 回调的类型期望。
+        """
+        # self.bot.dispatch 是同步的，但我们在一个 async 方法中调用它，
+        # 以便返回一个协程，满足 View 的回调类型要求。
+        if event_name == "objection_formal_vote_abstain":
+            self.bot.dispatch(event_name, interaction, original_message_id, thread_id)
+        else:
+            self.bot.dispatch(event_name, interaction, original_message_id, choice, thread_id)
+
 
     @commands.Cog.listener()
     async def on_objection_formal_vote_manage(self, interaction: discord.Interaction):
@@ -260,17 +283,33 @@ class Voting(commands.Cog):
                 reject_text="❌ 反对异议",
             )
 
+            # 使用 functools.partial 来创建回调，避免类型问题和 lambda 的复杂性
+            on_agree_callback = partial(
+                self._dispatch_formal_vote_event,
+                original_message_id=original_message_id,
+                thread_id=thread_id,
+                event_name="objection_formal_vote_record",
+                choice=1,
+            )
+            on_disagree_callback = partial(
+                self._dispatch_formal_vote_event,
+                original_message_id=original_message_id,
+                thread_id=thread_id,
+                event_name="objection_formal_vote_record",
+                choice=0,
+            )
+            on_abstain_callback = partial(
+                self._dispatch_formal_vote_event,
+                original_message_id=original_message_id,
+                thread_id=thread_id,
+                event_name="objection_formal_vote_abstain",
+            )
+
             choice_view = ObjectionFormalVoteChoiceView(
                 is_eligible=panel_data.is_eligible,
-                on_agree=lambda i: self.bot.dispatch(
-                    "objection_formal_vote_record", i, original_message_id, 1, thread_id
-                ),
-                on_disagree=lambda i: self.bot.dispatch(
-                    "objection_formal_vote_record", i, original_message_id, 0, thread_id
-                ),
-                on_abstain=lambda i: self.bot.dispatch(
-                    "objection_formal_vote_abstain", i, original_message_id, thread_id
-                ),
+                on_agree=on_agree_callback,
+                on_disagree=on_disagree_callback,
+                on_abstain=on_abstain_callback,
             )
             await send_private_panel(self.bot, interaction, embed=embed, view=choice_view)
 
@@ -331,9 +370,7 @@ class Voting(commands.Cog):
                     message_id=original_message_id,
                 )
             )
-            await self._update_formal_vote_panels(
-                interaction, vote_details, "未投票", thread_id
-            )
+            await self._update_formal_vote_panels(interaction, vote_details, "未投票", thread_id)
         except Exception as e:
             logger.error(f"弃权时发生错误: {e}", exc_info=True)
             if not interaction.response.is_done():

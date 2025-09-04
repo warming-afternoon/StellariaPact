@@ -46,7 +46,7 @@ class ObjectionCreationVoteView(discord.ui.View):
         统一处理用户的“支持”或“撤回”操作。
         """
         # 立即响应，防止超时
-        await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
+        await safeDefer(interaction, ephemeral=True)
 
         # 基本校验
         if not interaction.message:

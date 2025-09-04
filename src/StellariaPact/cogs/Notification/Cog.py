@@ -219,7 +219,7 @@ class Notification(commands.Cog):
         operation: Literal["延长", "缩短"],
         hours: int,
     ):
-        await self.bot.api_scheduler.submit(coro=safeDefer(interaction), priority=1)
+        await safeDefer(interaction, ephemeral=True)
 
         if hours <= 0:
             await self.bot.api_scheduler.submit(

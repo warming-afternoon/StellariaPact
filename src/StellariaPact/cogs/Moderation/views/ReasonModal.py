@@ -40,7 +40,7 @@ class ReasonModal(discord.ui.Modal, title="操作理由"):
         当用户提交模态框时调用。
         这里处理的是一个全新的、独立的交互。
         """
-        await self.bot.api_scheduler.submit(safeDefer(modal_interaction), priority=1)
+        await safeDefer(modal_interaction, ephemeral=True)
 
         try:
             # 从原始交互中获取上下文信息

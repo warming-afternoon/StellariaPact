@@ -70,7 +70,7 @@ def main():
             # 如果数据库初始化失败，可能不应该继续，这里可以选择直接返回或抛出异常
             return
 
-        logger.info("正在加载所有 Cogs...")
+        logger.info("开始加载所有 Cogs...")
         cogs_path = Path(__file__).parent / "cogs"
         cog_load_tasks = []
         for cog_dir in cogs_path.iterdir():

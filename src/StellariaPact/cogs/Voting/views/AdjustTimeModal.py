@@ -1,11 +1,10 @@
-import asyncio
 import logging
 
 import discord
 
-from ....share.SafeDefer import safeDefer
-from ....share.StellariaPactBot import StellariaPactBot
-from ..VotingLogic import VotingLogic
+from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
+from StellariaPact.share.SafeDefer import safeDefer
+from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
 

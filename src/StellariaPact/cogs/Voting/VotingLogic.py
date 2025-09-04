@@ -1,27 +1,25 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import List, Optional
 
 import discord
-from sqlalchemy.orm import selectinload
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
-from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
+
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
+from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import \
+    VotingChoicePanelDto
+from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
+from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
+    CreateVoteSessionQo
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
-from StellariaPact.models.VoteSession import VoteSession
-from ...share.TimeUtils import TimeUtils
- 
-from ...share.StellariaPactBot import StellariaPactBot
-from ...share.UnitOfWork import UnitOfWork
-from ..Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
-from .EligibilityService import EligibilityService
-from .VotingService import VotingService
-from .qo.AdjustVoteTimeQo import AdjustVoteTimeQo
-from .qo.CreateVoteSessionQo import CreateVoteSessionQo
-from .qo.RecordVoteQo import RecordVoteQo
-from .qo.UpdateUserActivityQo import UpdateUserActivityQo
-from .views.ObjectionFormalVoteView import ObjectionFormalVoteView
-from .views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
+from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
+from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import \
+    UpdateUserActivityQo
+from StellariaPact.cogs.Voting.VotingService import VotingService
+from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.TimeUtils import TimeUtils
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -34,42 +32,36 @@ class VotingLogic:
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
 
-    async def create_objection_vote_panel(
-        self, thread: discord.Thread, objection_dto: ObjectionDetailsDto
-    ):
+    async def update_vote_session_message_id(self, session_id: int, message_id: int):
         """
-        在异议帖中创建专用的裁决投票面板。
+        更新投票会话的消息ID
         """
-        # 计算结束时间
-        # 默认投票时长为 48 小时
-        end_time = datetime.now(timezone.utc) + timedelta(hours=48)
-
-        # 构建 UI
-        view = ObjectionFormalVoteView(self.bot)
-        embed = ObjectionVoteEmbedBuilder.create_formal_embed(
-            objection_dto=objection_dto, end_time=end_time
-        )
-
-        # 发送消息
-        message = await self.bot.api_scheduler.submit(
-            thread.send(embed=embed, view=view), priority=2
-        )
-
-        # 在数据库中创建会话
         async with UnitOfWork(self.bot.db_handler) as uow:
-            qo: CreateVoteSessionQo = CreateVoteSessionQo(
-                thread_id=thread.id,
-                objection_id=objection_dto.objection_id,
-                context_message_id=message.id,
+            await uow.voting.update_vote_session_message_id(session_id, message_id)
+            await uow.commit()
+
+    async def create_objection_vote_session(
+        self,
+        thread_id: int,
+        objection_id: int,
+        message_id: int,
+        end_time: datetime,
+    ) -> None:
+        """
+        在数据库中创建异议投票会话。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            qo = CreateVoteSessionQo(
+                thread_id=thread_id,
+                objection_id=objection_id,
+                context_message_id=message_id,
                 realtime=False,
                 anonymous=True,
                 end_time=end_time,
             )
             await uow.voting.create_vote_session(qo)
 
-        logger.info(
-            f"已在异议帖 {thread.id} 中为异议 {objection_dto.objection_id} 创建了投票面板。"
-        )
+        logger.info(f"为异议 {objection_id} 在帖子 {thread_id} 中创建数据库投票会话。")
 
     async def record_vote_and_get_details(self, qo: RecordVoteQo) -> VoteDetailDto:
         """
@@ -220,7 +212,13 @@ class VotingLogic:
             ]
             return details_to_update
 
-    async def reopen_vote(self, thread_id: int, message_id: int, hours_to_add: int, operator: discord.User | discord.Member):
+    async def reopen_vote(
+        self,
+        thread_id: int,
+        message_id: int,
+        hours_to_add: int,
+        operator: discord.User | discord.Member,
+    ):
         """
         处理重新开启投票的业务流程，并分派事件以更新UI。
         """
@@ -232,12 +230,14 @@ class VotingLogic:
             old_end_time = current_session.endTime
 
             target_tz = self.bot.config.get("timezone", "UTC")
-            new_end_time = TimeUtils.get_utc_end_time(duration_hours=hours_to_add, target_tz=target_tz)
+            new_end_time = TimeUtils.get_utc_end_time(
+                duration_hours=hours_to_add, target_tz=target_tz
+            )
 
             reopened_session = await uow.voting.reopen_vote_session(message_id, new_end_time)
             if not reopened_session:
                 raise RuntimeError("更新数据库失败。")
-            
+
             await uow.commit()
 
             final_session = await uow.voting.get_vote_session_with_details(message_id)
@@ -253,10 +253,12 @@ class VotingLogic:
                 operator,
                 f"已将此投票重新开启，将额外持续 **{hours_to_add}** 小时。",
                 new_end_time,
-                old_end_time
+                old_end_time,
             )
 
-    async def adjust_vote_time(self, thread_id: int, hours_to_adjust: int, operator: discord.User | discord.Member):
+    async def adjust_vote_time(
+        self, thread_id: int, hours_to_adjust: int, operator: discord.User | discord.Member
+    ):
         """
         处理调整投票时间的业务流程，并分派事件以更新UI。
         """
@@ -272,10 +274,14 @@ class VotingLogic:
             final_session = await uow.voting.get_vote_session_with_details(message_id)
             if not final_session:
                 raise RuntimeError("重新获取会话失败。")
-                
+
             vote_details = VotingService.get_vote_details_dto(final_session)
 
-            change_text = f"延长了 **{hours_to_adjust}** 小时" if hours_to_adjust > 0 else f"缩短了 **{-hours_to_adjust}** 小时"
+            change_text = (
+                f"延长了 **{hours_to_adjust}** 小时"
+                if hours_to_adjust > 0
+                else f"缩短了 **{-hours_to_adjust}** 小时"
+            )
 
             self.bot.dispatch(
                 "vote_settings_changed",
@@ -285,5 +291,5 @@ class VotingLogic:
                 operator,
                 f"调整了投票时间，{change_text}。",
                 result_dto.vote_session.endTime,
-                result_dto.original_end_time
+                result_dto.old_end_time,
             )

@@ -2,19 +2,11 @@ import logging
 
 import discord
 
-from StellariaPact.share.DiscordUtils import send_private_panel
-
-from ....share.SafeDefer import safeDefer
-from ....share.StellariaPactBot import StellariaPactBot
-from ....share.UnitOfWork import UnitOfWork
-from ..dto.VoteDetailDto import VoteDetailDto
-from ..dto.VotingChoicePanelDto import VotingChoicePanelDto
-from ..EligibilityService import EligibilityService
-from ..qo.DeleteVoteQo import DeleteVoteQo
-from ..qo.RecordVoteQo import RecordVoteQo
-from .ObjectionFormalVoteChoiceView import ObjectionFormalVoteChoiceView
-from .ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
-from .VoteEmbedBuilder import VoteEmbedBuilder
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
+from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import \
+    ObjectionVoteEmbedBuilder
+from StellariaPact.share.SafeDefer import safeDefer
+from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +64,7 @@ class ObjectionFormalVoteView(discord.ui.View):
     ):
         """处理弃权投票的回调"""
         await safeDefer(inner_interaction, ephemeral=True)
-        self.bot.dispatch(
-            "objection_formal_vote_abstain", inner_interaction, original_message_id
-        )
+        self.bot.dispatch("objection_formal_vote_abstain", inner_interaction, original_message_id)
 
     @discord.ui.button(
         label="管理投票",

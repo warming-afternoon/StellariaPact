@@ -178,7 +178,7 @@ class VoteEmbedBuilder:
             embed.add_field(
                 name="新的截止时间", value=f"<t:{new_ts}:F> (<t:{new_ts}:R>)", inline=False
             )
-            
+
         return embed
 
     @staticmethod

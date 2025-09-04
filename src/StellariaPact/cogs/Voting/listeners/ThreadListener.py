@@ -1,22 +1,28 @@
 import asyncio
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import \
+    ObjectionDetailsDto
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
+    CreateVoteSessionQo
+from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import \
+    ObjectionFormalVoteView
+from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import \
+    ObjectionVoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
+from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.TimeUtils import TimeUtils
-
-from ....share.UnitOfWork import UnitOfWork
-from ...Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
-from ..VotingLogic import VotingLogic
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 if TYPE_CHECKING:
     pass
@@ -80,8 +86,30 @@ class ThreadListener(commands.Cog):
     ):
         """处理新创建的异议帖"""
         logger.info(f"在新异议帖 '{thread.name}' (ID: {thread.id}) 中创建专用投票面板。")
-        # 调用 Voting 模块的逻辑来创建专用的投票面板
-        await self.voting_logic.create_objection_vote_panel(thread, objection_dto)
+        try:
+            # 1. 计算结束时间
+            end_time = datetime.now(timezone.utc) + timedelta(hours=48)
+
+            # 2. 构建 UI
+            view = ObjectionFormalVoteView(self.bot)
+            embed = ObjectionVoteEmbedBuilder.create_formal_embed(
+                objection_dto=objection_dto, end_time=end_time
+            )
+
+            # 3. 发送消息
+            message = await self.bot.api_scheduler.submit(
+                thread.send(embed=embed, view=view), priority=2
+            )
+
+            # 4. 在数据库中创建会话
+            await self.voting_logic.create_objection_vote_session(
+                thread_id=thread.id,
+                objection_id=objection_dto.objection_id,
+                message_id=message.id,
+                end_time=end_time,
+            )
+        except Exception as e:
+            logger.error(f"无法在异议帖 {thread.id} 中创建投票面板: {e}", exc_info=True)
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):

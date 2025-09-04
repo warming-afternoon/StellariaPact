@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import TYPE_CHECKING, List, Optional, Sequence
 
@@ -7,7 +6,8 @@ import discord
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 if TYPE_CHECKING:
-    from ..cogs.Voting.views.VotingChoiceView import VotingChoiceView
+    from StellariaPact.cogs.Voting.views.VotingChoiceView import \
+        VotingChoiceView
 
 logger = logging.getLogger(__name__)
 

@@ -4,17 +4,23 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import SubsequentObjectionDto
+from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import \
+    ObjectionVotePanelDto
+from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import \
+    SubsequentObjectionDto
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
-from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
-from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
-from StellariaPact.cogs.Moderation.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
-from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
-from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
-from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import ObjectionCreationVoteView
-from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
+from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
+    BuildAdminReviewEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import \
+    BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.views.AbandonReasonModal import \
+    AbandonReasonModal
+from StellariaPact.cogs.Moderation.views.ConfirmationView import \
+    ConfirmationView
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
+    ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionManageView import \
+    ObjectionManageView
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.cogs.Moderation.views.ReasonModal import ReasonModal
 from StellariaPact.share.auth.RoleGuard import RoleGuard
@@ -190,7 +196,7 @@ class Moderation(commands.Cog):
 
         async def on_submit(interaction: discord.Interaction):
             # 立即响应，防止超时
-            await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
+            await safeDefer(interaction, ephemeral=True)
 
             proposal_link = modal.proposal_link.value
             reason = modal.reason.value
@@ -208,9 +214,9 @@ class Moderation(commands.Cog):
 
                 # --- 阶段二: 根据结果处理UI ---
                 if isinstance(result_dto, ObjectionVotePanelDto):
-                    # 如果返回 DTO，说明是首次异议，直接创建投票面板
+                    # 如果返回 DTO，说明是首次异议，派发事件让 Voting 模块创建面板
                     assert isinstance(result_dto, ObjectionVotePanelDto)
-                    await self._create_objection_collection_panel(result_dto, interaction)
+                    self.bot.dispatch("create_objection_vote_panel", result_dto, interaction)
                     final_message = (
                         "异议已成功发起！\n由于为首次异议，将直接在公示频道开启异议产生票收集。"
                     )
@@ -257,54 +263,6 @@ class Moderation(commands.Cog):
         else:
             raise ValueError("此命令必须在提案帖子内使用，或通过“提案链接”参数指定目标帖子。")
 
-    async def _create_objection_collection_panel(
-        self, dto: ObjectionVotePanelDto, interaction: discord.Interaction | None = None
-    ):
-        """通用方法：根据 DTO 在公示频道创建异议收集面板"""
-        # 获取频道
-        channel_id_str = self.bot.config.get("channels", {}).get("objection_publicity")
-        guild_id_str = self.bot.config.get("guild_id")
-        guild = (
-            interaction.guild
-            if interaction
-            else self.bot.get_guild(int(guild_id_str if guild_id_str else 0))
-        )
-
-        if not channel_id_str or not guild:
-            raise RuntimeError("公示频道或服务器ID未配置，或无法获取服务器信息。")
-        channel = await DiscordUtils.fetch_channel(self.bot, int(channel_id_str))
-
-        # 类型守卫，确保公示频道是文本频道
-        if not isinstance(channel, discord.TextChannel):
-            raise RuntimeError(f"异议公示频道 (ID: {channel_id_str}) 必须是一个文本频道。")
-
-        # 构建 Embed 和 View
-        objector = await self.bot.fetch_user(dto.objector_id)
-        guild_id = guild.id
-
-        proposal_url = f"https://discord.com/channels/{guild_id}/{dto.proposal_thread_id}"
-
-        embed_qo = BuildFirstObjectionEmbedQo(
-            proposal_title=dto.proposal_title,
-            proposal_url=proposal_url,
-            objector_id=dto.objector_id,
-            objector_display_name=objector.display_name,
-            objection_reason=dto.objection_reason,
-            required_votes=dto.required_votes,
-        )
-        embed = ModerationEmbedBuilder.build_first_objection_embed(embed_qo)
-
-        view = ObjectionCreationVoteView(self.bot)
-
-        # 发送消息
-        message = await self.bot.api_scheduler.submit(
-            channel.send(embed=embed, view=view), priority=5
-        )
-
-        # 更新数据库中的 message_id
-        await self.logic.update_vote_session_message_id(
-            session_id=dto.vote_session_id, message_id=message.id
-        )
 
     async def _handle_subsequent_objection_ui(
         self, interaction: discord.Interaction, dto: SubsequentObjectionDto

@@ -3,17 +3,41 @@ from typing import Optional
 
 import discord
 
+from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import \
+    HandleSupportObjectionResultDto
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import \
+    ObjectionDetailsDto
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-
-from ...Moderation.dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
-from ...Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
-from ..dto.VoteDetailDto import VoteDetailDto
+from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import \
+    BuildFirstObjectionEmbedQo
 
 
 class ObjectionVoteEmbedBuilder:
     """
     一个专门用于构建异议投票相关 Embed 的类。
     """
+
+    @staticmethod
+    def build_first_objection_embed(
+        qo: "BuildFirstObjectionEmbedQo",
+    ) -> discord.Embed:
+        """
+        构建首次异议的 Embed 消息，用于发起投票。
+        """
+        embed = discord.Embed(
+            title="异议产生票收集中",
+            description=(
+                f"对提案 [{qo.proposal_title}]({qo.proposal_url}) 的一项异议"
+                "需要收集足够的支持票以进入正式讨论阶段。\n\n"
+                f"**异议发起人**: <@{qo.objector_id}> ({qo.objector_display_name})"
+            ),
+            color=discord.Color.yellow(),
+        )
+        embed.add_field(name="异议理由", value=f"{qo.objection_reason}", inline=False)
+        embed.add_field(name="所需票数", value=str(qo.required_votes), inline=True)
+        embed.add_field(name="当前支持", value=f"0 / {qo.required_votes}", inline=True)
+        return embed
 
     @staticmethod
     def create_formal_embed(

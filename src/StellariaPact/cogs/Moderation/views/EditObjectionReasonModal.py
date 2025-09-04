@@ -28,7 +28,7 @@ class EditObjectionReasonModal(discord.ui.Modal):
         处理提交事件，分派一个带有QO的事件。
         """
         # 立即响应用户，告知请求已收到
-        await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
+        await safeDefer(interaction, ephemeral=True)
 
         new_reason = self.reason_input.value
 

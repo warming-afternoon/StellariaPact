@@ -80,7 +80,7 @@ class ConfirmationView(discord.ui.View):
                 interaction.response.send_message("无法找到原始消息。", ephemeral=True), 1
             )
 
-        await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
+        await safeDefer(interaction, ephemeral=True)
 
         thread_id_to_update: int | None = None
         proposal_title_to_update: str | None = None
@@ -181,7 +181,7 @@ class ConfirmationView(discord.ui.View):
                 interaction.response.send_message("无法找到原始消息。", ephemeral=True), 1
             )
 
-        await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
+        await safeDefer(interaction, ephemeral=True)
 
         async with UnitOfWork(self.bot.db_handler) as uow:
             session = await uow.moderation.get_confirmation_session_by_message_id(

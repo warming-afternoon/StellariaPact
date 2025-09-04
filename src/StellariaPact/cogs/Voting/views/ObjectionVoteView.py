@@ -3,12 +3,12 @@ from typing import TYPE_CHECKING, cast
 
 import discord
 
-from ....share.SafeDefer import safeDefer
-from ..Cog import Voting
-from ..qo.RecordVoteQo import RecordVoteQo
+from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
+from StellariaPact.share.SafeDefer import safeDefer
 
 if TYPE_CHECKING:
-    from ....share.StellariaPactBot import StellariaPactBot
+    from StellariaPact.cogs.Voting.Cog import Voting
+    from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ class ObjectionVoteView(discord.ui.View):
         """
         处理投票的核心逻辑。
         """
-        await self.bot.api_scheduler.submit(safeDefer(interaction), priority=1)
+        await safeDefer(interaction, ephemeral=True)
 
         if not isinstance(interaction.channel, discord.Thread):
             logger.warning(f"投票交互发生在一个非帖子频道 ({interaction.channel_id}) 中。")
@@ -87,4 +87,4 @@ class ObjectionVoteView(discord.ui.View):
         """
         处理“反对异议”按钮的点击事件。
         """
-        await self._handle_vote(interaction, 0)
+        await self._handle_vote(interaction, 1)

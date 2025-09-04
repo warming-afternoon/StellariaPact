@@ -1,15 +1,15 @@
 from datetime import datetime, timezone
 from typing import Dict
+from zoneinfo import ZoneInfo
 
 import discord
-from zoneinfo import ZoneInfo
 
 from ....share.enums.ConfirmationStatus import ConfirmationStatus
 from ..qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
 from ..qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
 from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
-from ..qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
-from ..qo.BuildObjectionReviewResultEmbedQo import BuildObjectionReviewResultEmbedQo
+from ..qo.BuildObjectionReviewResultEmbedQo import \
+    BuildObjectionReviewResultEmbedQo
 from ..qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
 from ..qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 
@@ -124,27 +124,6 @@ class ModerationEmbedBuilder:
             color=discord.Color.orange(),
         )
         embed.add_field(name="异议理由", value=f"{qo.objection_reason}", inline=False)
-        return embed
-
-    @staticmethod
-    def build_first_objection_embed(
-        qo: "BuildFirstObjectionEmbedQo",
-    ) -> discord.Embed:
-        """
-        构建首次异议的 Embed 消息，用于发起投票。
-        """
-        embed = discord.Embed(
-            title="异议产生票收集中",
-            description=(
-                f"对提案 [{qo.proposal_title}]({qo.proposal_url}) 的一项异议"
-                "需要收集足够的支持票以进入正式讨论阶段。\n\n"
-                f"**异议发起人**: <@{qo.objector_id}> ({qo.objector_display_name})"
-            ),
-            color=discord.Color.yellow(),
-        )
-        embed.add_field(name="异议理由", value=f"{qo.objection_reason}", inline=False)
-        embed.add_field(name="所需票数", value=str(qo.required_votes), inline=True)
-        embed.add_field(name="当前支持", value=f"0 / {qo.required_votes}", inline=True)
         return embed
 
     @staticmethod

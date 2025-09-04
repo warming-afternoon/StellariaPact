@@ -7,22 +7,25 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import ConfirmationSessionDto
-from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import (
-    HandleSupportObjectionResultDto,
-)
-from StellariaPact.cogs.Moderation.dto.ObjectionCreationResultDto import ObjectionCreationResultDto
-from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
+from StellariaPact.cogs.Moderation.dto.ConfirmationSessionDto import \
+    ConfirmationSessionDto
+from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import \
+    HandleSupportObjectionResultDto
+from StellariaPact.cogs.Moderation.dto.ObjectionCreationResultDto import \
+    ObjectionCreationResultDto
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import \
+    ObjectionDetailsDto
 from StellariaPact.cogs.Moderation.dto.ObjectionDto import ObjectionDto
-from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
-from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import (
-    CreateConfirmationSessionQo,
-)
-from StellariaPact.cogs.Moderation.qo.CreateObjectionAndVoteSessionShellQo import (
-    CreateObjectionAndVoteSessionShellQo,
-)
-from StellariaPact.cogs.Moderation.qo.CreateObjectionQo import CreateObjectionQo
-from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
+from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import \
+    AbandonProposalQo
+from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import \
+    CreateConfirmationSessionQo
+from StellariaPact.cogs.Moderation.qo.CreateObjectionAndVoteSessionShellQo import \
+    CreateObjectionAndVoteSessionShellQo
+from StellariaPact.cogs.Moderation.qo.CreateObjectionQo import \
+    CreateObjectionQo
+from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import \
+    ObjectionSupportQo
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
 from StellariaPact.models.Objection import Objection
 from StellariaPact.models.Proposal import Proposal
@@ -284,19 +287,6 @@ class ModerationService:
         return ObjectionCreationResultDto(
             objection_id=new_objection.id, vote_session_id=new_vote_session.id
         )
-
-    async def update_vote_session_message_id(self, session_id: int, message_id: int):
-        """
-        在一个独立的事务中更新投票会话的消息ID。
-        这是两阶段提交的第二步。
-        """
-        statement = (
-            update(VoteSession)
-            .where(VoteSession.id == session_id)  # type: ignore
-            .values(contextMessageId=message_id)
-            .returning(VoteSession.id)  # type: ignore
-        )
-        await self.session.exec(statement)
 
     async def update_objection_status(self, objection_id: int, status: int) -> Optional[Objection]:
         """

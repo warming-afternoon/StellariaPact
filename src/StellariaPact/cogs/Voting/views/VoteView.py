@@ -2,14 +2,13 @@ from typing import cast
 
 import discord
 
+from StellariaPact.cogs.Voting.Cog import Voting
+from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
+from StellariaPact.cogs.Voting.views.VotingChoiceView import VotingChoiceView
+from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.DiscordUtils import send_private_panel
-
-from ....share.auth.RoleGuard import RoleGuard
-from ....share.SafeDefer import safeDefer
-from ....share.StellariaPactBot import StellariaPactBot
-from ..Cog import Voting
-from ..views.VotingChoiceView import VotingChoiceView
-from .VoteEmbedBuilder import VoteEmbedBuilder
+from StellariaPact.share.SafeDefer import safeDefer
+from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 
 class VoteView(discord.ui.View):
@@ -30,7 +29,7 @@ class VoteView(discord.ui.View):
         对所有用户，都显示一个包含其投票资格和投票选项的统一视图。
         如果用户是管理员，该视图会额外包含管理按钮。
         """
-        await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), priority=1)
+        await safeDefer(interaction, ephemeral=True)
 
         if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
             await self.bot.api_scheduler.submit(

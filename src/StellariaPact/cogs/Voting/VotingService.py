@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -10,17 +10,19 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from StellariaPact.cogs.Voting.dto.AdjustVoteTimeDto import AdjustVoteTimeDto
 from StellariaPact.cogs.Voting.dto.UserActivityDto import UserActivityDto
 from StellariaPact.cogs.Voting.dto.UserVoteDto import UserVoteDto
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import (VoteDetailDto,
+                                                         VoterInfo)
 from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
+    CreateVoteSessionQo
+from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
+from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import \
+    UpdateUserActivityQo
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
-
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
-from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,19 @@ class VotingService:
         result = await self.session.exec(statement)
         sessions = result.all()
         return [VoteSessionDto.model_validate(s) for s in sessions]
+
+    async def update_vote_session_message_id(self, session_id: int, message_id: int):
+        """
+        在一个独立的事务中更新投票会话的消息ID。
+        这是两阶段提交的第二步。
+        """
+        statement = (
+            update(VoteSession)
+            .where(VoteSession.id == session_id)  # type: ignore
+            .values(contextMessageId=message_id)
+            .returning(VoteSession.id)  # type: ignore
+        )
+        await self.session.exec(statement)
 
     async def get_vote_session_by_context_message_id(
         self, message_id: int
@@ -141,9 +156,7 @@ class VotingService:
         else:
             if vote_session.id is None:
                 raise ValueError("无法为没有 ID 的会话记录投票。")
-            new_vote = UserVote(
-                sessionId=vote_session.id, userId=qo.user_id, choice=qo.choice
-            )
+            new_vote = UserVote(sessionId=vote_session.id, userId=qo.user_id, choice=qo.choice)
             self.session.add(new_vote)
             vote_session.userVotes.append(new_vote)
 
@@ -433,7 +446,9 @@ class VotingService:
             return None
         return flags[0], flags[1]
 
-    async def reopen_vote_session(self, message_id: int, new_end_time: datetime) -> Optional[VoteSession]:
+    async def reopen_vote_session(
+        self, message_id: int, new_end_time: datetime
+    ) -> Optional[VoteSession]:
         """
         重新开启一个已结束的投票会话。
         保留所有投票记录，只更新状态和结束时间。
@@ -448,10 +463,10 @@ class VotingService:
         # 更新状态和结束时间
         vote_session.status = 1  # 1-进行中
         vote_session.endTime = new_end_time
-        
+
         self.session.add(vote_session)
         await self.session.flush()
-        
+
         # 刷新以确保关联数据正确
         await self.session.refresh(vote_session)
         return vote_session
@@ -467,9 +482,7 @@ class VotingService:
 
         voters = []
         if not vote_session.anonymousFlag:
-            voters = [
-                VoterInfo(user_id=vote.userId, choice=vote.choice) for vote in all_votes
-            ]
+            voters = [VoterInfo(user_id=vote.userId, choice=vote.choice) for vote in all_votes]
 
         return VoteDetailDto(
             is_anonymous=vote_session.anonymousFlag,

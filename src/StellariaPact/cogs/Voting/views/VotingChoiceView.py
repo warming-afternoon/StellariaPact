@@ -1,5 +1,5 @@
 from asyncio.log import logger
-from typing import Awaitable, Callable, cast
+from typing import Awaitable, Callable
 
 import discord
 
@@ -7,8 +7,8 @@ from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 from StellariaPact.cogs.Voting.views.AdjustTimeModal import AdjustTimeModal
-from .ReopenVoteModal import ReopenVoteModal # 新增导入
 from StellariaPact.cogs.Voting.views.ConfirmationView import ConfirmationView
+from StellariaPact.cogs.Voting.views.ReopenVoteModal import ReopenVoteModal
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.share.auth.RoleGuard import RoleGuard
@@ -62,7 +62,10 @@ class VotingChoiceView(discord.ui.View):
         self.add_item(adjust_time_button)
 
         toggle_anonymous_button = discord.ui.Button(
-            label="切换匿名", style=discord.ButtonStyle.primary, custom_id="toggle_anonymous", row=1
+            label="切换匿名",
+            style=discord.ButtonStyle.primary,
+            custom_id="toggle_anonymous",
+            row=1,
         )
         toggle_anonymous_button.callback = self.toggle_anonymous_callback
         self.add_item(toggle_anonymous_button)
@@ -87,7 +90,7 @@ class VotingChoiceView(discord.ui.View):
             bot=self.bot,
             logic=self.logic,
             thread_id=self.thread_id,
-            message_id=self.original_message_id
+            message_id=self.original_message_id,
         )
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
 

@@ -48,7 +48,7 @@ class ObjectionReviewReasonModal(discord.ui.Modal):
         self.message_id = message_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
+        await safeDefer(interaction, ephemeral=True)
         reason = self.reason_input.value
 
         try:

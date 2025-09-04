@@ -15,7 +15,8 @@ from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from .dto.CollectionExpiredResultDto import CollectionExpiredResultDto
 from .dto.ConfirmationSessionDto import ConfirmationSessionDto
 from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
-from .dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
+from .dto.HandleSupportObjectionResultDto import \
+    HandleSupportObjectionResultDto
 from .dto.ObjectionDto import ObjectionDto
 from .dto.ObjectionReasonUpdateResultDto import ObjectionReasonUpdateResultDto
 from .dto.ObjectionReviewResultDto import ObjectionReviewResultDto
@@ -26,7 +27,8 @@ from .dto.VoteFinishedResultDto import VoteFinishedResultDto
 from .qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
 from .qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from .qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
-from .qo.CreateObjectionAndVoteSessionShellQo import CreateObjectionAndVoteSessionShellQo
+from .qo.CreateObjectionAndVoteSessionShellQo import \
+    CreateObjectionAndVoteSessionShellQo
 from .qo.CreateObjectionQo import CreateObjectionQo
 from .qo.EditObjectionReasonQo import EditObjectionReasonQo
 from .qo.ObjectionSupportQo import ObjectionSupportQo
@@ -227,13 +229,6 @@ class ModerationLogic:
             await uow.moderation.update_confirmation_session_message_id(session_id, message_id)
             await uow.commit()
 
-    async def update_vote_session_message_id(self, session_id: int, message_id: int):
-        """
-        更新投票会话的消息ID
-        """
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.moderation.update_vote_session_message_id(session_id, message_id)
-            await uow.commit()
 
     async def handle_objection_vote_finished(
         self, session_dto: VoteSessionDto, result_dto: VoteStatusDto
@@ -565,7 +560,7 @@ class ModerationLogic:
 
             # 在事务外使用安全的 DTO 对象分派事件
             if panel_dto:
-                self.bot.dispatch("objection_vote_initiation", panel_dto)
+                self.bot.dispatch("create_objection_vote_panel", panel_dto)
 
             return ObjectionReviewResultDto(
                 success=True,

@@ -29,7 +29,7 @@ class AbandonReasonModal(discord.ui.Modal):
         self.add_item(self.reason)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
+        await safeDefer(interaction, ephemeral=True)
 
         if not isinstance(interaction.channel, discord.Thread):
             return await self.bot.api_scheduler.submit(

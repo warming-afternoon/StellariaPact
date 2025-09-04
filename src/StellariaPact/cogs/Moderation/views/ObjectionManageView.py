@@ -33,7 +33,7 @@ class ObjectionManageView(discord.ui.View):
         # logger.info(
         #     f"管理异议按钮被用户 {interaction.user.id} 在频道 {interaction.channel_id} 中点击。"
         # )
-        await self.bot.api_scheduler.submit(safeDefer(interaction, ephemeral=True), 1)
+        await safeDefer(interaction, ephemeral=True)
 
         if not interaction.channel or not isinstance(
             interaction.channel, (discord.Thread, discord.TextChannel)
