@@ -83,6 +83,16 @@ class DatabaseHandler:
             raise RuntimeError("DatabaseHandler 尚未初始化。请先调用 initialize_db_handler。")
         return AsyncSession(self._async_engine)
 
+    async def close(self):
+        """
+        关闭数据库引擎。
+        """
+        if self._async_engine:
+            logger.info("正在关闭数据库引擎...")
+            await self._async_engine.dispose()
+            self._async_engine = None
+            logger.info("数据库引擎已关闭。")
+
 
 # --- 单例管理 ---
 

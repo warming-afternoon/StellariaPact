@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 import discord
 from discord import app_commands
@@ -125,6 +126,55 @@ class Voting(commands.Cog):
                 f"处理 'on_vote_finished' 事件时出错 (会话ID: {session.id}): {e}",
                 exc_info=True,
             )
+    @commands.Cog.listener()
+    async def on_vote_settings_changed(
+        self,
+        thread_id: int,
+        message_id: int,
+        vote_details: VoteDetailDto,
+        operator: discord.User | discord.Member,
+        reason: str,
+        new_end_time: datetime | None = None,
+        old_end_time: datetime | None = None,
+    ):
+        """
+        监听投票设置变更事件，统一处理UI更新。
+        """
+        try:
+            thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+            if not isinstance(thread, (discord.TextChannel, discord.Thread)):
+                return
+
+            # 1. 更新主投票面板
+            public_message = await thread.fetch_message(message_id)
+            if public_message and public_message.embeds:
+                clean_topic = StringUtils.clean_title(thread.name)
+                new_embed = VoteEmbedBuilder.create_vote_panel_embed(
+                    topic=clean_topic,
+                    anonymous_flag=vote_details.is_anonymous,
+                    realtime_flag=vote_details.realtime_flag,
+                    end_time=vote_details.end_time,
+                    vote_details=vote_details,
+                )
+                await self.bot.api_scheduler.submit(
+                    public_message.edit(embed=new_embed), priority=2
+                )
+
+            # 2. 发送公开通知
+            notification_embed = VoteEmbedBuilder.create_settings_changed_notification_embed(
+                operator=operator,
+                reason=reason,
+                new_end_time=new_end_time,
+                old_end_time=old_end_time,
+            )
+            await self.bot.api_scheduler.submit(thread.send(embed=notification_embed), priority=3)
+
+        except Exception as e:
+            logger.error(
+                f"处理 'on_vote_settings_changed' 事件时出错 (消息ID: {message_id}): {e}",
+                exc_info=True,
+            )
+
 
     # -------------------------
     # 异议-正式投票 监听器

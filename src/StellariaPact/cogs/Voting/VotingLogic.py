@@ -9,12 +9,14 @@ from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
 from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.models.VoteSession import VoteSession
+from ...share.TimeUtils import TimeUtils
  
 from ...share.StellariaPactBot import StellariaPactBot
 from ...share.UnitOfWork import UnitOfWork
 from ..Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
 from .EligibilityService import EligibilityService
 from .VotingService import VotingService
+from .qo.AdjustVoteTimeQo import AdjustVoteTimeQo
 from .qo.CreateVoteSessionQo import CreateVoteSessionQo
 from .qo.RecordVoteQo import RecordVoteQo
 from .qo.UpdateUserActivityQo import UpdateUserActivityQo
@@ -217,3 +219,71 @@ class VotingLogic:
                 if session.contextMessageId
             ]
             return details_to_update
+
+    async def reopen_vote(self, thread_id: int, message_id: int, hours_to_add: int, operator: discord.User | discord.Member):
+        """
+        处理重新开启投票的业务流程，并分派事件以更新UI。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 获取当前会话以记录旧的结束时间
+            current_session = await uow.voting.get_vote_session_by_context_message_id(message_id)
+            if not current_session or not current_session.endTime:
+                raise RuntimeError(f"无法为消息 {message_id} 找到投票会话或其结束时间。")
+            old_end_time = current_session.endTime
+
+            target_tz = self.bot.config.get("timezone", "UTC")
+            new_end_time = TimeUtils.get_utc_end_time(duration_hours=hours_to_add, target_tz=target_tz)
+
+            reopened_session = await uow.voting.reopen_vote_session(message_id, new_end_time)
+            if not reopened_session:
+                raise RuntimeError("更新数据库失败。")
+            
+            await uow.commit()
+
+            final_session = await uow.voting.get_vote_session_with_details(message_id)
+            if not final_session:
+                raise RuntimeError("重新获取会话失败。")
+
+            vote_details = VotingService.get_vote_details_dto(final_session)
+            self.bot.dispatch(
+                "vote_settings_changed",
+                thread_id,
+                message_id,
+                vote_details,
+                operator,
+                f"已将此投票重新开启，将额外持续 **{hours_to_add}** 小时。",
+                new_end_time,
+                old_end_time
+            )
+
+    async def adjust_vote_time(self, thread_id: int, hours_to_adjust: int, operator: discord.User | discord.Member):
+        """
+        处理调整投票时间的业务流程，并分派事件以更新UI。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            qo = AdjustVoteTimeQo(thread_id=thread_id, hours_to_adjust=hours_to_adjust)
+            result_dto = await uow.voting.adjust_vote_time(qo)
+            await uow.commit()
+
+            message_id = result_dto.vote_session.contextMessageId
+            if not message_id:
+                raise ValueError("找不到关联的消息ID。")
+
+            final_session = await uow.voting.get_vote_session_with_details(message_id)
+            if not final_session:
+                raise RuntimeError("重新获取会话失败。")
+                
+            vote_details = VotingService.get_vote_details_dto(final_session)
+
+            change_text = f"延长了 **{hours_to_adjust}** 小时" if hours_to_adjust > 0 else f"缩短了 **{-hours_to_adjust}** 小时"
+
+            self.bot.dispatch(
+                "vote_settings_changed",
+                thread_id,
+                message_id,
+                vote_details,
+                operator,
+                f"调整了投票时间，{change_text}。",
+                result_dto.vote_session.endTime,
+                result_dto.original_end_time
+            )

@@ -7,6 +7,7 @@ from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 from StellariaPact.cogs.Voting.views.AdjustTimeModal import AdjustTimeModal
+from .ReopenVoteModal import ReopenVoteModal # 新增导入
 from StellariaPact.cogs.Voting.views.ConfirmationView import ConfirmationView
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
@@ -45,41 +46,50 @@ class VotingChoiceView(discord.ui.View):
             self.reject_button.disabled = True
             self.abstain_button.disabled = True
 
-        # 如果拥有对应权限，则添加 时间/匿名/实时 的调整按钮
+        # 如果拥有对应权限，则添加管理按钮
         if RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor"):
-            self._add_admin_buttons()
+            if self.is_vote_active:
+                self._add_active_admin_buttons()
+            else:
+                self._add_inactive_admin_buttons()
 
-    def _add_admin_buttons(self):
-        """动态添加管理员按钮"""
+    def _add_active_admin_buttons(self):
+        """动态添加投票进行中时的管理员按钮"""
         adjust_time_button = discord.ui.Button(
-            label="调整时间",
-            style=discord.ButtonStyle.primary,
-            custom_id="adjust_time",
-            row=1,
-            disabled=not self.is_vote_active,
+            label="调整时间", style=discord.ButtonStyle.primary, custom_id="adjust_time", row=1
         )
         adjust_time_button.callback = self.adjust_time_callback
         self.add_item(adjust_time_button)
 
         toggle_anonymous_button = discord.ui.Button(
-            label="切换匿名",
-            style=discord.ButtonStyle.primary,
-            custom_id="toggle_anonymous",
-            row=1,
-            disabled=not self.is_vote_active,
+            label="切换匿名", style=discord.ButtonStyle.primary, custom_id="toggle_anonymous", row=1
         )
         toggle_anonymous_button.callback = self.toggle_anonymous_callback
         self.add_item(toggle_anonymous_button)
 
         toggle_realtime_button = discord.ui.Button(
-            label="切换实时",
-            style=discord.ButtonStyle.primary,
-            custom_id="toggle_realtime",
-            row=1,
-            disabled=not self.is_vote_active,
+            label="切换实时", style=discord.ButtonStyle.primary, custom_id="toggle_realtime", row=1
         )
         toggle_realtime_button.callback = self.toggle_realtime_callback
         self.add_item(toggle_realtime_button)
+
+    def _add_inactive_admin_buttons(self):
+        """动态添加投票已结束时的管理员按钮"""
+        reopen_vote_button = discord.ui.Button(
+            label="重新开启投票", style=discord.ButtonStyle.primary, custom_id="reopen_vote", row=1
+        )
+        reopen_vote_button.callback = self.reopen_vote_callback
+        self.add_item(reopen_vote_button)
+
+    async def reopen_vote_callback(self, interaction: discord.Interaction):
+        """重新开启投票按钮的回调"""
+        modal = ReopenVoteModal(
+            bot=self.bot,
+            logic=self.logic,
+            thread_id=self.thread_id,
+            message_id=self.original_message_id
+        )
+        await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
 
     async def _update_vote_panel_embed(self, vote_details: VoteDetailDto):
         """使用提供的 vote_details DTO 更新主投票面板的嵌入。"""
@@ -185,7 +195,7 @@ class VotingChoiceView(discord.ui.View):
 
     async def adjust_time_callback(self, interaction: discord.Interaction):
         """调整时间按钮的回调"""
-        modal = AdjustTimeModal(self.bot, self.thread_id)
+        modal = AdjustTimeModal(self.bot, self.thread_id, self.logic)
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
 
     async def _post_public_announcement(self, embed: discord.Embed):

@@ -433,6 +433,29 @@ class VotingService:
             return None
         return flags[0], flags[1]
 
+    async def reopen_vote_session(self, message_id: int, new_end_time: datetime) -> Optional[VoteSession]:
+        """
+        重新开启一个已结束的投票会话。
+        保留所有投票记录，只更新状态和结束时间。
+        """
+        vote_session = await self.get_vote_session_with_details(message_id)
+        if not vote_session:
+            raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
+
+        if vote_session.status == 1:
+            raise ValueError("投票仍在进行中，无法重新开启。请使用“调整时间”功能。")
+
+        # 更新状态和结束时间
+        vote_session.status = 1  # 1-进行中
+        vote_session.endTime = new_end_time
+        
+        self.session.add(vote_session)
+        await self.session.flush()
+        
+        # 刷新以确保关联数据正确
+        await self.session.refresh(vote_session)
+        return vote_session
+
     @staticmethod
     def get_vote_details_dto(vote_session: VoteSession) -> VoteDetailDto:
         """

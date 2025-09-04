@@ -127,46 +127,6 @@ class VoteEmbedBuilder:
         return embed
 
     @staticmethod
-    def create_time_adjustment_embed(
-        operator: discord.User | discord.Member,
-        hours: int,
-        old_time: datetime,
-        new_time: datetime,
-    ) -> discord.Embed:
-        """
-        创建公示投票时间变更的 Embed。
-        """
-        operation_text = "延长" if hours > 0 else "缩短"
-        abs_hours = abs(hours)
-
-        embed = discord.Embed(
-            title="投票时间已更新",
-            description=(
-                f"{operator.mention} 将投票截止时间 **{operation_text}** 了 {abs_hours} 小时。"
-            ),
-            color=discord.Color.blue(),
-        )
-
-        # 确保时间都是 UTC 时区感知的
-        if old_time.tzinfo is None:
-            old_time = old_time.replace(tzinfo=ZoneInfo("UTC"))
-        if new_time.tzinfo is None:
-            new_time = new_time.replace(tzinfo=ZoneInfo("UTC"))
-
-        embed.add_field(
-            name="原截止时间",
-            value=f"<t:{int(old_time.timestamp())}:F> (<t:{int(old_time.timestamp())}:R>)",
-            inline=False,
-        )
-        embed.add_field(
-            name="新截止时间",
-            value=f"<t:{int(new_time.timestamp())}:F> (<t:{int(new_time.timestamp())}:R>)",
-            inline=False,
-        )
-
-        return embed
-
-    @staticmethod
     def create_confirmation_embed(title: str, description: str) -> discord.Embed:
         """创建一个通用的、用于二次确认的 Embed。"""
         return discord.Embed(
@@ -187,6 +147,38 @@ class VoteEmbedBuilder:
             description=f"**{setting_name}** 已被 {changed_by.mention} 切换为 **{new_status}**。",
             color=discord.Color.blue(),
         )
+        return embed
+
+    @staticmethod
+    def create_settings_changed_notification_embed(
+        operator: discord.User | discord.Member,
+        reason: str,
+        new_end_time: Optional[datetime] = None,
+        old_end_time: Optional[datetime] = None,
+    ) -> discord.Embed:
+        """创建一个通用的、用于公示投票设置变更的 Embed。"""
+        embed = discord.Embed(
+            title="📢 投票设置已更新",
+            description=f"{operator.mention} {reason}",
+            color=discord.Color.blue(),
+        )
+
+        if old_end_time:
+            if old_end_time.tzinfo is None:
+                old_end_time = old_end_time.replace(tzinfo=ZoneInfo("UTC"))
+            old_ts = int(old_end_time.timestamp())
+            embed.add_field(
+                name="原截止时间", value=f"<t:{old_ts}:F> (<t:{old_ts}:R>)", inline=False
+            )
+
+        if new_end_time:
+            if new_end_time.tzinfo is None:
+                new_end_time = new_end_time.replace(tzinfo=ZoneInfo("UTC"))
+            new_ts = int(new_end_time.timestamp())
+            embed.add_field(
+                name="新的截止时间", value=f"<t:{new_ts}:F> (<t:{new_ts}:R>)", inline=False
+            )
+            
         return embed
 
     @staticmethod

@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 
 from StellariaPact.share.ApiScheduler import APIScheduler
 from StellariaPact.share.auth.MissingRole import MissingRole
-from StellariaPact.share.DatabaseHandler import get_db_handler, initialize_db_handler
+from StellariaPact.share.DatabaseHandler import (get_db_handler,
+                                                 initialize_db_handler)
 from StellariaPact.share.HttpClient import HttpClient
 from StellariaPact.share.LoggingConfigurator import LoggingConfigurator
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -138,8 +139,17 @@ def main():
     except Exception:
         logger.exception("Bot 运行时发生未捕获的异常")
     finally:
-        # 确保 aiohttp session 在程序退出时被关闭
-        asyncio.run(HttpClient.close())
+        # 确保 aiohttp session 和数据库连接在程序退出时被关闭
+
+        async def cleanup():
+            # 关闭 aiohttp session
+            await HttpClient.close()
+            # 关闭数据库连接
+            db_handler = get_db_handler()
+            if db_handler:
+                await db_handler.close()
+
+        asyncio.run(cleanup())
 
 
 if __name__ == "__main__":
