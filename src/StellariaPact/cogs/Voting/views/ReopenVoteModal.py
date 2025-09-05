@@ -48,10 +48,13 @@ class ReopenVoteModal(discord.ui.Modal, title="重新开启投票"):
                 hours_to_add=hours_to_add,
                 operator=interaction.user,
             )
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("投票已重新开启。", ephemeral=True), priority=1
+            )
 
         except Exception as e:
             logger.error(f"重新开启投票时出错: {e}", exc_info=True)
             await self.bot.api_scheduler.submit(
-                interaction.followup.send(f"操作失败：{e}", ephemeral=True),
+                interaction.followup.send(f"操作失败，请重试/联系技术员：{e}", ephemeral=True),
                 priority=1,
             )

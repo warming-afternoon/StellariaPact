@@ -18,6 +18,8 @@ from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import \
 from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
 from ....cogs.Moderation.views.ModerationEmbedBuilder import \
     ModerationEmbedBuilder
+from ....cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
+from ....cogs.Moderation.dto.ProposalDto import ProposalDto
 from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from ....share.DiscordUtils import DiscordUtils
@@ -44,21 +46,89 @@ class ModerationListener(commands.Cog):
         self.logic = ModerationLogic(bot)
 
     @commands.Cog.listener()
-    async def on_proposal_thread_created(self, thread_id: int, proposer_id: int, title: str):
+    async def on_thread_create(self, thread: discord.Thread):
         """
-        监听由 Voting cog 分派的提案帖子创建事件。
+        监听新帖子的创建，如果是提案，则负责创建提案实体、更新UI并派发事件。
         """
-        logger.debug(
-            f"接收到提案创建事件，帖子ID: {thread_id}, 发起人ID: {proposer_id}, 标题: {title}"
-        )
+        # 检查是否为提案讨论帖
+        discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
+        if not discussion_channel_id_str or thread.parent_id != int(discussion_channel_id_str):
+            return
+
+        # 检查它是否是异议帖，如果是，则忽略
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            objection_dto = await uow.moderation.get_objection_by_thread_id(thread.id)
+            if objection_dto:
+                logger.debug(f"帖子 {thread.id} 是异议帖，不由 ModerationListener 处理。")
+                return
+
+        logger.debug(f"ModerationListener 捕获到新的提案帖: {thread.id}")
+
         try:
+            # 1. 更新帖子状态 (标题和标签)
+            await self._update_thread_status_to_discussion(thread)
+
+            # 2. 获取发起人并创建提案
+            starter_message = await DiscordUtils.get_starter_message(thread)
+            if not starter_message:
+                logger.warning(f"无法获取帖子 {thread.id} 的启动消息，无法创建提案。")
+                return
+
+            proposer_id = starter_message.author.id
+            clean_title = StringUtils.clean_title(thread.name)
+
             async with UnitOfWork(self.bot.db_handler) as uow:
-                await uow.moderation.create_proposal(
-                    thread_id=thread_id, proposer_id=proposer_id, title=title
+                proposal_dto = await uow.moderation.create_proposal(
+                    thread.id, proposer_id, clean_title
                 )
                 await uow.commit()
+
+            # 3. 如果成功创建了新的提案，则派发事件
+            if proposal_dto:
+                logger.info(f"成功创建提案 {proposal_dto.id}，派发 'proposal_created' 事件。")
+                self.bot.dispatch("proposal_created", proposal_dto)
+            else:
+                logger.debug(f"提案 {thread.id} 已存在，不派发事件。")
+
         except Exception as e:
-            logger.error(f"处理提案创建事件时发生错误 (帖子ID: {thread_id}): {e}", exc_info=True)
+            logger.error(
+                f"ModerationListener 在处理帖子创建事件时发生错误 (ID: {thread.id}): {e}",
+                exc_info=True,
+            )
+
+    async def _update_thread_status_to_discussion(self, thread: discord.Thread):
+        """将帖子的状态（标题和标签）更新为“讨论中”。"""
+        try:
+            clean_title = StringUtils.clean_title(thread.name)
+            new_title = f"[讨论中] {clean_title}"
+
+            if not isinstance(thread.parent, discord.ForumChannel):
+                logger.warning(f"帖子 {thread.id} 的父频道不是论坛频道，无法更新标签。")
+                return
+
+            new_tags = DiscordUtils.calculate_new_tags(
+                current_tags=thread.applied_tags,
+                forum_tags=thread.parent.available_tags,
+                config=self.bot.config,
+                target_tag_name="discussion",
+            )
+
+            # 检查是否有任何更改
+            title_changed = new_title != thread.name
+            tags_changed = new_tags is not None
+
+            if title_changed or tags_changed:
+                kwargs = {}
+                if title_changed:
+                    kwargs["name"] = new_title
+                if tags_changed:
+                    kwargs["applied_tags"] = new_tags
+
+                await self.bot.api_scheduler.submit(thread.edit(**kwargs), priority=3)
+                logger.debug(f"已将帖子 {thread.id} 的状态更新为“讨论中”。")
+
+        except Exception as e:
+            logger.error(f"更新帖子 {thread.id} 状态时出错: {e}", exc_info=True)
 
 
     @commands.Cog.listener()
@@ -171,11 +241,21 @@ class ModerationListener(commands.Cog):
                 "Original proposal thread ID is required"
             )
 
-            await self.logic.handle_objection_thread_creation(
+            objection_details_dto = await self.logic.handle_objection_thread_creation(
                 objection_id=result_dto.objection_id,
                 objection_thread_id=objection_thread.id,
                 original_proposal_thread_id=result_dto.proposal_discussion_thread_id,
             )
+
+            # 派发事件，通知 Voting 模块创建投票面板
+            if objection_details_dto:
+                self.bot.dispatch(
+                    "objection_thread_created", objection_thread, objection_details_dto
+                )
+            else:
+                logger.warning(
+                    f"未能获取到 ObjectionDetailsDto，无法为异议帖 {objection_thread.id} 派发创建投票事件。"
+                )
 
             # 更新原提案帖的标签和标题
             original_thread = await DiscordUtils.fetch_thread(

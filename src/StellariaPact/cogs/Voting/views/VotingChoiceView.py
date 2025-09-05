@@ -11,6 +11,7 @@ from StellariaPact.cogs.Voting.views.ConfirmationView import ConfirmationView
 from StellariaPact.cogs.Voting.views.ReopenVoteModal import ReopenVoteModal
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
+from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -107,9 +108,10 @@ class VotingChoiceView(discord.ui.View):
 
             # original_message_id 是公共投票面板的消息ID
             public_panel_message = await thread.fetch_message(self.original_message_id)
+            clean_topic = StringUtils.clean_title(thread.name)
 
             new_embed = VoteEmbedBuilder.create_vote_panel_embed(
-                topic=thread.name,
+                topic=clean_topic,
                 anonymous_flag=vote_details.is_anonymous,
                 realtime_flag=vote_details.realtime_flag,
                 end_time=vote_details.end_time,

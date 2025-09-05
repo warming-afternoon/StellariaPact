@@ -44,9 +44,12 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
                 hours_to_adjust=hours_to_adjust,
                 operator=interaction.user,
             )
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("投票时间已成功调整。", ephemeral=True), priority=1
+            )
 
         except Exception as e:
             logger.error(f"调整投票时间时出错: {e}", exc_info=True)
             await self.bot.api_scheduler.submit(
-                interaction.followup.send(f"操作失败：{e}", ephemeral=True), priority=1
+                interaction.followup.send(f"操作失败，请重试/联系技术员：{e}", ephemeral=True), priority=1
             )

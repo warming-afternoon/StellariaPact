@@ -1,21 +1,33 @@
 import logging
+from datetime import datetime, timedelta, timezone
 
 import discord
 from discord.ext import commands
 
 from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import \
     HandleSupportObjectionResultDto
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import \
+    ObjectionDetailsDto
 from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import \
     ObjectionVotePanelDto
+from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
 from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import \
     ObjectionCreationVoteView
 from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import \
     BuildFirstObjectionEmbedQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
+    CreateVoteSessionQo
+from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import \
+    ObjectionFormalVoteView
 from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import \
     ObjectionVoteEmbedBuilder
+from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
+from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.TimeUtils import TimeUtils
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +38,108 @@ class ModerationEventListener(commands.Cog):
         self.logic: VotingLogic = VotingLogic(bot)
 
     @commands.Cog.listener()
-    async def on_create_objection_vote_panel(self, dto: ObjectionVotePanelDto, interaction: discord.Interaction | None = None):
+    async def on_proposal_created(self, proposal_dto: ProposalDto):
+        """
+        监听到提案成功创建的事件，为其创建投票面板。
+        """
+        logger.info(
+            f"接收到 'proposal_created' 事件，为提案 {proposal_dto.id} (帖子ID:"
+            f" {proposal_dto.discussionThreadId}) 创建投票面板。"
+        )
+        try:
+            thread = await DiscordUtils.fetch_thread(self.bot, proposal_dto.discussionThreadId)
+            if not thread:
+                logger.warning(
+                    f"无法找到帖子 {proposal_dto.discussionThreadId}，无法为提案 {proposal_dto.id} 创建投票面板。"
+                )
+                return
+
+            starter_message = await DiscordUtils.get_starter_message(thread)
+            if not starter_message:
+                logger.warning(
+                    f"无法找到帖子 {proposal_dto.discussionThreadId} 的启动消息，无法解析投票截止时间。"
+                )
+                return
+
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                # 尝试从帖子内容中解析截止时间，如果没有则默认为48小时后
+                end_time = TimeUtils.parse_discord_timestamp(starter_message.content)
+                if end_time is None:
+                    target_tz = self.bot.config.get("timezone", "UTC")
+                    end_time = TimeUtils.get_utc_end_time(duration_hours=48, target_tz=target_tz)
+
+                view = VoteView(self.bot)
+                embed = VoteEmbedBuilder.create_initial_vote_embed(
+                    topic=proposal_dto.title,
+                    author=None,
+                    realtime=True,
+                    anonymous=True,
+                    end_time=end_time,
+                )
+                message = await self.bot.api_scheduler.submit(
+                    thread.send(embed=embed, view=view), priority=5
+                )
+
+                qo = CreateVoteSessionQo(
+                    thread_id=thread.id,
+                    proposal_id=proposal_dto.id,
+                    context_message_id=message.id,
+                    realtime=True,
+                    anonymous=True,
+                    end_time=end_time,
+                )
+                await uow.voting.create_vote_session(qo)
+                await uow.commit()
+
+        except Exception as e:
+            logger.error(
+                f"为提案 {proposal_dto.id} 创建投票面板时发生错误: {e}",
+                exc_info=True,
+            )
+
+    @commands.Cog.listener()
+    async def on_objection_thread_created(
+        self, thread: discord.Thread, objection_dto: ObjectionDetailsDto
+    ):
+        """
+        监听异议帖成功创建的事件，为其创建投票面板。
+        """
+        logger.info(
+            f"接收到 'objection_thread_created' 事件，在新异议帖 '{thread.name}' (ID: {thread.id}) 中创建专用投票面板。"
+        )
+        try:
+            # 1. 计算结束时间
+            end_time = datetime.now(timezone.utc) + timedelta(hours=48)
+
+            # 2. 构建 UI
+            view = ObjectionFormalVoteView(self.bot)
+            embed = ObjectionVoteEmbedBuilder.create_formal_embed(
+                objection_dto=objection_dto, end_time=end_time
+            )
+
+            # 3. 发送消息
+            message = await self.bot.api_scheduler.submit(
+                thread.send(embed=embed, view=view), priority=2
+            )
+
+            # 4. 在数据库中创建会话
+            await self.logic.create_objection_vote_session(
+                thread_id=thread.id,
+                objection_id=objection_dto.objection_id,
+                message_id=message.id,
+                end_time=end_time,
+            )
+        except Exception as e:
+            logger.error(f"无法在异议帖 {thread.id} 中创建投票面板: {e}", exc_info=True)
+
+    @commands.Cog.listener()
+    async def on_create_objection_vote_panel(
+        self, dto: ObjectionVotePanelDto, interaction: discord.Interaction | None = None
+    ):
         """监听创建异议投票面板的请求"""
-        logger.info(f"Received request to create objection vote panel for objection {dto.objection_id}")
+        logger.info(
+            f"Received request to create objection vote panel for objection {dto.objection_id}"
+        )
         try:
             # 获取频道
             channel_id_str = self.bot.config.get("channels", {}).get("objection_publicity")
@@ -40,45 +151,53 @@ class ModerationEventListener(commands.Cog):
             )
 
             if not channel_id_str or not guild:
-                raise RuntimeError("Publicity channel or server ID is not configured, or server information cannot be obtained.")
-            
+                raise RuntimeError(
+                    "Publicity channel or server ID is not configured, or server information"
+                    " cannot be obtained."
+                )
+
             channel = await DiscordUtils.fetch_channel(self.bot, int(channel_id_str))
 
             if not isinstance(channel, discord.TextChannel):
-                raise RuntimeError(f"Objection publicity channel (ID: {channel_id_str}) must be a text channel.")
+                raise RuntimeError(
+                    f"Objection publicity channel (ID: {channel_id_str}) must be a text channel."
+                )
 
             # 构建 Embed 和 View
             objector = await self.bot.fetch_user(dto.objector_id)
-            
-            # 使用自己的 ObjectionVoteEmbedBuilder
+
             embed_qo = BuildFirstObjectionEmbedQo(
                 proposal_title=dto.proposal_title,
                 proposal_url=f"https://discord.com/channels/{guild.id}/{dto.proposal_thread_id}",
                 objector_id=dto.objector_id,
                 objector_display_name=objector.display_name,
                 objection_reason=dto.objection_reason,
-                required_votes=dto.required_votes
+                required_votes=dto.required_votes,
             )
             embed = ObjectionVoteEmbedBuilder.build_first_objection_embed(qo=embed_qo)
             view = ObjectionCreationVoteView(self.bot)
-            
+
             message = await channel.send(embed=embed, view=view)
-            
+
             await self.logic.update_vote_session_message_id(dto.vote_session_id, message.id)
 
         except Exception as e:
-            logger.error(f"Error creating objection vote panel for objection {dto.objection_id}: {e}", exc_info=True)
-
+            logger.error(
+                f"Error creating objection vote panel for objection {dto.objection_id}: {e}",
+                exc_info=True,
+            )
 
     @commands.Cog.listener()
-    async def on_update_objection_vote_panel(self, message: discord.Message, result_dto: HandleSupportObjectionResultDto):
+    async def on_update_objection_vote_panel(
+        self, message: discord.Message, result_dto: HandleSupportObjectionResultDto
+    ):
         """监听更新异议投票面板的请求"""
         logger.info(f"Received request to update objection vote panel for message {message.id}")
         try:
             original_embed = message.embeds[0]
             if not message.guild:
                 raise RuntimeError("Message does not have guild information.")
-            
+
             guild_id = message.guild.id
 
             if result_dto.is_goal_reached:
@@ -102,7 +221,11 @@ class ModerationEventListener(commands.Cog):
                 )
                 await self.bot.api_scheduler.submit(message.edit(embed=new_embed), 2)
         except Exception as e:
-            logger.error(f"Error updating objection vote panel for message {message.id}: {e}", exc_info=True)
+            logger.error(
+                f"Error updating objection vote panel for message {message.id}: {e}",
+                exc_info=True,
+            )
+
 
 async def setup(bot: StellariaPactBot):
     await bot.add_cog(ModerationEventListener(bot))

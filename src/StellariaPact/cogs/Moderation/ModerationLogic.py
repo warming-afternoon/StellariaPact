@@ -15,6 +15,7 @@ from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from .dto.CollectionExpiredResultDto import CollectionExpiredResultDto
 from .dto.ConfirmationSessionDto import ConfirmationSessionDto
 from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
+from .dto.ObjectionDetailsDto import ObjectionDetailsDto
 from .dto.HandleSupportObjectionResultDto import \
     HandleSupportObjectionResultDto
 from .dto.ObjectionDto import ObjectionDto
@@ -42,9 +43,10 @@ class ModerationLogic:
         objection_id: int,
         objection_thread_id: int,
         original_proposal_thread_id: int,
-    ):
+    ) -> Optional[ObjectionDetailsDto]:
         """
         处理异议帖创建后的数据库更新和通知。
+        成功后返回可用于派发事件的 DTO。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 更新异议记录，关联新的帖子ID
@@ -55,6 +57,9 @@ class ModerationLogic:
                 original_proposal_thread_id, ProposalStatus.FROZEN
             )
             await uow.commit()
+
+            # 在事务提交后，重新获取 DTO 以确保数据一致性
+            return await uow.moderation.get_objection_by_thread_id(objection_thread_id)
 
     """
     处理议事管理相关的业务流程。

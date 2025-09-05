@@ -34,6 +34,7 @@ from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.share.enums.ConfirmationStatus import ConfirmationStatus
 from StellariaPact.share.enums.ProposalStatus import ProposalStatus
+from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,9 @@ class ModerationService:
         await self.session.flush()
         return user_activity
 
-    async def create_proposal(self, thread_id: int, proposer_id: int, title: str) -> None:
+    async def create_proposal(
+        self, thread_id: int, proposer_id: int, title: str
+    ) -> Optional[ProposalDto]:
         """
         尝试创建一个新的提案，如果因唯一性约束而失败，则静默处理。
 
@@ -105,6 +108,9 @@ class ModerationService:
             thread_id: 提案讨论帖的ID。
             proposer_id: 提案发起人的ID。
             title: 提案的标题。
+
+        Returns:
+            成功创建则返回 ProposalDto，如果已存在则返回 None。
         """
         new_proposal = Proposal(
             discussionThreadId=thread_id,
@@ -115,13 +121,16 @@ class ModerationService:
         self.session.add(new_proposal)
         try:
             await self.session.flush()
+            await self.session.refresh(new_proposal)
             logger.debug(f"成功为帖子 {thread_id} 创建新的提案，发起人: {proposer_id}")
+            return ProposalDto.model_validate(new_proposal)
         except IntegrityError:
             # 捕获违反唯一约束的错误，意味着提案已存在
             logger.debug(f"提案 (帖子ID: {thread_id}) 已存在，无需重复创建。回滚会话。")
             # 发生错误时，SQLAlchemy 会话会自动回滚，
             # 我们只需确保操作可以安全地继续。
             await self.session.rollback()
+            return None
 
     async def update_proposal_status_by_thread_id(self, thread_id: int, status: int):
         """
