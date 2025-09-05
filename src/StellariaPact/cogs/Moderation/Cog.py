@@ -1,9 +1,11 @@
 import logging
+from typing import Callable, Awaitable
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import ExecuteProposalResultDto
 from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import \
     ObjectionVotePanelDto
 from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import \
@@ -15,6 +17,7 @@ from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import \
     BuildConfirmationEmbedQo
 from StellariaPact.cogs.Moderation.views.AbandonReasonModal import \
     AbandonReasonModal
+from .thread_manager import ProposalThreadManager
 from StellariaPact.cogs.Moderation.views.ConfirmationView import \
     ConfirmationView
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
@@ -47,6 +50,7 @@ class Moderation(commands.Cog):
     def cog_load(self) -> None:
         """在 Cog 被添加到 Bot 后，进行依赖注入和初始化"""
         self.logic: ModerationLogic = ModerationLogic(self.bot)
+        self.thread_manager = ProposalThreadManager(self.bot.config)  # 新增初始化
         self.bot.tree.add_command(self.kick_proposal_context_menu)
 
     async def cog_unload(self):
@@ -54,12 +58,10 @@ class Moderation(commands.Cog):
             self.kick_proposal_context_menu.name, type=self.kick_proposal_context_menu.type
         )
 
-    @RoleGuard.requireRoles(
-        "councilModerator",
-    )
+    @RoleGuard.requireRoles("councilModerator",)
     async def kick_proposal(self, interaction: discord.Interaction, message: discord.Message):
         """
-        消息右键菜单命令，用于将消息作者踢出提案。
+        消息右键菜单命令，用于将消息作者踢出提案
         """
         # 确保在可以发送消息的帖子中使用
         if not isinstance(interaction.channel, discord.Thread):
@@ -101,90 +103,22 @@ class Moderation(commands.Cog):
             coro=interaction.response.send_modal(modal), priority=1
         )
 
-    @app_commands.command(name="进入执行", description="将提案状态变更为执行中")
+    @app_commands.command(name="进入执行", description="将讨论中的提案变更为执行中")
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     async def execute_proposal(self, interaction: discord.Interaction):
-        await self.bot.api_scheduler.submit(
-            interaction.response.defer(ephemeral=True, thinking=True), 1
-        )
+        await self._handle_confirmation_command(interaction, self.logic.handle_execute_proposal)
 
-        if not isinstance(interaction.channel, discord.Thread) or not interaction.guild:
-            return await self.bot.api_scheduler.submit(
-                interaction.followup.send("此命令只能在服务器的帖子内使用。", ephemeral=True), 1
-            )
 
-        if not isinstance(interaction.user, discord.Member):
-            return await self.bot.api_scheduler.submit(
-                interaction.followup.send("无法获取您的成员信息。", ephemeral=True), 1
-            )
-
-        try:
-            result_dto = await self.logic.handle_execute_proposal(
-                channel_id=interaction.channel.id,
-                guild_id=interaction.guild.id,
-                user_id=interaction.user.id,
-                user_role_ids={role.id for role in interaction.user.roles},
-            )
-
-            if not result_dto:
-                return await self.bot.api_scheduler.submit(
-                    interaction.followup.send("执行失败，无法获取处理结果。", ephemeral=True),
-                    1,
-                )
-
-            # --- 构建 UI & 发送消息 ---
-            role_display_names = {}
-            for role_key, role_id_str in result_dto.role_display_names.items():
-                role = interaction.guild.get_role(int(role_id_str))
-                role_display_names[role_key] = role.name if role else role_key
-
-            qo = BuildConfirmationEmbedQo(
-                status=result_dto.session_dto.status,
-                canceler_id=result_dto.session_dto.canceler_id,
-                confirmed_parties=result_dto.session_dto.confirmed_parties,
-                required_roles=result_dto.session_dto.required_roles,
-                role_display_names=role_display_names,
-            )
-
-            if not self.bot.user:
-                return await self.bot.api_scheduler.submit(
-                    interaction.followup.send("机器人尚未准备好，无法发送消息。", ephemeral=True),
-                    1,
-                )
-
-            embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
-            view = ConfirmationView(self.bot)
-
-            message = await self.bot.api_scheduler.submit(
-                interaction.channel.send(embed=embed, view=view), 2
-            )
-
-            # --- 更新消息ID (通过Logic层) ---
-            await self.logic.update_session_message_id(
-                session_id=result_dto.session_dto.id, message_id=message.id
-            )
-
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("确认流程已成功发起。", ephemeral=True), 1
-            )
-
-        except ValueError as e:
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send(str(e), ephemeral=True), 1
-            )
-        except Exception as e:
-            logger.error(f"处理 'execute_proposal' 命令时发生意外错误: {e}", exc_info=True)
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
-            )
+    @app_commands.command(name="完成提案", description="将执行中的提案变更为已结束")
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
+    async def complete_proposal(self, interaction: discord.Interaction):
+        await self._handle_confirmation_command(interaction, self.logic.handle_complete_proposal)
 
     @app_commands.command(name="废弃", description="将执行中的提案废弃")
     @RoleGuard.requireRoles("executionAuditor")
     async def abandon_proposal(self, interaction: discord.Interaction):
-        """
-        通过弹出一个模态框来废弃一个提案。
-        """
-        modal = AbandonReasonModal(self.bot)
+        """ 通过弹出一个模态框来废弃一个提案。 """
+        modal = AbandonReasonModal(self.bot, self.thread_manager)
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
     @app_commands.command(name="发起异议", description="对一个提案发起异议")
@@ -293,6 +227,7 @@ class Moderation(commands.Cog):
             proposal_thread_id=dto.proposal_thread_id,
             guild_id=int(guild_id),
         )
+
         embed = ModerationEmbedBuilder.build_admin_review_embed(embed_qo, self.bot.user)
         view = ObjectionManageView(self.bot)
 
@@ -307,3 +242,89 @@ class Moderation(commands.Cog):
         async with UnitOfWork(self.bot.db_handler) as uow:
             await uow.moderation.update_objection_review_thread_id(dto.objection_id, thread.id)
             await uow.commit()
+
+# --- 私有方法 ---
+
+    async def _handle_confirmation_command(
+        self,
+        interaction: discord.Interaction,
+        logic_handler: Callable[..., Awaitable[ExecuteProposalResultDto | None]],
+    ):
+        """
+        处理需要双重确认的命令（如 /进入执行, /完成提案）的通用逻辑。
+        """
+        await self.bot.api_scheduler.submit(
+            interaction.response.defer(ephemeral=True, thinking=True), 1
+        )
+
+        if not isinstance(interaction.channel, discord.Thread) or not interaction.guild:
+            return await self.bot.api_scheduler.submit(
+                interaction.followup.send("此命令只能在服务器的帖子内使用。", ephemeral=True), 1
+            )
+
+        if not isinstance(interaction.user, discord.Member):
+            return await self.bot.api_scheduler.submit(
+                interaction.followup.send("无法获取您的成员信息。", ephemeral=True), 1
+            )
+
+        try:
+            result_dto = await logic_handler(
+                channel_id=interaction.channel.id,
+                guild_id=interaction.guild.id,
+                user_id=interaction.user.id,
+                user_role_ids={role.id for role in interaction.user.roles},
+            )
+
+            if not result_dto:
+                return await self.bot.api_scheduler.submit(
+                    interaction.followup.send("执行失败，无法获取处理结果。", ephemeral=True),
+                    1,
+                )
+
+            # --- 构建 UI & 发送消息 ---
+            role_display_names = {}
+            for role_key, role_id_str in result_dto.role_display_names.items():
+                role = interaction.guild.get_role(int(role_id_str))
+                role_display_names[role_key] = role.name if role else role_key
+
+            qo = BuildConfirmationEmbedQo(
+                status=result_dto.session_dto.status,
+                canceler_id=result_dto.session_dto.canceler_id,
+                confirmed_parties=result_dto.session_dto.confirmed_parties,
+                required_roles=result_dto.session_dto.required_roles,
+                role_display_names=role_display_names,
+            )
+
+            if not self.bot.user:
+                return await self.bot.api_scheduler.submit(
+                    interaction.followup.send("机器人尚未准备好，无法发送消息。", ephemeral=True),
+                    1,
+                )
+
+            embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
+            view = ConfirmationView(self.bot)
+
+            message = await self.bot.api_scheduler.submit(
+                interaction.channel.send(embed=embed, view=view), 2
+            )
+
+            # --- 更新消息ID (通过Logic层) ---
+            await self.logic.update_session_message_id(
+                session_id=result_dto.session_dto.id, message_id=message.id
+            )
+
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("确认流程已成功发起。", ephemeral=True), 1
+            )
+
+        except ValueError as e:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send(str(e), ephemeral=True), 1
+            )
+        except Exception as e:
+            command_name = interaction.command.name if interaction.command else "unknown"
+            logger.error(f"处理 '{command_name}' 命令时发生意外错误: {e}", exc_info=True)
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
+            )
+

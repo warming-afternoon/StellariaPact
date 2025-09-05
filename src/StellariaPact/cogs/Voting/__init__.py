@@ -23,12 +23,15 @@ async def setup(bot: StellariaPactBot):
     bot.add_view(VoteView(bot))
     bot.add_view(ObjectionFormalVoteView(bot))
 
-    # 注意：Eligibility cog 未在此处定义或导入，假设它在别处处理或暂时移除
+    # 实例化核心 Cog
+    voting_cog = Voting(bot)
+
+    # 实例化依赖于其他 Cogs 的组件，并注入依赖
     cogs_to_load = [
-        Voting(bot),
-        VotingMessageListener(bot),
+        voting_cog,
         VoteCloser(bot),
         ModerationEventListener(bot),
+        VotingMessageListener(bot, voting_cog),
     ]
 
     await asyncio.gather(*[bot.add_cog(cog) for cog in cogs_to_load])

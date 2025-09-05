@@ -38,6 +38,15 @@ logger = logging.getLogger(__name__)
 
 
 class ModerationLogic:
+    """
+    处理议事管理相关的业务流程。
+    这一层负责编排 Service、分派事件、处理条件逻辑，
+    并将最终结果返回给调用方。
+    """
+
+    def __init__(self, bot: StellariaPactBot):
+        self.bot = bot
+
     async def handle_objection_thread_creation(
         self,
         objection_id: int,
@@ -61,14 +70,6 @@ class ModerationLogic:
             # 在事务提交后，重新获取 DTO 以确保数据一致性
             return await uow.moderation.get_objection_by_thread_id(objection_thread_id)
 
-    """
-    处理议事管理相关的业务流程。
-    这一层负责编排 Service、分派事件、处理条件逻辑，
-    并将最终结果返回给调用方。
-    """
-
-    def __init__(self, bot: StellariaPactBot):
-        self.bot = bot
 
     async def handle_raise_objection(
         self,
@@ -169,54 +170,94 @@ class ModerationLogic:
         user_role_ids: set[int],
     ) -> Optional[ExecuteProposalResultDto]:
         """
-        处理“进入执行”命令的完整业务流程。
+        处理“进入执行”命令的业务流程。
+        """
+        return await self._initiate_proposal_confirmation(
+            channel_id=channel_id,
+            guild_id=guild_id,
+            user_id=user_id,
+            user_role_ids=user_role_ids,
+            expected_status=ProposalStatus.DISCUSSION,
+            context="proposal_execution",
+            error_message="提案当前状态不是“讨论中”，无法执行此操作。",
+            integrity_error_message="操作失败：此提案的确认流程刚刚已被另一位管理员发起。",
+        )
+
+    async def handle_complete_proposal(
+        self,
+        channel_id: int,
+        guild_id: int,
+        user_id: int,
+        user_role_ids: set[int],
+    ) -> Optional[ExecuteProposalResultDto]:
+        """
+        处理“完成提案”命令的业务流程。
+        """
+        return await self._initiate_proposal_confirmation(
+            channel_id=channel_id,
+            guild_id=guild_id,
+            user_id=user_id,
+            user_role_ids=user_role_ids,
+            expected_status=ProposalStatus.EXECUTING,
+            context="proposal_completion",
+            error_message="提案当前状态不是“执行中”，无法完成。",
+            integrity_error_message="操作失败：此提案的完成流程刚刚已被另一位管理员发起。",
+        )
+
+    async def _initiate_proposal_confirmation(
+        self,
+        channel_id: int,
+        guild_id: int,
+        user_id: int,
+        user_role_ids: set[int],
+        expected_status: ProposalStatus,
+        context: str,
+        error_message: str,
+        integrity_error_message: str,
+    ) -> Optional[ExecuteProposalResultDto]:
+        """
+        发起提案确认流程的通用私有方法。
         """
         session_dto: ConfirmationSessionDto | None = None
-        message_id_placeholder = 0  # 临时占位符
+        message_id_placeholder = 0
 
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 读取提案信息
                 proposal = await uow.moderation.get_proposal_by_thread_id(channel_id)
                 if not proposal:
                     raise ValueError("未找到关连的提案。")
-                if proposal.status != ProposalStatus.DISCUSSION:
-                    raise ValueError("提案当前状态不是“讨论中”，无法执行此操作。")
+                if proposal.status != expected_status:
+                    raise ValueError(error_message)
 
                 assert proposal.id is not None
 
-                # 创建确认会话
                 config_roles = self.bot.config.get("roles", {})
                 initiator_role_keys = [
                     key for key, val in config_roles.items() if int(val) in user_role_ids
                 ]
 
                 create_session_qo = CreateConfirmationSessionQo(
-                    context="proposal_execution",
+                    context=context,
                     target_id=proposal.id,
-                    message_id=message_id_placeholder,  # 稍后更新
+                    message_id=message_id_placeholder,
                     required_roles=["councilModerator", "executionAuditor"],
                     initiator_id=user_id,
                     initiator_role_keys=initiator_role_keys,
                 )
                 session_dto = await uow.moderation.create_confirmation_session(create_session_qo)
 
-                # 准备返回给 Cog 层的数据
                 roles_config = self.bot.config.get("roles", {})
                 role_display_names = {}
                 for role_key in session_dto.required_roles:
                     role_id = roles_config.get(role_key)
                     role_display_names[role_key] = str(role_id) if role_id else role_key
 
-                # 提交事务
                 await uow.commit()
 
         except IntegrityError:
-            # 竞态条件：其他管理员同时操作
-            raise ValueError("操作失败：此提案的确认流程刚刚已被另一位管理员发起。")
+            raise ValueError(integrity_error_message)
 
         if not session_dto:
-            # 正常情况下不应发生
             return None
 
         return ExecuteProposalResultDto(
@@ -247,15 +288,10 @@ class ModerationLogic:
             return None
 
         try:
-            # 调试日志
-            logger.info(
-                f"处理投票结束: is_anonymous={result_dto.is_anonymous}, "
-                f"voters_count={len(result_dto.voters) if result_dto.voters else 0}"
-            )
             if result_dto.voters:
                 logger.debug(f"Voters data: {[v.dict() for v in result_dto.voters]}")
 
-            # 用于存储从事务中安全提取的数据
+            # 用于存储从事务中提取的数据
             extracted_data = {}
 
             async with UnitOfWork(self.bot.db_handler) as uow:
@@ -285,7 +321,7 @@ class ModerationLogic:
                 uow.session.add(objection)
                 uow.session.add(proposal)
 
-                # 在事务内预取所有需要的数据
+                # 预取所有需要的数据
                 guild_id = self.bot.config.get("guild_id")
                 if not guild_id:
                     raise RuntimeError("未在 config.json 中配置 'guild_id'。")
@@ -374,7 +410,7 @@ class ModerationLogic:
                 if not proposal:
                     raise ValueError(f"找不到异议 {objection_id} 关联的提案。")
 
-                # 核心逻辑：将异议状态更新为“已否决”
+                # 将异议状态更新为“已否决”
                 await uow.moderation.update_objection_status(
                     objection_id, ObjectionStatus.REJECTED
                 )
@@ -563,7 +599,7 @@ class ModerationLogic:
 
                 await uow.commit()
 
-            # 在事务外使用安全的 DTO 对象分派事件
+            # 使用 DTO 对象分派事件
             if panel_dto:
                 self.bot.dispatch("create_objection_vote_panel", panel_dto)
 
@@ -583,8 +619,7 @@ class ModerationLogic:
         self, qo: EditObjectionReasonQo
     ) -> ObjectionReasonUpdateResultDto:
         """
-        处理更新异议理由的业务逻辑。
-        返回一个包含所有需要的数据的DTO。
+        处理更新异议理由的业务逻辑
         """
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
@@ -627,7 +662,7 @@ class ModerationLogic:
         self, objection_id: int, moderator_id: int, reason: str
     ) -> ObjectionReviewResultDto:
         """
-        处理驳回异议的逻辑。
+        处理驳回异议的逻辑
         """
         try:
             objection_dto: ObjectionDto | None = None
@@ -659,3 +694,40 @@ class ModerationLogic:
             )
         except ValueError as e:
             return ObjectionReviewResultDto(success=False, message=str(e))
+
+    async def handle_proposal_execution_confirmed(self, proposal_id: int) -> ProposalDto | None:
+        """
+        处理提案进入执行状态的确认事件。
+        """
+        return await self._handle_proposal_status_change_confirmed(
+            proposal_id, ProposalStatus.EXECUTING
+        )
+
+    async def handle_proposal_completion_confirmed(self, proposal_id: int) -> ProposalDto | None:
+        """
+        处理提案完成的确认事件。
+        """
+        return await self._handle_proposal_status_change_confirmed(
+            proposal_id, ProposalStatus.FINISHED
+        )
+
+    async def _handle_proposal_status_change_confirmed(
+        self, proposal_id: int, new_status: ProposalStatus
+    ) -> ProposalDto | None:
+        """
+        通用方法：处理提案状态变更的确认事件。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.moderation.get_proposal_by_id(proposal_id)
+            if not proposal:
+                logger.warning(
+                    f"无法找到ID为 {proposal_id} 的提案，无法更新状态为 {new_status.name}。"
+                )
+                return None
+
+            proposal.status = new_status
+            uow.session.add(proposal)
+            await uow.commit()
+
+            # 重新获取以确保数据最新
+            return await uow.moderation.get_proposal_by_id(proposal_id)

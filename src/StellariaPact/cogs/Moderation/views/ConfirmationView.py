@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 import discord
@@ -24,47 +23,6 @@ class ConfirmationView(discord.ui.View):
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
 
-    async def _update_thread(self, thread_id: int, title: str):
-        """更新帖子的标题和标签以反映其正在执行的状态。"""
-        try:
-            if not hasattr(self.bot, "config"):
-                logger.warning("机器人配置未加载，无法修改帖子。")
-                return
-
-            tags_config = self.bot.config.get("tags", {})
-            discussion_tag_id = tags_config.get("discussion")
-            executing_tag_id = tags_config.get("executing")
-
-            if not discussion_tag_id or not executing_tag_id:
-                logger.warning("讨论或执行中标签ID未在配置中找到，无法修改帖子。")
-                return
-
-            thread = await self.bot.fetch_channel(thread_id)
-            if not isinstance(thread, discord.Thread):
-                return
-
-            if not isinstance(thread.parent, discord.ForumChannel):
-                logger.warning(f"帖子 {thread_id} 的父频道不是论坛频道，无法修改。")
-                return
-
-            executing_tag = thread.parent.get_tag(int(executing_tag_id))
-            if not executing_tag:
-                logger.warning(f"在论坛频道 {thread.parent.name} 中未找到执行中标签。")
-                return
-
-            # 准备新的标签和标题
-            new_tags = [tag for tag in thread.applied_tags if tag.id != int(discussion_tag_id)]
-            new_tags.append(executing_tag)
-            new_title = f"[执行中] {title}"
-
-            await self.bot.api_scheduler.submit(
-                thread.edit(name=new_title, applied_tags=new_tags), 2
-            )
-
-        except discord.HTTPException as e:
-            logger.error(f"更新帖子 {thread_id} 时发生API错误: {e}", exc_info=True)
-        except Exception as e:
-            logger.error(f"更新帖子 {thread_id} 时发生未知错误: {e}", exc_info=True)
 
     @discord.ui.button(
         label="确认", style=discord.ButtonStyle.green, custom_id="moderation_confirm"
@@ -82,8 +40,6 @@ class ConfirmationView(discord.ui.View):
 
         await safeDefer(interaction, ephemeral=True)
 
-        thread_id_to_update: int | None = None
-        proposal_title_to_update: str | None = None
         updated_status: int = 0
 
         async with UnitOfWork(self.bot.db_handler) as uow:
@@ -123,13 +79,6 @@ class ConfirmationView(discord.ui.View):
             )
             updated_status = updated_session.status
 
-            if updated_status == 1:  # 已完成
-                proposal = await uow.moderation.get_proposal_by_id(updated_session.targetId)
-                if proposal:
-                    proposal.status = 1  # 执行中
-                    thread_id_to_update = proposal.discussionThreadId
-                    proposal_title_to_update = proposal.title
-
             # 准备 Embed QO
             role_display_names = {}
             if interaction.guild and hasattr(self.bot, "config"):
@@ -156,20 +105,16 @@ class ConfirmationView(discord.ui.View):
         # --- 事务外执行API调用 ---
         if updated_status == 1:  # 已完成
             self._disable_all_buttons()
-            tasks = [
-                self.bot.api_scheduler.submit(
-                    interaction.edit_original_response(embed=embed, view=self), 1
-                )
-            ]
-            if thread_id_to_update and proposal_title_to_update:
-                tasks.append(self._update_thread(thread_id_to_update, proposal_title_to_update))
-            await asyncio.gather(*tasks)
+            await self.bot.api_scheduler.submit(
+                interaction.edit_original_response(embed=embed, view=self), 1
+            )
+            self.bot.dispatch("confirmation_completed", updated_session)
         else:
             await self.bot.api_scheduler.submit(
                 interaction.edit_original_response(embed=embed, view=self), 1
             )
 
-    @discord.ui.button(label="取消", style=discord.ButtonStyle.red, custom_id="moderation_cancel")
+    @discord.ui.button(label="反对", style=discord.ButtonStyle.red, custom_id="moderation_cancel")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not isinstance(interaction.user, discord.Member) or not self.bot.user:
             return await self.bot.api_scheduler.submit(

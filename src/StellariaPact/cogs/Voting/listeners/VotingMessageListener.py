@@ -16,8 +16,9 @@ logger = logging.getLogger(__name__)
 
 
 class VotingMessageListener(commands.Cog):
-    def __init__(self, bot: StellariaPactBot):
+    def __init__(self, bot: StellariaPactBot, voting_cog: Voting):
         self.bot = bot
+        self.voting_cog = voting_cog
         # 移除纯表情的正则表达式
         self.emoji_pattern = re.compile(
             "^(<a?:\\w+:\\d+>|\\p{Emoji_Presentation}|\\p{Emoji_Modifier_Base}|\\p{Emoji_Component}|\\p{So}|\\p{Cn})+$"
@@ -62,16 +63,12 @@ class VotingMessageListener(commands.Cog):
             return
 
         try:
-            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
-            if not voting_cog:
-                return
-
             qo = UpdateUserActivityQo(
                 user_id=message.author.id,
                 thread_id=message.channel.id,
                 change=1,
             )
-            await voting_cog.logic.handle_message_creation(qo)
+            await self.voting_cog.logic.handle_message_creation(qo)
         except Exception as e:
             logger.error(
                 f"更新用户 {message.author.id} 在帖子 {message.channel.id} 的活动时出错: {e}",
@@ -96,17 +93,13 @@ class VotingMessageListener(commands.Cog):
             return
 
         try:
-            voting_cog = cast(Voting, self.bot.get_cog("Voting"))
-            if not voting_cog:
-                return
-
             # 调用核心逻辑
             qo = UpdateUserActivityQo(
                 user_id=message.author.id,
                 thread_id=message.channel.id,
                 change=-1,
             )
-            details_to_update = await voting_cog.logic.handle_message_deletion(qo)
+            details_to_update = await self.voting_cog.logic.handle_message_deletion(qo)
 
             # 如果没有返回详情，说明无需更新 UI
             if not details_to_update:

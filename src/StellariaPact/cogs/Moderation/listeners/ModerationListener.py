@@ -22,13 +22,13 @@ from ....cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
 from ....cogs.Moderation.dto.ProposalDto import ProposalDto
 from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
+from ....share.enums.ProposalStatus import ProposalStatus
 from ....share.DiscordUtils import DiscordUtils
 from ....share.StringUtils import StringUtils
 from ....share.UnitOfWork import UnitOfWork
 from ..ModerationLogic import ModerationLogic
-
-# from ..views.ObjectionCreationVoteView import ObjectionCreationVoteView
-
+from ..thread_manager import ProposalThreadManager
+from ....models.ConfirmationSession import ConfirmationSession
 if TYPE_CHECKING:
     from ....share.StellariaPactBot import StellariaPactBot
 
@@ -44,6 +44,7 @@ class ModerationListener(commands.Cog):
     def __init__(self, bot: "StellariaPactBot"):
         self.bot = bot
         self.logic = ModerationLogic(bot)
+        self.thread_manager = ProposalThreadManager(bot.config)  # 新增初始化
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
@@ -65,9 +66,9 @@ class ModerationListener(commands.Cog):
         logger.debug(f"ModerationListener 捕获到新的提案帖: {thread.id}")
 
         try:
-            # 1. 更新帖子状态 (标题和标签)
-            await self._update_thread_status_to_discussion(thread)
-
+            # 1. 更新帖子状态
+            await self.thread_manager.update_status(thread, "discussion")
+            
             # 2. 获取发起人并创建提案
             starter_message = await DiscordUtils.get_starter_message(thread)
             if not starter_message:
@@ -95,41 +96,6 @@ class ModerationListener(commands.Cog):
                 f"ModerationListener 在处理帖子创建事件时发生错误 (ID: {thread.id}): {e}",
                 exc_info=True,
             )
-
-    async def _update_thread_status_to_discussion(self, thread: discord.Thread):
-        """将帖子的状态（标题和标签）更新为“讨论中”。"""
-        try:
-            clean_title = StringUtils.clean_title(thread.name)
-            new_title = f"[讨论中] {clean_title}"
-
-            if not isinstance(thread.parent, discord.ForumChannel):
-                logger.warning(f"帖子 {thread.id} 的父频道不是论坛频道，无法更新标签。")
-                return
-
-            new_tags = DiscordUtils.calculate_new_tags(
-                current_tags=thread.applied_tags,
-                forum_tags=thread.parent.available_tags,
-                config=self.bot.config,
-                target_tag_name="discussion",
-            )
-
-            # 检查是否有任何更改
-            title_changed = new_title != thread.name
-            tags_changed = new_tags is not None
-
-            if title_changed or tags_changed:
-                kwargs = {}
-                if title_changed:
-                    kwargs["name"] = new_title
-                if tags_changed:
-                    kwargs["applied_tags"] = new_tags
-
-                await self.bot.api_scheduler.submit(thread.edit(**kwargs), priority=3)
-                logger.debug(f"已将帖子 {thread.id} 的状态更新为“讨论中”。")
-
-        except Exception as e:
-            logger.error(f"更新帖子 {thread.id} 状态时出错: {e}", exc_info=True)
-
 
     @commands.Cog.listener()
     async def on_objection_vote_finished(
@@ -262,31 +228,6 @@ class ModerationListener(commands.Cog):
                 self.bot, result_dto.proposal_discussion_thread_id
             )
             if original_thread:
-                # 类型守卫，确保父频道是论坛
-                if not isinstance(original_thread.parent, discord.ForumChannel):
-                    logger.warning(f"帖子 {original_thread.id} 的父频道不是论坛，无法修改标签。")
-                    return
-
-                frozen_tag_id = self.bot.config.get("tags", {}).get("frozen")
-                if not frozen_tag_id:
-                    logger.warning("未在 config.json 中配置 '已冻结' 标签ID")
-                    return
-
-                # 准备新标题和新标签
-                if not result_dto.proposal_title:
-                    logger.warning(f"提案 {result_dto.proposal_id} 缺少标题，无法更新。")
-                    return
-                clean_title = StringUtils.clean_title(result_dto.proposal_title)
-                new_title = f"[冻结中] {clean_title}"
-
-                # 计算新标签
-                new_tags = DiscordUtils.calculate_new_tags(
-                    current_tags=original_thread.applied_tags,
-                    forum_tags=original_thread.parent.available_tags,
-                    config=self.bot.config,
-                    target_tag_name="frozen",
-                )
-
                 # 在原提案帖发送通知
                 embed_qo = BuildProposalFrozenEmbedQo(
                     objection_thread_jump_url=objection_thread.jump_url
@@ -295,20 +236,8 @@ class ModerationListener(commands.Cog):
                 await self.bot.api_scheduler.submit(
                     original_thread.send(embed=notification_embed), priority=4
                 )
-
-                # 准备编辑参数
-                edit_kwargs = {
-                    "name": new_title,
-                    "archived": True,
-                    "locked": True,
-                }
-                if new_tags is not None:
-                    edit_kwargs["applied_tags"] = new_tags
-
-                await self.bot.api_scheduler.submit(
-                    original_thread.edit(**edit_kwargs), priority=4
-                )
-                logger.info(f"已将原提案帖 {original_thread.id} 冻结、关闭并锁定。")
+                
+                await self.thread_manager.update_status(original_thread, "frozen")
 
         except (RuntimeError, ValueError) as e:
             logger.error(f"处理 on_objection_goal_reached 事件时出错: {e}")
@@ -500,72 +429,17 @@ class ModerationListener(commands.Cog):
             await self._send_paginated_vote_results(objection_thread, result)
 
         # 根据投票结果，执行后续的帖子状态变更
-        clean_title = StringUtils.clean_title(original_thread.name)
-
         if result.is_passed:
             # 异议通过 -> 原提案被否决
-            new_title = f"[已否决] {clean_title}"
-            new_tags = DiscordUtils.calculate_new_tags(
-                original_thread.applied_tags,
-                original_thread.parent.available_tags,
-                self.bot.config,
-                "rejected",
-            )
-            await self.bot.api_scheduler.submit(
-                original_thread.edit(
-                    name=new_title,
-                    applied_tags=new_tags
-                    if new_tags is not None
-                    else original_thread.applied_tags,
-                    archived=True,
-                    locked=True,
-                ),
-                priority=4,
-            )
+            if original_thread:
+                await self.thread_manager.update_status(original_thread, "rejected")
         else:
-            # 异议失败 -> 原提案解冻，异议帖被否决
-
-            # 解冻原提案
-            if original_thread.archived:
-                await self.bot.api_scheduler.submit(
-                    original_thread.edit(archived=False), priority=4
-                )
-
-            new_title = clean_title
-            new_tags = DiscordUtils.calculate_new_tags(
-                original_thread.applied_tags,
-                original_thread.parent.available_tags,
-                self.bot.config,
-                "discussion",
-            )
-            await self.bot.api_scheduler.submit(
-                original_thread.edit(
-                    name=new_title,
-                    applied_tags=new_tags
-                    if new_tags is not None
-                    else original_thread.applied_tags,
-                    locked=False,
-                ),
-                priority=4,
-            )
-
+            # 异议失败 -> 原提案解冻
+            if original_thread:
+                await self.thread_manager.update_status(original_thread, "discussion")
             # 将异议帖标记为否决并归档
             if objection_thread:
-                obj_clean_title = StringUtils.clean_title(objection_thread.name)
-                obj_new_title = f"[已否决] {obj_clean_title}"
-                rejected_tag_id_str = self.bot.config.get("tags", {}).get("rejected")
-                if rejected_tag_id_str:
-                    rejected_tag = original_thread.parent.get_tag(int(rejected_tag_id_str))
-                    if rejected_tag:
-                        await self.bot.api_scheduler.submit(
-                            objection_thread.edit(
-                                name=obj_new_title,
-                                applied_tags=[rejected_tag],
-                                archived=True,
-                                locked=True,
-                            ),
-                            priority=4,
-                        )
+                await self.thread_manager.update_status(objection_thread, "rejected")
 
     async def _send_paginated_vote_results(
         self, channel: discord.TextChannel | discord.Thread, result
@@ -655,3 +529,63 @@ class ModerationListener(commands.Cog):
             await self.bot.api_scheduler.submit(
                 interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
             )
+
+    @commands.Cog.listener()
+    async def on_confirmation_completed(self, session: "ConfirmationSession"):
+        logger.info(f"接收到确认完成事件，上下文: {session.context}，目标ID: {session.targetId}")
+
+        try:
+            proposal_dto: ProposalDto | None = None
+            target_status: ProposalStatus | None = None
+
+            match session.context:
+                case "proposal_execution":
+                    proposal_dto = await self.logic.handle_proposal_execution_confirmed(
+                        session.targetId
+                    )
+                    target_status = ProposalStatus.EXECUTING
+                case "proposal_completion":
+                    proposal_dto = await self.logic.handle_proposal_completion_confirmed(
+                        session.targetId
+                    )
+                    target_status = ProposalStatus.FINISHED
+                case _:
+                    logger.warning(f"未知的确认上下文: {session.context}")
+                    return
+
+            if proposal_dto and target_status:
+                await self._update_thread_status_after_confirmation(
+                    proposal_dto.discussionThreadId, proposal_dto.title, target_status
+                )
+            else:
+                logger.warning(
+                    f"从 logic 层返回的 proposal_dto 为空，无法更新帖子状态。Proposal ID: {session.targetId}"
+                )
+
+        except Exception as e:
+            logger.error(f"处理确认完成事件时出错: {e}", exc_info=True)
+
+    async def _update_thread_status_after_confirmation(
+        self, thread_id: int, title: str, target_status: ProposalStatus
+    ):
+        """ 根据确认结果更新帖子状态 """
+        try:
+            thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
+            if not thread:
+                logger.warning(f"无法找到ID为 {thread_id} 的帖子，无法更新状态。")
+                return
+
+            # 将枚举映射到状态关键字
+            status_key_map = {
+                ProposalStatus.EXECUTING: "executing",
+                ProposalStatus.FINISHED: "finished",
+            }
+            status_key = status_key_map.get(target_status)
+
+            if status_key:
+                await self.thread_manager.update_status(thread, status_key)
+            else:
+                logger.warning(f"未知的提案状态: {target_status}，无法更新帖子。")
+
+        except Exception as e:
+            logger.error(f"更新帖子 {thread_id} 状态时发生未知错误: {e}", exc_info=True)

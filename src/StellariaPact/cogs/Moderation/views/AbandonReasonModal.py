@@ -4,21 +4,21 @@ import logging
 import discord
 
 from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
-from StellariaPact.share.DiscordUtils import DiscordUtils
+from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
-
-from .ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 
 logger = logging.getLogger(__name__)
 
 
 class AbandonReasonModal(discord.ui.Modal):
-    def __init__(self, bot: StellariaPactBot):
+    def __init__(self, bot: StellariaPactBot, thread_manager: ProposalThreadManager):  # 修改构造函数
         super().__init__(title="废弃提案原因")
         self.bot = bot
+        self.thread_manager = thread_manager
         self.reason = discord.ui.TextInput(
             label="原因",
             style=discord.TextStyle.long,
@@ -48,8 +48,7 @@ class AbandonReasonModal(discord.ui.Modal):
             )
 
         # --- 事务外执行API调用 ---
-        tasks = []
-
+        
         # 准备公示Embed
         clean_title_for_embed = StringUtils.clean_title(interaction.channel.name)
         embed = ModerationEmbedBuilder.build_status_change_embed(
@@ -60,30 +59,5 @@ class AbandonReasonModal(discord.ui.Modal):
         )
         await self.bot.api_scheduler.submit(interaction.channel.send(embed=embed), 1)
         await asyncio.sleep(0.05)
-
-        # 准备更新帖子状态和标签
-        clean_title = StringUtils.clean_title(interaction.channel.name)
-        new_title = f"[已废弃] {clean_title}"
-        edit_payload = {"name": new_title, "archived": True, "locked": True}
-
-        if isinstance(interaction.channel.parent, discord.ForumChannel):
-            new_tags = DiscordUtils.calculate_new_tags(
-                current_tags=interaction.channel.applied_tags,
-                forum_tags=interaction.channel.parent.available_tags,
-                config=self.bot.config,
-                target_tag_name="abandoned",
-            )
-            if new_tags is not None:
-                edit_payload["applied_tags"] = new_tags
-
-        await self.bot.api_scheduler.submit(interaction.channel.edit(**edit_payload), 2)
-
-        # # 准备最终确认消息
-        # tasks.append(
-        #     self.bot.api_scheduler.submit(
-        #         interaction.followup.send("提案已成功废弃。", ephemeral=True), 1
-        #     )
-        # )
-
-        # 执行所有API调用
-        await asyncio.gather(*tasks)
+        
+        await self.thread_manager.update_status(interaction.channel, "abandoned")
