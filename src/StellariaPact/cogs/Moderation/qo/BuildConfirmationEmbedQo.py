@@ -8,6 +8,7 @@ class BuildConfirmationEmbedQo(BaseDto):
     用于构建确认流程Embed所需的数据查询对象。
     """
 
+    context: str
     status: int
     canceler_id: int | None
     confirmed_parties: Dict[str, int]

@@ -1,11 +1,12 @@
 import logging
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import ExecuteProposalResultDto
+from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import \
+    ExecuteProposalResultDto
 from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import \
     ObjectionVotePanelDto
 from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import \
@@ -15,9 +16,9 @@ from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
     BuildAdminReviewEmbedQo
 from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import \
     BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.cogs.Moderation.views.AbandonReasonModal import \
     AbandonReasonModal
-from .thread_manager import ProposalThreadManager
 from StellariaPact.cogs.Moderation.views.ConfirmationView import \
     ConfirmationView
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
@@ -51,7 +52,7 @@ class Moderation(commands.Cog):
     def cog_load(self) -> None:
         """在 Cog 被添加到 Bot 后，进行依赖注入和初始化"""
         self.logic: ModerationLogic = ModerationLogic(self.bot)
-        self.thread_manager = ProposalThreadManager(self.bot.config)  # 新增初始化
+        self.thread_manager = ProposalThreadManager(self.bot.config)
         self.bot.tree.add_command(self.kick_proposal_context_menu)
 
     async def cog_unload(self):
@@ -340,6 +341,7 @@ class Moderation(commands.Cog):
                 role_display_names[role_key] = role.name if role else role_key
 
             qo = BuildConfirmationEmbedQo(
+                context=result_dto.session_dto.context,
                 status=result_dto.session_dto.status,
                 canceler_id=result_dto.session_dto.canceler_id,
                 confirmed_parties=result_dto.session_dto.confirmed_parties,

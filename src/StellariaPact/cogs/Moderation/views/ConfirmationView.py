@@ -7,6 +7,7 @@ from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
+from ..dto.ConfirmationCompletedDto import ConfirmationSessionDto
 from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
 from .ModerationEmbedBuilder import ModerationEmbedBuilder
 
@@ -92,6 +93,7 @@ class ConfirmationView(discord.ui.View):
                         role_display_names[role_key] = role_key
 
             qo = BuildConfirmationEmbedQo(
+                context=updated_session.context,
                 status=updated_session.status,
                 canceler_id=updated_session.cancelerId,
                 confirmed_parties=updated_session.confirmedParties or {},
@@ -99,16 +101,20 @@ class ConfirmationView(discord.ui.View):
                 role_display_names=role_display_names,
             )
             embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
+            # 使用 DTO 替代 ORM 实例，避免事务外访问问题
+            dto = ConfirmationSessionDto.model_validate(
+                updated_session, from_attributes=True
+            )
 
             await uow.commit()
-
+            
         # --- 事务外执行API调用 ---
         if updated_status == 1:  # 已完成
             self._disable_all_buttons()
             await self.bot.api_scheduler.submit(
                 interaction.edit_original_response(embed=embed, view=self), 1
             )
-            self.bot.dispatch("confirmation_completed", updated_session)
+            self.bot.dispatch("confirmation_completed", dto)
         else:
             await self.bot.api_scheduler.submit(
                 interaction.edit_original_response(embed=embed, view=self), 1
@@ -161,6 +167,7 @@ class ConfirmationView(discord.ui.View):
                         role_display_names[role_key] = role_key
 
             qo = BuildConfirmationEmbedQo(
+                context=updated_session.context,
                 status=updated_session.status,
                 canceler_id=updated_session.cancelerId,
                 confirmed_parties=updated_session.confirmedParties or {},

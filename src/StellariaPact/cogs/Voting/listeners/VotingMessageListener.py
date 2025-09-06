@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import cast
 
 import discord
 import regex as re
@@ -32,7 +31,6 @@ class VotingMessageListener(commands.Cog):
         content = message.content.strip()
 
         if not content or message.author.bot:
-            logger.debug(f"消息被过滤: 作者是机器人({message.author.bot}) 或 内容为空")
             return False
 
         # 移除所有空白字符，然后检查是否为纯表情

@@ -15,9 +15,9 @@ from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from .dto.CollectionExpiredResultDto import CollectionExpiredResultDto
 from .dto.ConfirmationSessionDto import ConfirmationSessionDto
 from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
-from .dto.ObjectionDetailsDto import ObjectionDetailsDto
 from .dto.HandleSupportObjectionResultDto import \
     HandleSupportObjectionResultDto
+from .dto.ObjectionDetailsDto import ObjectionDetailsDto
 from .dto.ObjectionDto import ObjectionDto
 from .dto.ObjectionReasonUpdateResultDto import ObjectionReasonUpdateResultDto
 from .dto.ObjectionReviewResultDto import ObjectionReviewResultDto
@@ -452,7 +452,7 @@ class ModerationLogic:
             return CollectionExpiredResultDto(
                 embed_qo=embed_qo,
                 notification_channel_id=extracted_data["notification_channel_id"],
-                original_vote_message_id=session_dto.contextMessageId,
+                original_vote_message_id=session_dto.contextMessageId
             )
 
         except (ValueError, RuntimeError) as e:

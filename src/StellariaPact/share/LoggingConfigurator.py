@@ -29,11 +29,10 @@ class LoggingConfigurator:
     def _configureRootLogger(self):
         """配置根日志记录器，这是我们自己代码的基础。"""
         # 在新版 logging 中，建议配置一个包级别的 logger，而不是 root logger
-        logger = logging.getLogger("stellaria_pact")
+        logger = logging.getLogger("StellariaPact")
         logger.setLevel(self.logLevel)
         if not logger.handlers:
             logger.addHandler(self.streamHandler)
-        logger.propagate = False
 
     def _configureSqlAlchemyLogger(self):
         """配置 SQLAlchemy 的日志记录器。"""

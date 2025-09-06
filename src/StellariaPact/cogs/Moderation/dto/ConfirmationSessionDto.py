@@ -9,6 +9,7 @@ class ConfirmationSessionDto(BaseDto):
     """
 
     id: int
+    context: str
     status: int
     canceler_id: int | None
     confirmed_parties: Dict[str, int]

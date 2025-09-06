@@ -9,7 +9,8 @@ from discord.ext import commands, tasks
 from sqlalchemy import func, select, update
 
 from StellariaPact.models.Announcement import Announcement
-from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
+from StellariaPact.models.AnnouncementChannelMonitor import \
+    AnnouncementChannelMonitor
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
@@ -106,13 +107,13 @@ class AnnounceMessageListener(commands.Cog):
 
     async def load_monitored_channels(self):
         """从数据库加载所有当前被监控的频道ID。"""
-        logger.info("正在从数据库加载被监控的频道列表...")
+        logger.debug("正在从数据库加载被监控的频道列表...")
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
                 stmt = select(func.distinct(AnnouncementChannelMonitor.channelId))
                 result = await uow.session.execute(stmt)
                 self.monitored_channels = {row[0] for row in result.fetchall()}
-                logger.info(f"加载了 {len(self.monitored_channels)} 个被监控的频道。")
+                logger.debug(f"加载了 {len(self.monitored_channels)} 个被监控的频道。")
         except Exception as e:
             logger.error(f"加载被监控频道时发生错误: {e}", exc_info=True)
             if self.monitored_channels is None:

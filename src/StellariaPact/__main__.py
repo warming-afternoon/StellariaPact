@@ -23,7 +23,7 @@ log_level = os.getenv("LOG_LEVEL", "INFO")
 configurator = LoggingConfigurator(rootLogLevel=log_level)
 configurator.configure()
 
-logger = logging.getLogger("stellaria_pact")
+logger = logging.getLogger("StellariaPact")
 # --- 日志配置结束 ---
 
 

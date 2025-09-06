@@ -100,7 +100,7 @@ class ModerationEventListener(commands.Cog):
                 )
                 session_dto = await uow.voting.create_vote_session(qo)
                 await uow.commit()
-                logger.info(f"成功为提案 {proposal_dto.id} 创建了新的投票会话 {session_dto.id}，消息ID: {message.id}")
+                logger.debug(f"成功为提案 {proposal_dto.id} 创建了新的投票会话 {session_dto.id}，消息ID: {message.id}")
 
         except Exception as e:
             logger.error(

@@ -24,7 +24,7 @@ class VoteCloser(commands.Cog):
         """
         每2分钟检查一次并关闭已到期的投票。
         """
-        logger.info("开始检查已到期的投票...")
+        logger.debug("开始检查已到期的投票...")
         expired_sessions = []
         try:
             # 步骤 1: 在一个只读事务中安全地获取所有过期的会话
@@ -32,7 +32,7 @@ class VoteCloser(commands.Cog):
                 expired_sessions = await uow.voting.get_expired_sessions()
 
             if not expired_sessions:
-                logger.info("没有发现已到期的投票。")
+                logger.debug("没有发现已到期的投票。")
                 return
 
             # 步骤 2: 遍历 DTO 列表，为每个会话执行独立的原子操作

@@ -10,8 +10,11 @@ from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import \
 
 from ....cogs.Moderation.dto.CollectionExpiredResultDto import \
     CollectionExpiredResultDto
+from ....cogs.Moderation.dto.ConfirmationCompletedDto import \
+    ConfirmationSessionDto
 from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import \
     HandleSupportObjectionResultDto
+from ....cogs.Moderation.dto.ProposalDto import ProposalDto
 from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
     BuildAdminReviewEmbedQo
 from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import \
@@ -19,17 +22,15 @@ from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import \
 from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
 from ....cogs.Moderation.views.ModerationEmbedBuilder import \
     ModerationEmbedBuilder
-from ....cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
-from ....cogs.Moderation.dto.ProposalDto import ProposalDto
 from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
-from ....share.enums.ProposalStatus import ProposalStatus
 from ....share.DiscordUtils import DiscordUtils
+from ....share.enums.ProposalStatus import ProposalStatus
 from ....share.StringUtils import StringUtils
 from ....share.UnitOfWork import UnitOfWork
 from ..ModerationLogic import ModerationLogic
 from ..thread_manager import ProposalThreadManager
-from ....models.ConfirmationSession import ConfirmationSession
+
 if TYPE_CHECKING:
     from ....share.StellariaPactBot import StellariaPactBot
 
@@ -535,8 +536,8 @@ class ModerationListener(commands.Cog):
             )
 
     @commands.Cog.listener()
-    async def on_confirmation_completed(self, session: "ConfirmationSession"):
-        logger.info(f"接收到确认完成事件，上下文: {session.context}，目标ID: {session.targetId}")
+    async def on_confirmation_completed(self, session: ConfirmationSessionDto):
+        logger.debug(f"接收到确认完成事件，上下文: {session.context}，目标ID: {session.targetId}")
 
         try:
             proposal_dto: ProposalDto | None = None

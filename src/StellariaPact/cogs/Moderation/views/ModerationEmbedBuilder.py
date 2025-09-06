@@ -26,19 +26,36 @@ class ModerationEmbedBuilder:
         """
         根据确认会话状态构建Embed。
         """
-        title = "⏳ 流程确认中：进入执行阶段"
-        color = discord.Color.yellow()
+        title_map = {
+            "proposal_execution": {
+                ConfirmationStatus.PENDING.value: "⏳ 流程确认中：进入执行阶段",
+                ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已进入执行阶段",
+                ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
+            },
+            "proposal_completion": {
+                ConfirmationStatus.PENDING.value: "⏳ 流程确认中：确定提案完成",
+                ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已进入完成阶段",
+                ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
+            },
+        }
+        color_map = {
+            ConfirmationStatus.PENDING.value: discord.Color.yellow(),
+            ConfirmationStatus.COMPLETED.value: discord.Color.green(),
+            ConfirmationStatus.CANCELED.value: discord.Color.red(),
+        }
 
-        if qo.status == ConfirmationStatus.COMPLETED:
-            title = "✅ 确认完成：提案已进入执行阶段"
-            color = discord.Color.green()
-        elif qo.status == ConfirmationStatus.CANCELED:
-            title = "❌ 操作已取消"
-            color = discord.Color.red()
+        # 获取默认标题和颜色，以防 context 未知
+        default_titles = title_map.get("proposal_execution", {})
+        title = default_titles.get(qo.status, "操作状态未知")
+        color = color_map.get(qo.status, discord.Color.default())
+
+        # 根据 context 获取特定的标题
+        if qo.context in title_map:
+            title = title_map[qo.context].get(qo.status, title)
 
         embed = discord.Embed(title=title, color=color)
 
-        if qo.status == ConfirmationStatus.CANCELED and qo.canceler_id:
+        if qo.status == ConfirmationStatus.CANCELED.value and qo.canceler_id:
             embed.description = f"操作由 <@{qo.canceler_id}> 取消。"
 
         confirmed_lines = []

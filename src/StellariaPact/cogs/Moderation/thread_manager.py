@@ -1,5 +1,7 @@
 import logging
+
 import discord
+
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StringUtils import StringUtils
 
@@ -90,12 +92,12 @@ class ProposalThreadManager:
             edit_payload["locked"] = status_info["lock"]
 
         if not edit_payload:
-            logger.info(f"帖子 {thread.id} 的状态已经是 '{new_status_key}'，无需更新。")
+            logger.debug(f"帖子 {thread.id} 的状态已经是 '{new_status_key}'，无需更新。")
             return
 
         try:
             await thread.edit(**edit_payload)
-            logger.info(f"已将帖子 {thread.id} 的状态更新为 '{new_status_key}'。")
+            logger.debug(f"已将帖子 {thread.id} 的状态更新为 '{new_status_key}'。")
         except discord.errors.Forbidden:
             logger.error(
                 f"机器人缺少权限，无法更新帖子 {thread.id} 的状态为 '{new_status_key}'。"
