@@ -66,18 +66,16 @@ class VotingLogic:
     async def record_vote_and_get_details(self, qo: RecordVoteQo) -> VoteDetailDto:
         """
         处理用户的投票动作，并返回更新后的投票详情。
-        这个方法是原子的，它将投票记录、计票和结果获取合并在一个事务中。
-
-        Args:
-            qo: 记录投票的查询对象，包含 message_id, user_id, 和 choice。
-
-        Returns:
-            一个包含最新投票状态的 DTO。
-
-        Raises:
-            ValueError: 如果找不到指定的投票会话。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
+            # 检查用户在目标帖子里的当前资格
+            user_activity = await uow.voting.check_user_eligibility(
+                user_id=qo.user_id, thread_id=qo.thread_id
+            )
+
+            if not EligibilityService.is_eligible(user_activity):
+                raise PermissionError("投票资格已失效，无法投票。可能是因为删除了之前的有效发言。")
+
             updated_session = await uow.voting.record_vote(qo)
             return VotingService.get_vote_details_dto(updated_session)
 

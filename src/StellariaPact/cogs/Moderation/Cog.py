@@ -26,6 +26,7 @@ from StellariaPact.cogs.Moderation.views.ObjectionManageView import \
     ObjectionManageView
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.cogs.Moderation.views.ReasonModal import ReasonModal
+from StellariaPact.share.auth.PermissionGuard import PermissionGuard
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
@@ -185,12 +186,17 @@ class Moderation(commands.Cog):
 
 
     @app_commands.command(name="创建提案投票", description="为当前帖子手动创建一个提案投票")
-    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     async def create_proposal_vote(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await safeDefer(interaction)
 
         if not isinstance(interaction.channel, discord.Thread):
             await interaction.followup.send("此命令只能在提案帖子内使用。", ephemeral=True)
+            return
+
+        # 权限检查
+        can_create = await PermissionGuard.can_manage_vote(interaction)
+        if not can_create:
+            await interaction.followup.send("您没有权限在此帖子中创建投票。", ephemeral=True)
             return
 
         thread = interaction.channel

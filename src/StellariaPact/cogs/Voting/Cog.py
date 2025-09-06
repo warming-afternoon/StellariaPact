@@ -350,6 +350,7 @@ class Voting(commands.Cog):
                 RecordVoteQo(
                     user_id=interaction.user.id,
                     message_id=original_message_id,
+                    thread_id=thread_id,
                     choice=choice,
                 )
             )

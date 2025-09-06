@@ -12,7 +12,6 @@ from StellariaPact.cogs.Voting.views.ReopenVoteModal import ReopenVoteModal
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.share.StringUtils import StringUtils
-from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
@@ -27,16 +26,18 @@ class VotingChoiceView(discord.ui.View):
 
     def __init__(
         self,
-        interaction: discord.Interaction,
+        bot: StellariaPactBot,
+        logic: VotingLogic,
         original_message_id: int,
+        thread_id: int,
         is_eligible: bool,
         is_vote_active: bool,
-        logic: VotingLogic,
+        can_manage: bool,
     ):
         super().__init__(timeout=890)  # 15分钟后超时
-        self.bot: StellariaPactBot = interaction.client  # type: ignore
+        self.bot = bot
         self.logic = logic
-        self.thread_id = interaction.channel.id  # type: ignore
+        self.thread_id = thread_id
         self.original_message_id = original_message_id
         self.is_vote_active = is_vote_active
         self.message: discord.Message | None = None
@@ -48,7 +49,7 @@ class VotingChoiceView(discord.ui.View):
             self.abstain_button.disabled = True
 
         # 如果拥有对应权限，则添加管理按钮
-        if RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor"):
+        if can_manage:
             if self.is_vote_active:
                 self._add_active_admin_buttons()
             else:
@@ -135,6 +136,7 @@ class VotingChoiceView(discord.ui.View):
                 RecordVoteQo(
                     user_id=interaction.user.id,
                     message_id=self.original_message_id,
+                    thread_id=self.thread_id,
                     choice=choice,
                 )
             )
@@ -155,7 +157,8 @@ class VotingChoiceView(discord.ui.View):
 
             # 更新公共面板
             await self._update_vote_panel_embed(vote_details)
-
+        except PermissionError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
         except Exception as e:
             logger.error(f"记录投票时发生错误: {e}", exc_info=True)
             if not interaction.response.is_done():

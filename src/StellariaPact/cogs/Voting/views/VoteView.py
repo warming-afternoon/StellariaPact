@@ -5,6 +5,7 @@ import discord
 from StellariaPact.cogs.Voting.Cog import Voting
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VotingChoiceView import VotingChoiceView
+from StellariaPact.share.auth.PermissionGuard import PermissionGuard
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.DiscordUtils import send_private_panel
 from StellariaPact.share.SafeDefer import safeDefer
@@ -60,21 +61,16 @@ class VoteView(discord.ui.View):
                 jump_url=interaction.message.jump_url, panel_data=panel_data
             )
 
-            is_admin = RoleGuard.hasRoles(
-                interaction, "councilModerator", "executionAuditor", "stewards"
-            )
-            if not panel_data.is_eligible and not is_admin:
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send(embed=embed, ephemeral=True), priority=1
-                )
-                return
+            can_manage = await PermissionGuard.can_manage_vote(interaction)
 
             choice_view = VotingChoiceView(
-                interaction,
-                interaction.message.id,
+                bot=self.bot,
+                logic=voting_cog.logic,
+                original_message_id=interaction.message.id,
+                thread_id=interaction.channel.id,
                 is_eligible=panel_data.is_eligible,
                 is_vote_active=panel_data.is_vote_active,
-                logic=voting_cog.logic,
+                can_manage=can_manage,
             )
             await send_private_panel(self.bot, interaction, embed=embed, view=choice_view)
         except Exception as e:

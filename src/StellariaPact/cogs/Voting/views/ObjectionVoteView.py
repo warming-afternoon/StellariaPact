@@ -53,6 +53,7 @@ class ObjectionVoteView(discord.ui.View):
                 RecordVoteQo(
                     user_id=interaction.user.id,
                     message_id=interaction.message.id,
+                    thread_id=interaction.channel.id,
                     choice=choice,
                 )
             )
