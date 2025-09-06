@@ -44,11 +44,8 @@ class DatabaseHandler:
         sqlite_url = f"sqlite+aiosqlite:///{db_name}"
         connect_args = {"timeout": 15}
 
-        sql_echo_str = os.getenv("SQL_ECHO", "False")
-        sql_echo = sql_echo_str.lower() in ("true", "1", "t")
-
         self._async_engine = create_async_engine(
-            sqlite_url, echo=sql_echo, connect_args=connect_args
+            sqlite_url, echo=False, connect_args=connect_args
         )
 
         @event.listens_for(self._async_engine.sync_engine, "connect")

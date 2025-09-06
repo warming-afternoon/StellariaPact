@@ -109,7 +109,7 @@ class Moderation(commands.Cog):
         await self._handle_confirmation_command(interaction, self.logic.handle_execute_proposal)
 
 
-    @app_commands.command(name="完成提案", description="将执行中的提案变更为已结束")
+    @app_commands.command(name="提案完成", description="将执行中的提案变更为已结束")
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     async def complete_proposal(self, interaction: discord.Interaction):
         await self._handle_confirmation_command(interaction, self.logic.handle_complete_proposal)
@@ -183,6 +183,54 @@ class Moderation(commands.Cog):
         modal.on_submit = on_submit
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
+
+    @app_commands.command(name="创建提案投票", description="为当前帖子手动创建一个提案投票")
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
+    async def create_proposal_vote(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send("此命令只能在提案帖子内使用。", ephemeral=True)
+            return
+
+        thread = interaction.channel
+
+        try:
+            # 1. 获取发起人信息
+            starter_message = thread.starter_message
+            if not starter_message:
+                starter_message = await thread.fetch_message(thread.id)
+
+            if not starter_message:
+                await interaction.followup.send("无法获取帖子的启动消息，操作失败。", ephemeral=True)
+                return
+
+            proposer_id = starter_message.author.id
+            clean_title = StringUtils.clean_title(thread.name)
+
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                # 2. 尝试创建提案
+                proposal_dto = await uow.moderation.create_proposal(
+                    thread.id, proposer_id, clean_title
+                )
+                # 如果提案已存在，则获取它
+                if not proposal_dto:
+                    proposal_dto = await uow.moderation.get_proposal_by_thread_id(thread.id)
+
+                await uow.commit()
+
+            # 3. 派发事件以创建投票
+            if proposal_dto:
+                self.bot.dispatch("proposal_created", proposal_dto)
+                await interaction.followup.send("✅ 成功为本帖创建了新的投票！", ephemeral=True)
+            else:
+                await interaction.followup.send("处理提案信息失败，无法创建投票。", ephemeral=True)
+        except Exception as e:
+            logger.error(f"手动创建提案投票时出错: {e}", exc_info=True)
+            await interaction.followup.send(f"发生错误: {e}", ephemeral=True)
+ 
+    # --- 私有方法 ---
+    
     def _determine_target_thread_id(
         self, interaction: discord.Interaction, proposal_link: str
     ) -> int:
@@ -242,8 +290,6 @@ class Moderation(commands.Cog):
         async with UnitOfWork(self.bot.db_handler) as uow:
             await uow.moderation.update_objection_review_thread_id(dto.objection_id, thread.id)
             await uow.commit()
-
-# --- 私有方法 ---
 
     async def _handle_confirmation_command(
         self,

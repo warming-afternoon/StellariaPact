@@ -200,7 +200,9 @@ class VotingChoiceView(discord.ui.View):
 
     async def adjust_time_callback(self, interaction: discord.Interaction):
         """调整时间按钮的回调"""
-        modal = AdjustTimeModal(self.bot, self.thread_id, self.logic)
+        modal = AdjustTimeModal(
+            self.bot, self.thread_id, self.logic, message_id=self.original_message_id
+        )
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
 
     async def _post_public_announcement(self, embed: discord.Embed):

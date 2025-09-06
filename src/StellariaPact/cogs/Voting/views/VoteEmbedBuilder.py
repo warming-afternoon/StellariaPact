@@ -182,12 +182,19 @@ class VoteEmbedBuilder:
         return embed
 
     @staticmethod
-    def build_vote_result_embed(topic: str, result: "VoteStatusDto") -> discord.Embed:
+    def build_vote_result_embed(
+        topic: str, result: "VoteStatusDto", jump_url: str | None = None
+    ) -> discord.Embed:
         """
         构建通用投票结果的 Embed 消息。
         """
+        description = None
+        if jump_url:
+            description = f"\n\n[点击跳转至原投票]({jump_url})"
+
         embed = discord.Embed(
-            title=f"{topic} 的投票已结束",
+            title=f"议题「{topic}」的投票已结束",
+            description=description,
             color=discord.Color.dark_grey(),
         )
 

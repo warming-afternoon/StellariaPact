@@ -156,23 +156,26 @@ class ModerationService:
         else:
             logger.warning(f"尝试更新状态时，未找到帖子 {thread_id} 关联的提案。")
 
-    async def get_proposal_by_thread_id(self, thread_id: int) -> Optional[Proposal]:
+    async def get_proposal_by_thread_id(self, thread_id: int) -> Optional[ProposalDto]:
         """
-        根据帖子ID获取提案。
+        根据帖子ID获取提案dto
         """
         statement = select(Proposal).where(Proposal.discussionThreadId == thread_id)
         result = await self.session.exec(statement)
-        return result.one_or_none()
+        proposal = result.one_or_none()
+        if proposal:
+            return ProposalDto.model_validate(proposal)
+        return None
 
     async def get_proposal_by_id(self, proposal_id: int) -> Optional[Proposal]:
         """
-        根据提案ID获取提案。
+        根据提案ID获取提案
         """
         return await self.session.get(Proposal, proposal_id)
 
     async def get_objections_by_proposal_id(self, proposal_id: int) -> Sequence[Objection]:
         """
-        根据提案ID获取所有相关的异议。
+        根据提案ID获取所有相关的异议
         """
         statement = (
             select(Objection)
@@ -452,7 +455,10 @@ class ModerationService:
         Raises:
             ValueError: 如果找不到提案或提案状态不正确。
         """
-        proposal = await self.get_proposal_by_thread_id(qo.thread_id)
+        statement = select(Proposal).where(Proposal.discussionThreadId == qo.thread_id)
+        result = await self.session.exec(statement)
+        proposal = result.one_or_none()
+
         if not proposal:
             raise ValueError("未找到关连的提案。")
         if proposal.status != ProposalStatus.EXECUTING:
@@ -461,6 +467,7 @@ class ModerationService:
         proposal.status = ProposalStatus.ABANDONED
         self.session.add(proposal)
         await self.session.flush()
+        await self.session.refresh(proposal)
         return proposal
 
     async def objection_support(self, qo: ObjectionSupportQo) -> HandleSupportObjectionResultDto:

@@ -257,32 +257,32 @@ class VotingLogic:
             )
 
     async def adjust_vote_time(
-        self, thread_id: int, hours_to_adjust: int, operator: discord.User | discord.Member
+        self,
+        thread_id: int,
+        message_id: int,
+        hours_to_adjust: int,
+        operator: discord.User | discord.Member,
     ):
         """
         处理调整投票时间的业务流程，并分派事件以更新UI。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            qo = AdjustVoteTimeQo(thread_id=thread_id, hours_to_adjust=hours_to_adjust)
+            qo = AdjustVoteTimeQo(message_id=message_id, hours_to_adjust=hours_to_adjust)
             result_dto = await uow.voting.adjust_vote_time(qo)
             await uow.commit()
 
-            message_id = result_dto.vote_session.contextMessageId
-            if not message_id:
+            if not result_dto.vote_session.contextMessageId:
                 raise ValueError("找不到关联的消息ID。")
 
             final_session = await uow.voting.get_vote_session_with_details(message_id)
             if not final_session:
                 raise RuntimeError("重新获取会话失败。")
-
             vote_details = VotingService.get_vote_details_dto(final_session)
-
             change_text = (
                 f"延长了 **{hours_to_adjust}** 小时"
                 if hours_to_adjust > 0
                 else f"缩短了 **{-hours_to_adjust}** 小时"
             )
-
             self.bot.dispatch(
                 "vote_settings_changed",
                 thread_id,

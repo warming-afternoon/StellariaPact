@@ -98,7 +98,10 @@ class DiscordUtils:
         target_tag = next((t for t in forum_tags if t.id == target_tag_id), None)
 
         if not target_tag:
-            logger.warning(f"在论坛中找不到ID为 {target_tag_id} 的目标标签。")
+            logger.error(
+                f"配置错误：在论坛的可用标签中，找不到 config.json 中为 '{target_tag_name}' 配置的 ID "
+                f"({target_tag_id})。请检查您的 config.json 文件和服务器标签设置。"
+            )
             return None
 
         # 从配置中获取要移除的状态标签键列表

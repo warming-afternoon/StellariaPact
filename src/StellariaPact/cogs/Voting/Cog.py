@@ -74,8 +74,16 @@ class Voting(commands.Cog):
 
             topic = StringUtils.clean_title(thread.name)
 
+            jump_url = None
+            if session.contextMessageId:
+                jump_url = f"https://discord.com/channels/{thread.guild.id}/{thread.id}/{session.contextMessageId}"
+            logger.info(f"投票会话 {session.id} 结束，生成跳转链接: {jump_url}")
+
             # 构建主结果 Embed
-            result_embed = VoteEmbedBuilder.build_vote_result_embed(topic, result)
+            result_embed = VoteEmbedBuilder.build_vote_result_embed(
+                topic, result, jump_url=jump_url
+            )
+
             all_embeds_to_send = [result_embed]
 
             # 如果不是匿名投票，则构建并添加投票者名单

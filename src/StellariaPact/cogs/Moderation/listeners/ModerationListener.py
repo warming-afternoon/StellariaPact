@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Literal
 
@@ -44,13 +45,14 @@ class ModerationListener(commands.Cog):
     def __init__(self, bot: "StellariaPactBot"):
         self.bot = bot
         self.logic = ModerationLogic(bot)
-        self.thread_manager = ProposalThreadManager(bot.config)  # 新增初始化
+        self.thread_manager = ProposalThreadManager(bot.config)
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
         """
         监听新帖子的创建，如果是提案，则负责创建提案实体、更新UI并派发事件。
         """
+        await asyncio.sleep(0.5)
         # 检查是否为提案讨论帖
         discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
         if not discussion_channel_id_str or thread.parent_id != int(discussion_channel_id_str):
@@ -66,14 +68,16 @@ class ModerationListener(commands.Cog):
         logger.debug(f"ModerationListener 捕获到新的提案帖: {thread.id}")
 
         try:
-            # 1. 更新帖子状态
-            await self.thread_manager.update_status(thread, "discussion")
-            
-            # 2. 获取发起人并创建提案
-            starter_message = await DiscordUtils.get_starter_message(thread)
+            # 1. 获取发起人并创建提案
+            starter_message = thread.starter_message
+            if not starter_message:
+                starter_message = await thread.fetch_message(thread.id)
             if not starter_message:
                 logger.warning(f"无法获取帖子 {thread.id} 的启动消息，无法创建提案。")
                 return
+            
+            # 2. 更新帖子状态
+            await self.thread_manager.update_status(thread, "discussion")
 
             proposer_id = starter_message.author.id
             clean_title = StringUtils.clean_title(thread.name)
@@ -553,9 +557,11 @@ class ModerationListener(commands.Cog):
                     logger.warning(f"未知的确认上下文: {session.context}")
                     return
 
-            if proposal_dto and target_status:
+            if proposal_dto and target_status and proposal_dto.discussionThreadId:
                 await self._update_thread_status_after_confirmation(
-                    proposal_dto.discussionThreadId, proposal_dto.title, target_status
+                    proposal_dto.discussionThreadId,
+                    proposal_dto.title,
+                    target_status,
                 )
             else:
                 logger.warning(

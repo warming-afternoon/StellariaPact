@@ -105,34 +105,18 @@ class VotingService:
 
     async def create_vote_session(self, qo: CreateVoteSessionQo) -> VoteSessionDto:
         """
-        在指定的上下文中创建一个新的投票会话。
-        如果已存在，则返回现有会话。
+        在指定的上下文中创建一个新的投票会话
         """
+        logger.debug(f"尝试创建投票会话，参数: thread_id={qo.thread_id}, message_id={qo.context_message_id}")
 
-        filters = []
-        if qo.thread_id:
-            filters.append(VoteSession.contextThreadId == qo.thread_id)
-        if qo.objection_id:
-            filters.append(VoteSession.objectionId == qo.objection_id)
-        if qo.context_message_id:
-            filters.append(VoteSession.contextMessageId == qo.context_message_id)
-
-        statement = select(VoteSession).where(*filters)
-        result = await self.session.exec(statement)
-        existing_session = result.one_or_none()
-        if existing_session:
-            return VoteSessionDto.model_validate(existing_session)
-
-        # 如果没有找到现有会话，则创建新的会话
-        data = {
-            "contextThreadId": qo.thread_id,
-            "objectionId": qo.objection_id,
-            "contextMessageId": qo.context_message_id,
-            "realtimeFlag": qo.realtime,
-            "anonymousFlag": qo.anonymous,
-            "endTime": qo.end_time,
-        }
-        new_session = VoteSession.model_validate(data)
+        new_session = VoteSession(
+            contextThreadId=qo.thread_id,
+            objectionId=qo.objection_id,
+            contextMessageId=qo.context_message_id,
+            realtimeFlag=qo.realtime,
+            anonymousFlag=qo.anonymous,
+            endTime=qo.end_time,
+        )
         self.session.add(new_session)
         await self.session.flush()
         return VoteSessionDto.model_validate(new_session)
@@ -378,19 +362,21 @@ class VotingService:
     async def adjust_vote_time(self, qo: AdjustVoteTimeQo) -> AdjustVoteTimeDto:
         """
         调整投票的结束时间。
-
+    
         Args:
             qo: 调整时间的查询对象。
-
+    
         Returns:
             一个包含操作结果的 DTO。
-
+    
         Raises:
             ValueError: 如果找不到投票或投票已结束。
         """
-        statement = select(VoteSession).where(VoteSession.contextThreadId == qo.thread_id)
+        logger.info(f"尝试调整投票时间: message_id={qo.message_id}, hours={qo.hours_to_adjust}")
+        statement = select(VoteSession).where(VoteSession.contextMessageId == qo.message_id)
         result = await self.session.exec(statement)
         vote_session = result.one_or_none()
+    
         if not vote_session:
             raise ValueError("找不到指定的投票会话。")
 

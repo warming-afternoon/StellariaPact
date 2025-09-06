@@ -12,5 +12,4 @@ class BuildConfirmationEmbedQo(BaseDto):
     canceler_id: int | None
     confirmed_parties: Dict[str, int]
     required_roles: List[str]
-    # A map from role key (e.g., "councilModerator") to its display name
     role_display_names: Dict[str, str] = {}

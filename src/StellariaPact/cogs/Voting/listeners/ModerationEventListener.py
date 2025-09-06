@@ -42,19 +42,30 @@ class ModerationEventListener(commands.Cog):
         """
         监听到提案成功创建的事件，为其创建投票面板。
         """
+        
         logger.info(
-            f"接收到 'proposal_created' 事件，为提案 {proposal_dto.id} (帖子ID:"
-            f" {proposal_dto.discussionThreadId}) 创建投票面板。"
+            f"接收到 'proposal_created' 事件"
         )
         try:
-            thread = await DiscordUtils.fetch_thread(self.bot, proposal_dto.discussionThreadId)
+            if not proposal_dto.discussionThreadId:
+                logger.warning(
+                    f"提案 {proposal_dto.id} 没有关联的 discussionThreadId，无法创建投票面板。"
+                )
+                return
+
+            thread = await DiscordUtils.fetch_thread(
+                self.bot, proposal_dto.discussionThreadId
+            )
             if not thread:
                 logger.warning(
                     f"无法找到帖子 {proposal_dto.discussionThreadId}，无法为提案 {proposal_dto.id} 创建投票面板。"
                 )
                 return
 
-            starter_message = await DiscordUtils.get_starter_message(thread)
+            starter_message = thread.starter_message
+            if not starter_message:
+                starter_message = await thread.fetch_message(thread.id)
+            
             if not starter_message:
                 logger.warning(
                     f"无法找到帖子 {proposal_dto.discussionThreadId} 的启动消息，无法解析投票截止时间。"
@@ -82,14 +93,14 @@ class ModerationEventListener(commands.Cog):
 
                 qo = CreateVoteSessionQo(
                     thread_id=thread.id,
-                    proposal_id=proposal_dto.id,
                     context_message_id=message.id,
                     realtime=True,
                     anonymous=True,
                     end_time=end_time,
                 )
-                await uow.voting.create_vote_session(qo)
+                session_dto = await uow.voting.create_vote_session(qo)
                 await uow.commit()
+                logger.info(f"成功为提案 {proposal_dto.id} 创建了新的投票会话 {session_dto.id}，消息ID: {message.id}")
 
         except Exception as e:
             logger.error(

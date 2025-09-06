@@ -728,6 +728,6 @@ class ModerationLogic:
             proposal.status = new_status
             uow.session.add(proposal)
             await uow.commit()
+            await uow.session.refresh(proposal)
 
-            # 重新获取以确保数据最新
-            return await uow.moderation.get_proposal_by_id(proposal_id)
+            return ProposalDto.model_validate(proposal)
