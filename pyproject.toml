@@ -10,15 +10,16 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = { file = "LICENSE" }
 dependencies = [
-    "discord.py",
+    "discord.py[speed]",
     "sqlmodel",
     "aiosqlite",
-    "orjson",
     "python-dotenv",
     "pyhumps",
     "tzdata",
     "aiohttp",
-    "regex"
+    "regex",
+    "aiorun",
+    "uvloop; sys_platform != 'win32'",
 ]
 
 [project.optional-dependencies]

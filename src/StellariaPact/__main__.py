@@ -3,7 +3,9 @@ import json
 import logging
 import os
 from pathlib import Path
+import sys
 
+import aiorun
 import discord
 from discord import app_commands
 from dotenv import load_dotenv
@@ -27,9 +29,39 @@ logger = logging.getLogger("StellariaPact")
 # --- 日志配置结束 ---
 
 
-#  Bot 的实例化和运行逻辑
-def main():
+if sys.platform != "win32":
+    try:
+        import uvloop
+        uvloop.install()
+        logger.info("已成功启用 uvloop 作为 asyncio 事件循环")
+    except ImportError:
+        logger.warning("尝试启用 uvloop 失败，将使用默认事件循环")
+
+
+bot = None
+db_handler = None
+
+async def shutdown(loop):
+    """专门用于清理资源的关闭回调函数"""
+    global bot, db_handler
+    logger.info("收到关闭信号，正在关闭 Bot 资源...")
+    if bot:
+        await bot.close()
+    
+    await HttpClient.close()
+    
+    if db_handler:
+        await db_handler.close()
+    
+    if bot and bot.api_scheduler:
+        await bot.api_scheduler.stop()
+    
+    logger.info("所有资源已清理，程序退出。")
+
+
+async def main_async():
     """主函数，设置并运行 Bot"""
+    global bot, db_handler
     intents = discord.Intents.default()
     intents.message_content = True
     intents.members = True
@@ -41,25 +73,23 @@ def main():
     bot = StellariaPactBot(command_prefix="!", intents=intents, proxy=proxy)
 
     bot.api_scheduler = APIScheduler()
-    # db_handler 将在 setup_hook 中被初始化和分配
     bot.db_handler = None
     bot.config = config
     bot.time_utils = TimeUtils()
 
     @bot.event
     async def setup_hook():
-        # logger.info("正在显式加载所有数据模型...")
+        global db_handler
+        assert bot is not None
         import StellariaPact.models  # noqa: F401
 
-        # logger.info("数据模型加载完成。")
         bot.api_scheduler.start()
 
-        # 初始化 DatabaseHandler 并将其分配给 Bot
-        logger.info("正在初始化 DatabaseHandler...")
         initialize_db_handler()
-        bot.db_handler = get_db_handler()
+        db_handler = get_db_handler() # 将实例赋给全局变量
+        bot.db_handler = db_handler
         logger.info("DatabaseHandler 初始化并分配给 Bot。")
-
+        
         # 使用 Bot 上的句柄初始化数据库表
         logger.info("正在检查数据库表...")
         try:
@@ -96,9 +126,10 @@ def main():
         logger.info("正在同步命令...")
         await bot.api_scheduler.submit(bot.tree.sync(), priority=5)
         logger.info("命令已同步。")
-
+    
     @bot.event
     async def on_ready():
+        assert bot is not None
         logger.info(f"以 {bot.user} 的身份登录")
 
         logger.info("------ Bot 已准备就绪 ------")
@@ -110,6 +141,7 @@ def main():
         """
         全局应用命令错误处理器。
         """
+        assert bot is not None
         original_error = getattr(error, "original", error)
         if isinstance(original_error, MissingRole):
             if not interaction.response.is_done():
@@ -132,24 +164,12 @@ def main():
         logger.error("错误: 未找到或未配置 DISCORD_TOKEN。")
         return
 
-    try:
-        asyncio.run(bot.start(token, reconnect=True))
-    except KeyboardInterrupt:
-        logger.info("检测到手动中断，正在关闭 Bot...")
-    except Exception:
-        logger.exception("Bot 运行时发生未捕获的异常")
-    finally:
-        # 确保 aiohttp session 和数据库连接在程序退出时被关闭
+    await bot.start(token)
 
-        async def cleanup():
-            # 关闭 aiohttp session
-            await HttpClient.close()
-            # 关闭数据库连接
-            db_handler = get_db_handler()
-            if db_handler:
-                await db_handler.close()
 
-        asyncio.run(cleanup())
+def main():
+    """主入口函数"""
+    aiorun.run(main_async(), shutdown_callback=shutdown, stop_on_unhandled_errors=True)
 
 
 if __name__ == "__main__":

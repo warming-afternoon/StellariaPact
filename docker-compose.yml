@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: stellaria-pact-bot
     restart: unless-stopped
+    init: true
     env_file:
       - .env
     volumes:
