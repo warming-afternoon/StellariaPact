@@ -32,6 +32,7 @@ class AnnouncementService:
             title=qo.title,
             content=qo.content,
             endTime=qo.endTime,
+            autoExecute=qo.autoExecute,
             status=1,  # 进行中
         )
 

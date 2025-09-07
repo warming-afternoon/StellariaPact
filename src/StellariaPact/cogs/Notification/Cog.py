@@ -1,12 +1,11 @@
-import asyncio
 import logging
 from datetime import datetime
-from typing import Literal
-
+from typing import Literal, Optional
 import discord
 from discord import app_commands
 from discord.ext import commands
 from zoneinfo import ZoneInfo
+import asyncio
 
 from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
 from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
@@ -18,6 +17,7 @@ from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
+from StellariaPact.share.StringUtils import StringUtils
 
 logger = logging.getLogger("stellaria_pact.notification")
 
@@ -57,23 +57,23 @@ class Notification(commands.Cog):
                 )
 
     @app_commands.command(name="发布公示", description="发布一个新的社区公示")
-    @RoleGuard.requireRoles("stewards")
+    @RoleGuard.requireRoles("stewards", "councilModerator", "executionAuditor")
     @app_commands.rename(
-        duration_hours="公示持续小时数",
         message_threshold="消息数阈值",
         time_interval_minutes="时间间隔阈值",
         enable_reposting="开启公示宣传",
+        auto_execute="结束时自动进入执行",
     )
     @app_commands.describe(
-        duration_hours="公示持续的小时数 (默认: 6, 范围: 4-72)",
         message_threshold="触发重复公示的消息数量 (默认: 1000)",
         time_interval_minutes="触发重复公示的时间间隔分钟数 (默认: 60)",
         enable_reposting="是否开启到期前反复宣传的功能 (默认: 开启)",
+        auto_execute="是否自动变更为执行中 (默认: 是)",
     )
     async def publish_announcement(
         self,
         interaction: discord.Interaction,
-        duration_hours: app_commands.Range[int, 4, 72] = 6,
+        auto_execute: bool = True,
         message_threshold: int = 1000,
         time_interval_minutes: int = 60,
         enable_reposting: bool = True,
@@ -81,16 +81,28 @@ class Notification(commands.Cog):
         """
         处理 /发布公示 命令, 弹出一个模态窗口来收集信息。
         """
+        # 权限检查
+        if auto_execute and not RoleGuard.hasRoles(interaction, "stewards"):
+            await self.bot.api_scheduler.submit(
+                coro=interaction.response.send_message(
+                    "权限不足：只有 `管理组` 才能发布“自动进入执行”的公示。\n请将 `结束时自动进入执行` 选项设置为 `False` 后重试。",
+                    ephemeral=True
+                ),
+                priority=1
+            )
+            return
+
         modal = AnnouncementModal(
             bot=self.bot,
             notification_cog=self,
             enable_reposting=enable_reposting,
             message_threshold=message_threshold,
             time_interval_minutes=time_interval_minutes,
-            duration_hours=duration_hours,
+            auto_execute=auto_execute,
         )
         await self.bot.api_scheduler.submit(
-            coro=interaction.response.send_modal(modal), priority=1
+            coro=interaction.response.send_modal(modal),
+            priority=1
         )
 
     async def create_announcement_workflow(
@@ -98,57 +110,66 @@ class Notification(commands.Cog):
         interaction: discord.Interaction,
         title: str,
         content: str,
-        end_time: datetime,
-        thread_content: str,
-        discord_timestamp: str,
-        start_time_utc: datetime,
+        duration_hours: int,
+        link: Optional[str],
+        auto_execute: bool,
         enable_reposting: bool,
         message_threshold: int,
         time_interval_minutes: int,
     ):
-        """
-        处理创建公示的工作流
-        """
+        """ 处理创建公示的工作流 """
+        await safeDefer(interaction)
         thread = None
         try:
-            # --- 创建讨论帖 ---
-            discussion_channel = self.bot.get_channel(self.discussion_channel_id)
-            if not isinstance(discussion_channel, discord.ForumChannel):
-                raise TypeError("配置的讨论区频道不是有效的论坛频道。")
-
-            target_tag = discord.utils.get(
-                discussion_channel.available_tags, id=self.discussion_tag_id
+            # --- 计算时间 ---
+            start_time_utc = datetime.now(ZoneInfo("UTC"))
+            timezone = self.bot.config.get("timezone", "UTC")
+            end_time = self.bot.time_utils.get_utc_end_time(
+                duration_hours, timezone, start_time=start_time_utc
             )
-            if not target_tag:
-                raise ValueError("在论坛频道中找不到配置的“公示中”标签。")
+            utc_aware_end_time = end_time.replace(tzinfo=ZoneInfo("UTC"))
+            end_time_timestamp = int(utc_aware_end_time.timestamp())
+            discord_timestamp = f"<t:{end_time_timestamp}:F> (<t:{end_time_timestamp}:R>)"
 
-            # 在创建工作流之前，先生成 thread_content
-            thread_content = AnnouncementEmbedBuilder.create_thread_content(
-                title=title,
-                content=content,
-                discord_timestamp=discord_timestamp,
-                author_id=interaction.user.id,
-            )
+            # --- 步骤 1: 获取或创建讨论帖 ---
+            if link:
+                thread_id = StringUtils.extract_thread_id_from_url(link)
+                if not thread_id:
+                    raise ValueError("提供的链接格式不正确，无法识别帖子ID。")
+                thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
+                if not thread:
+                    raise ValueError(f"无法根据链接找到ID为 {thread_id} 的帖子。")
+            else:
+                discussion_channel = self.bot.get_channel(self.discussion_channel_id)
+                if not isinstance(discussion_channel, discord.ForumChannel):
+                    raise TypeError("配置的讨论区频道不是有效的论坛频道。")
+                
+                thread_content = AnnouncementEmbedBuilder.create_thread_content(
+                    title=title,
+                    content=content,
+                    discord_timestamp=discord_timestamp,
+                    author_id=interaction.user.id,
+                )
+                thread_name = f"[公示中] {title}"
+                
+                initial_tags = DiscordUtils.calculate_new_tags(
+                    current_tags=[],
+                    forum_tags=discussion_channel.available_tags,
+                    config=self.bot.config,
+                    target_tag_name="discussion",
+                )
+                
+                thread_creation_result = await self.bot.api_scheduler.submit(
+                    coro=discussion_channel.create_thread(
+                        name=thread_name,
+                        content=thread_content,
+                        applied_tags=initial_tags or []
+                    ),
+                    priority=5,
+                )
+                thread = thread_creation_result.thread
 
-            thread_name = f"[讨论中] {title}"
-
-            # 计算初始标签
-            initial_tags = DiscordUtils.calculate_new_tags(
-                current_tags=[],
-                forum_tags=discussion_channel.available_tags,
-                config=self.bot.config,
-                target_tag_name="discussion",
-            )
-
-            thread_creation_result = await self.bot.api_scheduler.submit(
-                coro=discussion_channel.create_thread(
-                    name=thread_name, content=thread_content, applied_tags=initial_tags or []
-                ),
-                priority=5,
-            )
-            thread = thread_creation_result.thread
-
-            # --- 数据库操作 ---
+            # --- 步骤 2: 数据库操作 ---
             async with UnitOfWork(self.bot.db_handler) as uow:
                 qo = CreateAnnouncementQo(
                     discussionThreadId=thread.id,
@@ -156,10 +177,10 @@ class Notification(commands.Cog):
                     title=title,
                     content=content,
                     endTime=end_time,
+                    autoExecute=auto_execute,
                 )
                 announcement_dto = await uow.announcements.create_announcement(qo)
-
-                # 如果开启了重复公示，则创建监控记录
+                
                 if enable_reposting:
                     await uow.announcement_monitors.create_monitors_for_announcement(
                         announcement_id=announcement_dto.id,
@@ -167,8 +188,9 @@ class Notification(commands.Cog):
                         message_threshold=message_threshold,
                         time_interval_minutes=time_interval_minutes,
                     )
+                await uow.commit()
 
-            # --- 广播 ---
+            # --- 步骤 3: 广播 ---
             broadcast_embed = AnnouncementEmbedBuilder.create_announcement_embed(
                 title=title,
                 content=content,
@@ -183,12 +205,12 @@ class Notification(commands.Cog):
                 for channel_id in self.broadcast_channel_ids
                 if isinstance(channel := self.bot.get_channel(channel_id), discord.TextChannel)
             ]
-            await asyncio.gather(*broadcast_tasks, return_exceptions=True)  # 忽略广播的个别错误
+            await asyncio.gather(*broadcast_tasks, return_exceptions=True)
 
             # --- 最终确认 ---
             await self.bot.api_scheduler.submit(
                 coro=interaction.followup.send(
-                    f"✅ 公示 **{title}** 已成功发布！\n讨论帖已在 {thread.mention} 创建。",
+                    f"✅ 公示 **{title}** 已成功发布！\n讨论帖: {thread.mention}",
                     ephemeral=True,
                 ),
                 priority=1,
@@ -198,12 +220,13 @@ class Notification(commands.Cog):
             logger.error(f"发布公示工作流失败: {e}", exc_info=True)
             error_message = f"发布公示时发生未知错误，请联系技术员。\n`{e}`"
             if isinstance(e, discord.Forbidden):
-                error_message = "机器人可能缺少创建帖子或应用标签的权限。"
+                error_message = "机器人可能缺少创建帖子、获取帖子或应用标签的权限。"
             elif isinstance(e, (TypeError, ValueError)):
-                error_message = f"配置错误: {e}"
-
-            if thread:
-                error_message += f"\n\n讨论帖 {thread.mention} 已创建，但后续操作失败。"
+                error_message = f"配置或输入错误: {e}"
+            
+            # 在新建帖子失败时，不显示 thread.mention
+            if thread and not link:
+                 error_message += f"\n\n讨论帖 {thread.mention} 已创建，但后续操作失败。"
 
             await self.bot.api_scheduler.submit(
                 coro=interaction.followup.send(error_message, ephemeral=True), priority=1

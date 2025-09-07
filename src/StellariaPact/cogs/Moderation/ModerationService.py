@@ -380,6 +380,7 @@ class ModerationService:
 
         return ConfirmationSessionDto(
             id=session.id,
+            context=session.context,
             status=session.status,
             canceler_id=session.cancelerId,
             confirmed_parties=session.confirmedParties or {},

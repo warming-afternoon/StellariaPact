@@ -13,3 +13,4 @@ class CreateAnnouncementQo(BaseModel):
     title: str
     content: str
     endTime: datetime
+    autoExecute: bool

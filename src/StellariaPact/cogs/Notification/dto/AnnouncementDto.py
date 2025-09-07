@@ -15,3 +15,4 @@ class AnnouncementDto(BaseDto):
     content: str
     status: int
     endTime: datetime
+    autoExecute: bool

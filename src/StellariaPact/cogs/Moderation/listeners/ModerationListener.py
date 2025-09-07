@@ -91,7 +91,6 @@ class ModerationListener(commands.Cog):
 
             # 3. 如果成功创建了新的提案，则派发事件
             if proposal_dto:
-                logger.info(f"成功创建提案 {proposal_dto.id}，派发 'proposal_created' 事件。")
                 self.bot.dispatch("proposal_created", proposal_dto)
             else:
                 logger.debug(f"提案 {thread.id} 已存在，不派发事件。")

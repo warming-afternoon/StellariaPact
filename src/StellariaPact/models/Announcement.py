@@ -20,12 +20,13 @@ class Announcement(BaseModel, table=True):
     content: str = Field(description="公示内容")
     status: int = Field(default=1, index=True, description="公示状态: 0-已结束, 1-进行中")
     endTime: datetime = Field(description="公示截止时间")
+    autoExecute: bool = Field(default=True, description="公示结束后是否自动进入执行阶段")
+
     createdAt: datetime = Field(
         default_factory=datetime.utcnow,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
         description="创建时间",
     )
-
     # --- 关系定义 ---
     channelMonitors: List["AnnouncementChannelMonitor"] = Relationship(
         back_populates="announcement"

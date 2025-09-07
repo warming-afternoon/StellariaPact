@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
     AnnouncementMonitorService,
 )
+from StellariaPact.cogs.Notification.dto.AnnouncementDto import AnnouncementDto
 from StellariaPact.cogs.Notification.RepostService import RepostService
 from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from StellariaPact.share.DiscordUtils import DiscordUtils
@@ -139,7 +140,7 @@ class BackgroundTasks(commands.Cog):
 
         logger.info("所有到期公示处理完毕。")
 
-    async def _notify_announcement_finished(self, announcement_dto):
+    async def _notify_announcement_finished(self, announcement_dto: AnnouncementDto):
         """为单个已完成的公示发送通知并更新标签"""
         try:
             thread = self.bot.get_channel(
@@ -153,45 +154,58 @@ class BackgroundTasks(commands.Cog):
                 )
                 return
 
-            # 修改标签
-            forum_channel = thread.parent
-            if isinstance(forum_channel, discord.ForumChannel):
-                new_tags = DiscordUtils.calculate_new_tags(
-                    current_tags=thread.applied_tags,
-                    forum_tags=forum_channel.available_tags,
-                    config=self.bot.config,
-                    target_tag_name="executing",
-                )
-
+            if announcement_dto.autoExecute:
+                # 自动执行
+                embed_title = f"公示结束: {announcement_dto.title}"
+                embed_description = "本次公示已到期，现已自动进入执行阶段。"
+                color = discord.Color.green()
+                
+                # 修改标签和标题
+                forum_channel = thread.parent
                 new_title = f"[执行中] {announcement_dto.title}"
-                if new_tags is not None:
-                    await self.bot.api_scheduler.submit(
-                        coro=thread.edit(name=new_title, applied_tags=new_tags),
-                        priority=7,
+
+                if isinstance(forum_channel, discord.ForumChannel):
+                    new_tags = DiscordUtils.calculate_new_tags(
+                        current_tags=thread.applied_tags,
+                        forum_tags=forum_channel.available_tags,
+                        config=self.bot.config,
+                        target_tag_name="executing",
                     )
-                else:
-                    await self.bot.api_scheduler.submit(
-                        coro=thread.edit(name=new_title), priority=7
-                    )
+                    if new_tags is not None:
+                        await self.bot.api_scheduler.submit(
+                            coro=thread.edit(name=new_title, applied_tags=new_tags),
+                            priority=7,
+                        )
+                    else:
+                        await self.bot.api_scheduler.submit(
+                            coro=thread.edit(name=new_title), priority=7
+                        )
+
+            else:
+                # 非自动执行
+                embed_title = f"公示期结束: {announcement_dto.title}"
+                embed_description = "本次公示已到期"
+                color = discord.Color.dark_grey()
 
             # 发送通知
             embed = discord.Embed(
-                title=f"公示结束: {announcement_dto.title}",
-                description="本次公示已到期",
-                color=discord.Color.orange(),
+                title=embed_title,
+                description=embed_description,
+                color=color,
             )
             utc_end_time = announcement_dto.endTime.replace(tzinfo=ZoneInfo("UTC"))
             discord_timestamp = (
                 f"<t:{int(utc_end_time.timestamp())}:F>(<t:{int(utc_end_time.timestamp())}:R>)"
             )
             embed.add_field(name="公示截止时间", value=discord_timestamp)
-            role_mention = f"<@&{self.stewards_role_id}>"
+
+            content = f"<@&{self.stewards_role_id}>"
             await self.bot.api_scheduler.submit(
-                coro=thread.send(content=role_mention, embed=embed),
-                priority=8,
+                coro=thread.send(content=content, embed=embed), priority=8,
             )
-            # 分发事件
-            self.bot.dispatch("announcement_finished", announcement_dto)
+
+            if announcement_dto.autoExecute:
+                self.bot.dispatch("announcement_finished", announcement_dto)
         except discord.NotFound:
             logger.error(
                 (
