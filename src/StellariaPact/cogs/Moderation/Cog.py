@@ -63,7 +63,7 @@ class Moderation(commands.Cog):
     @RoleGuard.requireRoles("councilModerator",)
     async def kick_proposal(self, interaction: discord.Interaction, message: discord.Message):
         """
-        消息右键菜单命令，用于将消息作者踢出提案
+        [议事督导] 消息右键菜单命令，用于将消息作者踢出提案
         """
         # 确保在可以发送消息的帖子中使用
         if not isinstance(interaction.channel, discord.Thread):
@@ -105,18 +105,18 @@ class Moderation(commands.Cog):
             coro=interaction.response.send_modal(modal), priority=1
         )
 
-    @app_commands.command(name="进入执行", description="将讨论中的提案变更为执行中")
+    @app_commands.command(name="进入执行", description="[议事督导+执行监理] 将讨论中的提案变更为执行中")
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     async def execute_proposal(self, interaction: discord.Interaction):
         await self._handle_confirmation_command(interaction, self.logic.handle_execute_proposal)
 
 
-    @app_commands.command(name="提案完成", description="将执行中的提案变更为已结束")
+    @app_commands.command(name="提案完成", description="[议事督导+执行监理] 将执行中的提案变更为已结束")
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     async def complete_proposal(self, interaction: discord.Interaction):
         await self._handle_confirmation_command(interaction, self.logic.handle_complete_proposal)
 
-    @app_commands.command(name="废弃", description="将执行中的提案废弃")
+    @app_commands.command(name="废弃", description="[执行监理] 将执行中的提案废弃")
     @RoleGuard.requireRoles("executionAuditor")
     async def abandon_proposal(self, interaction: discord.Interaction):
         """ 通过弹出一个模态框来废弃一个提案。 """
@@ -186,7 +186,7 @@ class Moderation(commands.Cog):
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
 
-    @app_commands.command(name="创建提案投票", description="为当前帖子手动创建一个提案投票")
+    @app_commands.command(name="创建提案投票", description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票")
     async def create_proposal_vote(self, interaction: discord.Interaction):
         await safeDefer(interaction)
 
@@ -346,7 +346,7 @@ class Moderation(commands.Cog):
                 canceler_id=result_dto.session_dto.canceler_id,
                 confirmed_parties=result_dto.session_dto.confirmed_parties,
                 required_roles=result_dto.session_dto.required_roles,
-                role_display_names=role_display_names,
+                role_display_names=role_display_names
             )
 
             if not self.bot.user:
