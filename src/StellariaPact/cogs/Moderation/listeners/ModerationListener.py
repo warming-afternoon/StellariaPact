@@ -91,7 +91,8 @@ class ModerationListener(commands.Cog):
 
             # 3. 如果成功创建了新的提案，则派发事件
             if proposal_dto:
-                self.bot.dispatch("proposal_created", proposal_dto)
+                # 对于自动创建的提案，使用默认的投票参数
+                self.bot.dispatch("proposal_created", proposal_dto, 48, True, True)
             else:
                 logger.debug(f"提案 {thread.id} 已存在，不派发事件。")
 

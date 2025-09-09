@@ -38,14 +38,18 @@ class ModerationEventListener(commands.Cog):
         self.logic: VotingLogic = VotingLogic(bot)
 
     @commands.Cog.listener()
-    async def on_proposal_created(self, proposal_dto: ProposalDto):
+    async def on_proposal_created(
+        self,
+        proposal_dto: ProposalDto,
+        duration_hours: int = 48,
+        anonymous: bool = True,
+        realtime: bool = True,
+    ):
         """
         监听到提案成功创建的事件，为其创建投票面板。
         """
-        
-        logger.info(
-            f"接收到 'proposal_created' 事件"
-        )
+
+        logger.info(f"接收到 'proposal_created' 事件")
         try:
             if not proposal_dto.discussionThreadId:
                 logger.warning(
@@ -65,7 +69,7 @@ class ModerationEventListener(commands.Cog):
             starter_message = thread.starter_message
             if not starter_message:
                 starter_message = await thread.fetch_message(thread.id)
-            
+
             if not starter_message:
                 logger.warning(
                     f"无法找到帖子 {proposal_dto.discussionThreadId} 的启动消息，无法解析投票截止时间。"
@@ -73,18 +77,20 @@ class ModerationEventListener(commands.Cog):
                 return
 
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 尝试从帖子内容中解析截止时间，如果没有则默认为48小时后
+                # 尝试从帖子内容中解析截止时间，如果没有则根据传入参数计算
                 end_time = TimeUtils.parse_discord_timestamp(starter_message.content)
                 if end_time is None:
                     target_tz = self.bot.config.get("timezone", "UTC")
-                    end_time = TimeUtils.get_utc_end_time(duration_hours=48, target_tz=target_tz)
+                    end_time = TimeUtils.get_utc_end_time(
+                        duration_hours=duration_hours, target_tz=target_tz
+                    )
 
                 view = VoteView(self.bot)
                 embed = VoteEmbedBuilder.create_initial_vote_embed(
                     topic=proposal_dto.title,
                     author=None,
-                    realtime=True,
-                    anonymous=True,
+                    realtime=realtime,
+                    anonymous=anonymous,
                     end_time=end_time,
                 )
                 message = await self.bot.api_scheduler.submit(
@@ -94,13 +100,15 @@ class ModerationEventListener(commands.Cog):
                 qo = CreateVoteSessionQo(
                     thread_id=thread.id,
                     context_message_id=message.id,
-                    realtime=True,
-                    anonymous=True,
+                    realtime=realtime,
+                    anonymous=anonymous,
                     end_time=end_time,
                 )
                 session_dto = await uow.voting.create_vote_session(qo)
                 await uow.commit()
-                logger.debug(f"成功为提案 {proposal_dto.id} 创建了新的投票会话 {session_dto.id}，消息ID: {message.id}")
+                logger.debug(
+                    f"成功为提案 {proposal_dto.id} 创建了新的投票会话 {session_dto.id}，消息ID: {message.id}"
+                )
 
         except Exception as e:
             logger.error(

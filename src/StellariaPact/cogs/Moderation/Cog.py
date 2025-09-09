@@ -63,7 +63,7 @@ class Moderation(commands.Cog):
     @RoleGuard.requireRoles("councilModerator",)
     async def kick_proposal(self, interaction: discord.Interaction, message: discord.Message):
         """
-        消息右键菜单命令，用于将消息作者踢出提案
+        [议事督导] 消息右键菜单命令，用于将消息作者踢出提案
         """
         # 确保在可以发送消息的帖子中使用
         if not isinstance(interaction.channel, discord.Thread):
@@ -105,18 +105,18 @@ class Moderation(commands.Cog):
             coro=interaction.response.send_modal(modal), priority=1
         )
 
-    @app_commands.command(name="进入执行", description="将讨论中的提案变更为执行中")
+    @app_commands.command(name="进入执行", description="[议事督导+执行监理] 将讨论中的提案变更为执行中")
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     async def execute_proposal(self, interaction: discord.Interaction):
         await self._handle_confirmation_command(interaction, self.logic.handle_execute_proposal)
 
 
-    @app_commands.command(name="提案完成", description="将执行中的提案变更为已结束")
+    @app_commands.command(name="提案完成", description="[议事督导+执行监理] 将执行中的提案变更为已结束")
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     async def complete_proposal(self, interaction: discord.Interaction):
         await self._handle_confirmation_command(interaction, self.logic.handle_complete_proposal)
 
-    @app_commands.command(name="废弃", description="将执行中的提案废弃")
+    @app_commands.command(name="废弃", description="[执行监理] 将执行中的提案废弃")
     @RoleGuard.requireRoles("executionAuditor")
     async def abandon_proposal(self, interaction: discord.Interaction):
         """ 通过弹出一个模态框来废弃一个提案。 """
@@ -186,9 +186,20 @@ class Moderation(commands.Cog):
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
 
-    @app_commands.command(name="创建提案投票", description="为当前帖子手动创建一个提案投票")
-    async def create_proposal_vote(self, interaction: discord.Interaction):
-        await safeDefer(interaction)
+    @app_commands.command(name="创建提案投票", description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票")
+    @app_commands.describe(
+        duration_hours="投票持续时间（小时），默认为 48 小时。",
+        anonymous="是否匿名投票，默认为 是。",
+        realtime="是否实时显示票数，默认为 是。",
+    )
+    async def create_proposal_vote(
+        self,
+        interaction: discord.Interaction,
+        duration_hours: app_commands.Range[int, 1, 720] = 48,
+        anonymous: bool = True,
+        realtime: bool = True,
+    ):
+        await safeDefer(interaction, ephemeral=True)
 
         if not isinstance(interaction.channel, discord.Thread):
             await interaction.followup.send("此命令只能在提案帖子内使用。", ephemeral=True)
@@ -228,7 +239,9 @@ class Moderation(commands.Cog):
 
             # 3. 派发事件以创建投票
             if proposal_dto:
-                self.bot.dispatch("proposal_created", proposal_dto)
+                self.bot.dispatch(
+                    "proposal_created", proposal_dto, duration_hours, anonymous, realtime
+                )
                 await interaction.followup.send("✅ 成功为本帖创建了新的投票！", ephemeral=True)
             else:
                 await interaction.followup.send("处理提案信息失败，无法创建投票。", ephemeral=True)
@@ -346,7 +359,7 @@ class Moderation(commands.Cog):
                 canceler_id=result_dto.session_dto.canceler_id,
                 confirmed_parties=result_dto.session_dto.confirmed_parties,
                 required_roles=result_dto.session_dto.required_roles,
-                role_display_names=role_display_names,
+                role_display_names=role_display_names
             )
 
             if not self.bot.user:
