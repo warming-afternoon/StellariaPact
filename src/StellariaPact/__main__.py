@@ -2,8 +2,8 @@ import asyncio
 import json
 import logging
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import aiorun
 import discord
@@ -12,8 +12,7 @@ from dotenv import load_dotenv
 
 from StellariaPact.share.ApiScheduler import APIScheduler
 from StellariaPact.share.auth.MissingRole import MissingRole
-from StellariaPact.share.DatabaseHandler import (get_db_handler,
-                                                 initialize_db_handler)
+from StellariaPact.share.DatabaseHandler import get_db_handler, initialize_db_handler
 from StellariaPact.share.HttpClient import HttpClient
 from StellariaPact.share.LoggingConfigurator import LoggingConfigurator
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -32,6 +31,7 @@ logger = logging.getLogger("StellariaPact")
 if sys.platform != "win32":
     try:
         import uvloop
+
         uvloop.install()
         logger.info("已成功启用 uvloop 作为 asyncio 事件循环")
     except ImportError:
@@ -41,21 +41,22 @@ if sys.platform != "win32":
 bot = None
 db_handler = None
 
+
 async def shutdown(loop):
     """专门用于清理资源的关闭回调函数"""
     global bot, db_handler
     logger.info("收到关闭信号，正在关闭 Bot 资源...")
     if bot:
         await bot.close()
-    
+
     await HttpClient.close()
-    
+
     if db_handler:
         await db_handler.close()
-    
+
     if bot and bot.api_scheduler:
         await bot.api_scheduler.stop()
-    
+
     logger.info("所有资源已清理，程序退出。")
 
 
@@ -86,10 +87,10 @@ async def main_async():
         bot.api_scheduler.start()
 
         initialize_db_handler()
-        db_handler = get_db_handler() # 将实例赋给全局变量
+        db_handler = get_db_handler()  # 将实例赋给全局变量
         bot.db_handler = db_handler
         logger.info("DatabaseHandler 初始化并分配给 Bot。")
-        
+
         # 使用 Bot 上的句柄初始化数据库表
         logger.info("正在检查数据库表...")
         try:
@@ -126,7 +127,7 @@ async def main_async():
         logger.info("正在同步命令...")
         await bot.api_scheduler.submit(bot.tree.sync(), priority=5)
         logger.info("命令已同步。")
-    
+
     @bot.event
     async def on_ready():
         assert bot is not None

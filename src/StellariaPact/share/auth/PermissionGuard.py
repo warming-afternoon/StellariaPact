@@ -1,6 +1,7 @@
 import discord
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+
 from StellariaPact.share.auth.RoleGuard import RoleGuard
+from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
 
@@ -14,9 +15,7 @@ class PermissionGuard:
         2. 用户是当前帖子关联提案的发起人。
         """
         # 1. 检查是否为管理员 (静态角色权限)
-        if RoleGuard.hasRoles(
-            interaction, "councilModerator", "executionAuditor"
-        ):
+        if RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor"):
             return True
 
         # 2. 检查是否为提案人 (动态所有权权限)
@@ -25,9 +24,7 @@ class PermissionGuard:
 
         bot: StellariaPactBot = interaction.client  # type: ignore
         async with UnitOfWork(bot.db_handler) as uow:
-            proposal = await uow.moderation.get_proposal_by_thread_id(
-                interaction.channel.id
-            )
+            proposal = await uow.moderation.get_proposal_by_thread_id(interaction.channel.id)
             if proposal and proposal.proposerId == interaction.user.id:
                 return True
 

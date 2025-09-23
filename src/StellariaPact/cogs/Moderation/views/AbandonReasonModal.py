@@ -5,17 +5,19 @@ import discord
 
 from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 
 logger = logging.getLogger(__name__)
 
 
 class AbandonReasonModal(discord.ui.Modal):
-    def __init__(self, bot: StellariaPactBot, thread_manager: ProposalThreadManager):  # 修改构造函数
+    def __init__(
+        self, bot: StellariaPactBot, thread_manager: ProposalThreadManager
+    ):  # 修改构造函数
         super().__init__(title="废弃提案原因")
         self.bot = bot
         self.thread_manager = thread_manager
@@ -48,7 +50,7 @@ class AbandonReasonModal(discord.ui.Modal):
             )
 
         # --- 事务外执行API调用 ---
-        
+
         # 准备公示Embed
         clean_title_for_embed = StringUtils.clean_title(interaction.channel.name)
         embed = ModerationEmbedBuilder.build_status_change_embed(
@@ -59,5 +61,5 @@ class AbandonReasonModal(discord.ui.Modal):
         )
         await self.bot.api_scheduler.submit(interaction.channel.send(embed=embed), 1)
         await asyncio.sleep(0.05)
-        
+
         await self.thread_manager.update_status(interaction.channel, "abandoned")

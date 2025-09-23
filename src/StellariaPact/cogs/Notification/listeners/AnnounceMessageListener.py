@@ -9,8 +9,7 @@ from discord.ext import commands, tasks
 from sqlalchemy import func, select, update
 
 from StellariaPact.models.Announcement import Announcement
-from StellariaPact.models.AnnouncementChannelMonitor import \
-    AnnouncementChannelMonitor
+from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
@@ -65,7 +64,7 @@ class AnnounceMessageListener(commands.Cog):
             cache_to_flush = self.message_cache.copy()
             self.message_cache.clear()
 
-        logger.info(f"正在将 {len(cache_to_flush)} 个频道的缓存消息计数写入数据库...")
+        logger.debug(f"正在将 {len(cache_to_flush)} 个频道的缓存消息计数写入数据库...")
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
                 for channel_id, increment in cache_to_flush.items():
@@ -96,7 +95,7 @@ class AnnounceMessageListener(commands.Cog):
                     )
                     await uow.session.execute(stmt)
                 await uow.commit()
-            logger.info("缓存消息计数成功写入数据库。")
+            logger.debug("缓存消息计数成功写入数据库。")
         except Exception as e:
             logger.error(f"更新消息计数缓存到数据库时发生错误: {e}", exc_info=True)
             # 如果失败，可以考虑将 cache_to_flush 的内容重新加回到 self.message_cache 中

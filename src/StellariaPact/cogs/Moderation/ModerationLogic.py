@@ -15,8 +15,7 @@ from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from .dto.CollectionExpiredResultDto import CollectionExpiredResultDto
 from .dto.ConfirmationSessionDto import ConfirmationSessionDto
 from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
-from .dto.HandleSupportObjectionResultDto import \
-    HandleSupportObjectionResultDto
+from .dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
 from .dto.ObjectionDetailsDto import ObjectionDetailsDto
 from .dto.ObjectionDto import ObjectionDto
 from .dto.ObjectionReasonUpdateResultDto import ObjectionReasonUpdateResultDto
@@ -28,8 +27,7 @@ from .dto.VoteFinishedResultDto import VoteFinishedResultDto
 from .qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
 from .qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 from .qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
-from .qo.CreateObjectionAndVoteSessionShellQo import \
-    CreateObjectionAndVoteSessionShellQo
+from .qo.CreateObjectionAndVoteSessionShellQo import CreateObjectionAndVoteSessionShellQo
 from .qo.CreateObjectionQo import CreateObjectionQo
 from .qo.EditObjectionReasonQo import EditObjectionReasonQo
 from .qo.ObjectionSupportQo import ObjectionSupportQo
@@ -69,7 +67,6 @@ class ModerationLogic:
 
             # 在事务提交后，重新获取 DTO 以确保数据一致性
             return await uow.moderation.get_objection_by_thread_id(objection_thread_id)
-
 
     async def handle_raise_objection(
         self,
@@ -275,7 +272,6 @@ class ModerationLogic:
             await uow.moderation.update_confirmation_session_message_id(session_id, message_id)
             await uow.commit()
 
-
     async def handle_objection_vote_finished(
         self, session_dto: VoteSessionDto, result_dto: VoteStatusDto
     ) -> Optional[VoteFinishedResultDto]:
@@ -452,7 +448,7 @@ class ModerationLogic:
             return CollectionExpiredResultDto(
                 embed_qo=embed_qo,
                 notification_channel_id=extracted_data["notification_channel_id"],
-                original_vote_message_id=session_dto.contextMessageId
+                original_vote_message_id=session_dto.contextMessageId,
             )
 
         except (ValueError, RuntimeError) as e:

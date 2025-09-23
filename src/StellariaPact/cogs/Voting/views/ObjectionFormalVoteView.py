@@ -3,8 +3,7 @@ import logging
 import discord
 
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
-from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import \
-    ObjectionVoteEmbedBuilder
+from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 

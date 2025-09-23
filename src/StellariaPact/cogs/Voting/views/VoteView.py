@@ -6,7 +6,6 @@ from StellariaPact.cogs.Voting.Cog import Voting
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VotingChoiceView import VotingChoiceView
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
-from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.DiscordUtils import send_private_panel
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot

@@ -1,11 +1,12 @@
+import asyncio
 import logging
 from datetime import datetime
 from typing import Literal, Optional
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 from zoneinfo import ZoneInfo
-import asyncio
 
 from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
 from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
@@ -15,9 +16,9 @@ from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.TimeUtils import TimeUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
-from StellariaPact.share.StringUtils import StringUtils
 
 logger = logging.getLogger("stellaria_pact.notification")
 
@@ -86,9 +87,9 @@ class Notification(commands.Cog):
             await self.bot.api_scheduler.submit(
                 coro=interaction.response.send_message(
                     "权限不足：只有 `管理组` 才能发布“自动进入执行”的公示。\n请将 `结束时自动进入执行` 选项设置为 `False` 后重试。",
-                    ephemeral=True
+                    ephemeral=True,
                 ),
-                priority=1
+                priority=1,
             )
             return
 
@@ -101,8 +102,7 @@ class Notification(commands.Cog):
             auto_execute=auto_execute,
         )
         await self.bot.api_scheduler.submit(
-            coro=interaction.response.send_modal(modal),
-            priority=1
+            coro=interaction.response.send_modal(modal), priority=1
         )
 
     async def create_announcement_workflow(
@@ -117,7 +117,7 @@ class Notification(commands.Cog):
         message_threshold: int,
         time_interval_minutes: int,
     ):
-        """ 处理创建公示的工作流 """
+        """处理创建公示的工作流"""
         await safeDefer(interaction)
         thread = None
         try:
@@ -143,7 +143,7 @@ class Notification(commands.Cog):
                 discussion_channel = self.bot.get_channel(self.discussion_channel_id)
                 if not isinstance(discussion_channel, discord.ForumChannel):
                     raise TypeError("配置的讨论区频道不是有效的论坛频道。")
-                
+
                 thread_content = AnnouncementEmbedBuilder.create_thread_content(
                     title=title,
                     content=content,
@@ -151,19 +151,17 @@ class Notification(commands.Cog):
                     author_id=interaction.user.id,
                 )
                 thread_name = f"[公示中] {title}"
-                
+
                 initial_tags = DiscordUtils.calculate_new_tags(
                     current_tags=[],
                     forum_tags=discussion_channel.available_tags,
                     config=self.bot.config,
                     target_tag_name="discussion",
                 )
-                
+
                 thread_creation_result = await self.bot.api_scheduler.submit(
                     coro=discussion_channel.create_thread(
-                        name=thread_name,
-                        content=thread_content,
-                        applied_tags=initial_tags or []
+                        name=thread_name, content=thread_content, applied_tags=initial_tags or []
                     ),
                     priority=5,
                 )
@@ -180,7 +178,7 @@ class Notification(commands.Cog):
                     autoExecute=auto_execute,
                 )
                 announcement_dto = await uow.announcements.create_announcement(qo)
-                
+
                 if enable_reposting:
                     await uow.announcement_monitors.create_monitors_for_announcement(
                         announcement_id=announcement_dto.id,
@@ -223,10 +221,10 @@ class Notification(commands.Cog):
                 error_message = "机器人可能缺少创建帖子、获取帖子或应用标签的权限。"
             elif isinstance(e, (TypeError, ValueError)):
                 error_message = f"配置或输入错误: {e}"
-            
+
             # 在新建帖子失败时，不显示 thread.mention
             if thread and not link:
-                 error_message += f"\n\n讨论帖 {thread.mention} 已创建，但后续操作失败。"
+                error_message += f"\n\n讨论帖 {thread.mention} 已创建，但后续操作失败。"
 
             await self.bot.api_scheduler.submit(
                 coro=interaction.followup.send(error_message, ephemeral=True), priority=1

@@ -2,13 +2,10 @@ import asyncio
 import logging
 
 from StellariaPact.cogs.Voting.Cog import Voting
-from StellariaPact.cogs.Voting.listeners.ModerationEventListener import \
-    ModerationEventListener
-from StellariaPact.cogs.Voting.listeners.VotingMessageListener import \
-    VotingMessageListener
+from StellariaPact.cogs.Voting.listeners.ModerationEventListener import ModerationEventListener
+from StellariaPact.cogs.Voting.listeners.VotingMessageListener import VotingMessageListener
 from StellariaPact.cogs.Voting.tasks.VoteCloser import VoteCloser
-from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import \
-    ObjectionFormalVoteView
+from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import ObjectionFormalVoteView
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 

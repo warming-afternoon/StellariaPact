@@ -4,23 +4,17 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import \
-    HandleSupportObjectionResultDto
-from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import \
-    ObjectionDetailsDto
-from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import \
-    ObjectionVotePanelDto
+from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import (
+    HandleSupportObjectionResultDto,
+)
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
+from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
 from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
-from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import \
-    ObjectionCreationVoteView
-from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import \
-    BuildFirstObjectionEmbedQo
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
-    CreateVoteSessionQo
-from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import \
-    ObjectionFormalVoteView
-from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import \
-    ObjectionVoteEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import ObjectionCreationVoteView
+from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
+from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import ObjectionFormalVoteView
+from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
@@ -49,7 +43,7 @@ class ModerationEventListener(commands.Cog):
         监听到提案成功创建的事件，为其创建投票面板。
         """
 
-        logger.info(f"接收到 'proposal_created' 事件")
+        logger.info("接收到 'proposal_created' 事件")
         try:
             if not proposal_dto.discussionThreadId:
                 logger.warning(
@@ -57,9 +51,7 @@ class ModerationEventListener(commands.Cog):
                 )
                 return
 
-            thread = await DiscordUtils.fetch_thread(
-                self.bot, proposal_dto.discussionThreadId
-            )
+            thread = await DiscordUtils.fetch_thread(self.bot, proposal_dto.discussionThreadId)
             if not thread:
                 logger.warning(
                     f"无法找到帖子 {proposal_dto.discussionThreadId}，无法为提案 {proposal_dto.id} 创建投票面板。"
@@ -77,8 +69,14 @@ class ModerationEventListener(commands.Cog):
                 return
 
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 尝试从帖子内容中解析截止时间，如果没有则根据传入参数计算
+                # 尝试从帖子内容中解析截止时间
                 end_time = TimeUtils.parse_discord_timestamp(starter_message.content)
+
+                # 如果解析出的时间已过期，则忽略它
+                if end_time and end_time < datetime.now(timezone.utc):
+                    end_time = None
+
+                # 如果没有有效的截止时间，则根据传入参数计算
                 if end_time is None:
                     target_tz = self.bot.config.get("timezone", "UTC")
                     end_time = TimeUtils.get_utc_end_time(

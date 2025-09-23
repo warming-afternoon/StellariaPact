@@ -44,9 +44,7 @@ class DatabaseHandler:
         sqlite_url = f"sqlite+aiosqlite:///{db_name}"
         connect_args = {"timeout": 15}
 
-        self._async_engine = create_async_engine(
-            sqlite_url, echo=False, connect_args=connect_args
-        )
+        self._async_engine = create_async_engine(sqlite_url, echo=False, connect_args=connect_args)
 
         @event.listens_for(self._async_engine.sync_engine, "connect")
         def _enable_wal(dbapi_connection, connection_record):

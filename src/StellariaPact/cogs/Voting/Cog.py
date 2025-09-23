@@ -11,10 +11,10 @@ from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
-from StellariaPact.cogs.Voting.views.ObjectionFormalVoteChoiceView import \
-    ObjectionFormalVoteChoiceView
-from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import \
-    ObjectionVoteEmbedBuilder
+from StellariaPact.cogs.Voting.views.ObjectionFormalVoteChoiceView import (
+    ObjectionFormalVoteChoiceView,
+)
+from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.share.auth.MissingRole import MissingRole
@@ -218,7 +218,7 @@ class Voting(commands.Cog):
                 return
 
             if vote_details.context_message_id is None:
-                logger.warning(f"vote_details.context_message_id 为 None，无法获取公共消息。")
+                logger.warning("vote_details.context_message_id 为 None，无法获取公共消息。")
                 return
             public_message = await thread.fetch_message(vote_details.context_message_id)
             if not public_message.embeds:
@@ -252,7 +252,6 @@ class Voting(commands.Cog):
             self.bot.dispatch(event_name, interaction, original_message_id, thread_id)
         else:
             self.bot.dispatch(event_name, interaction, original_message_id, choice, thread_id)
-
 
     @commands.Cog.listener()
     async def on_objection_formal_vote_manage(self, interaction: discord.Interaction):

@@ -159,7 +159,7 @@ class BackgroundTasks(commands.Cog):
                 embed_title = f"公示结束: {announcement_dto.title}"
                 embed_description = "本次公示已到期，现已自动进入执行阶段。"
                 color = discord.Color.green()
-                
+
                 # 修改标签和标题
                 forum_channel = thread.parent
                 new_title = f"[执行中] {announcement_dto.title}"
@@ -201,7 +201,8 @@ class BackgroundTasks(commands.Cog):
 
             content = f"<@&{self.stewards_role_id}>"
             await self.bot.api_scheduler.submit(
-                coro=thread.send(content=content, embed=embed), priority=8,
+                coro=thread.send(content=content, embed=embed),
+                priority=8,
             )
 
             if announcement_dto.autoExecute:

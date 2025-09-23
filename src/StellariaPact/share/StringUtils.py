@@ -24,3 +24,15 @@ class StringUtils:
         if match:
             return int(match.group(1))
         return None
+
+    @staticmethod
+    def extract_proposer_id_from_content(content: str) -> int | None:
+        """
+        从帖子内容中提取发起人ID。
+        例如，匹配 "发起人: <@12345>" 或 "提案人: <@12345>"。
+        """
+        # 正则表达式匹配 "发起人" 或 "提案人"，后面跟着冒号（全角或半角）和空格，然后是用户提及
+        match = re.search(r"(?:发起人|提案人)\s*[:：]\s*<@!?(\d+)>", content)
+        if match:
+            return int(match.group(1))
+        return None

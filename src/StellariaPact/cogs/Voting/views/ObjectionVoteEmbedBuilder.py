@@ -3,14 +3,13 @@ from typing import Optional
 
 import discord
 
-from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import \
-    HandleSupportObjectionResultDto
-from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import \
-    ObjectionDetailsDto
+from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import (
+    HandleSupportObjectionResultDto,
+)
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import \
-    BuildFirstObjectionEmbedQo
+from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
 
 
 class ObjectionVoteEmbedBuilder:

@@ -1,5 +1,6 @@
 import logging
 from typing import TYPE_CHECKING
+
 import discord
 from discord import ui
 
@@ -30,7 +31,7 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
         required=True,
         max_length=4000,
     )
-    
+
     duration_hours_input = ui.TextInput(
         label="公示持续小时数",
         placeholder="例如: 6 (代表公示6小时)",
@@ -52,7 +53,7 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
         enable_reposting: bool,
         message_threshold: int,
         time_interval_minutes: int,
-        auto_execute: bool
+        auto_execute: bool,
     ):
         super().__init__(timeout=1800)
         self.bot = bot
@@ -67,25 +68,26 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
         当用户提交模态窗口时被调用。
         职责: 验证输入，构建视图元素，然后将所有数据传递给 Cog 中的工作流方法进行处理。
         """
-        
+
         await self.bot.api_scheduler.submit(
-            coro=interaction.response.defer(ephemeral=True, thinking=True),
-            priority=1
+            coro=interaction.response.defer(ephemeral=True, thinking=True), priority=1
         )
         try:
             # --- 数据验证 ---
             title = self.title_input.value
             content = self.content_input.value
-            link = self.link_input.value or None # 如果为空字符串则转为 None
+            link = self.link_input.value or None  # 如果为空字符串则转为 None
 
             try:
                 duration_hours = int(self.duration_hours_input.value)
                 if not (4 <= duration_hours <= 72):
-                     raise ValueError("公示持续小时数必须在 4-72 之间。")
+                    raise ValueError("公示持续小时数必须在 4-72 之间。")
             except (ValueError, TypeError):
-                await interaction.followup.send("“公示持续小时数”必须是一个有效的整数。", ephemeral=True)
+                await interaction.followup.send(
+                    "“公示持续小时数”必须是一个有效的整数。", ephemeral=True
+                )
                 return
-            
+
             await self.cog.create_announcement_workflow(
                 interaction=interaction,
                 title=title,
@@ -101,8 +103,7 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
             logger.exception("在 Modal on_submit 期间发生意外错误")
             await self.bot.api_scheduler.submit(
                 coro=interaction.followup.send(
-                    f"处理表单时发生未知错误，请联系技术员。\n`{e}`",
-                    ephemeral=True
+                    f"处理表单时发生未知错误，请联系技术员。\n`{e}`", ephemeral=True
                 ),
                 priority=1,
             )

@@ -24,7 +24,6 @@ class ConfirmationView(discord.ui.View):
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
 
-
     @discord.ui.button(
         label="确认", style=discord.ButtonStyle.green, custom_id="moderation_confirm"
     )
@@ -102,12 +101,10 @@ class ConfirmationView(discord.ui.View):
             )
             embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
             # 使用 DTO 替代 ORM 实例，避免事务外访问问题
-            dto = ConfirmationSessionDto.model_validate(
-                updated_session, from_attributes=True
-            )
+            dto = ConfirmationSessionDto.model_validate(updated_session, from_attributes=True)
 
             await uow.commit()
-            
+
         # --- 事务外执行API调用 ---
         if updated_status == 1:  # 已完成
             self._disable_all_buttons()

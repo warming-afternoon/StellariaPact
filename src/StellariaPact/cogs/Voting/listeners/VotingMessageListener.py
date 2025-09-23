@@ -6,8 +6,7 @@ import regex as re
 from discord.ext import commands
 
 from StellariaPact.cogs.Voting.Cog import Voting
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import \
-    UpdateUserActivityQo
+from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 

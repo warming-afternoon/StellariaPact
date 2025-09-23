@@ -11,9 +11,9 @@ from StellariaPact.cogs.Voting.views.ConfirmationView import ConfirmationView
 from StellariaPact.cogs.Voting.views.ReopenVoteModal import ReopenVoteModal
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
-from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share.StringUtils import StringUtils
 
 
 class VotingChoiceView(discord.ui.View):

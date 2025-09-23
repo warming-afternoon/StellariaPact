@@ -20,9 +20,7 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
         required=True,
     )
 
-    def __init__(
-        self, bot: StellariaPactBot, thread_id: int, logic: VotingLogic, message_id: int
-    ):
+    def __init__(self, bot: StellariaPactBot, thread_id: int, logic: VotingLogic, message_id: int):
         super().__init__(timeout=1800)
         self.bot = bot
         self.thread_id = thread_id
@@ -52,5 +50,6 @@ class AdjustTimeModal(discord.ui.Modal, title="调整投票时间"):
         except Exception as e:
             logger.error(f"调整投票时间时出错: {e}", exc_info=True)
             await self.bot.api_scheduler.submit(
-                interaction.followup.send(f"操作失败，请重试/联系技术员：{e}", ephemeral=True), priority=1
+                interaction.followup.send(f"操作失败，请重试/联系技术员：{e}", ephemeral=True),
+                priority=1,
             )

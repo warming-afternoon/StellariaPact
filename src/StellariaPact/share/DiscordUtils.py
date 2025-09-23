@@ -6,8 +6,7 @@ import discord
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Voting.views.VotingChoiceView import \
-        VotingChoiceView
+    from StellariaPact.cogs.Voting.views.VotingChoiceView import VotingChoiceView
 
 logger = logging.getLogger(__name__)
 

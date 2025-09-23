@@ -5,26 +5,17 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import \
-    ExecuteProposalResultDto
-from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import \
-    ObjectionVotePanelDto
-from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import \
-    SubsequentObjectionDto
+from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import ExecuteProposalResultDto
+from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
+from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import SubsequentObjectionDto
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
-from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
-    BuildAdminReviewEmbedQo
-from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import \
-    BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
-from StellariaPact.cogs.Moderation.views.AbandonReasonModal import \
-    AbandonReasonModal
-from StellariaPact.cogs.Moderation.views.ConfirmationView import \
-    ConfirmationView
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
-    ModerationEmbedBuilder
-from StellariaPact.cogs.Moderation.views.ObjectionManageView import \
-    ObjectionManageView
+from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
+from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.cogs.Moderation.views.ReasonModal import ReasonModal
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
@@ -60,10 +51,15 @@ class Moderation(commands.Cog):
             self.kick_proposal_context_menu.name, type=self.kick_proposal_context_menu.type
         )
 
-    @RoleGuard.requireRoles("councilModerator",)
+    @RoleGuard.requireRoles(
+        "councilModerator",
+    )
     async def kick_proposal(self, interaction: discord.Interaction, message: discord.Message):
-        """
-        [议事督导] 消息右键菜单命令，用于将消息作者踢出提案
+        """[议事督导] 消息右键菜单命令，用于将消息作者踢出提案。
+
+        Args:
+            interaction (discord.Interaction): 交互对象。
+            message (discord.Message): 目标消息。
         """
         # 确保在可以发送消息的帖子中使用
         if not isinstance(interaction.channel, discord.Thread):
@@ -105,28 +101,57 @@ class Moderation(commands.Cog):
             coro=interaction.response.send_modal(modal), priority=1
         )
 
-    @app_commands.command(name="进入执行", description="[议事督导+执行监理] 将讨论中的提案变更为执行中")
+    @app_commands.command(
+        name="进入执行", description="[议事督导+执行监理] 将讨论中的提案变更为执行中"
+    )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
-    async def execute_proposal(self, interaction: discord.Interaction):
-        await self._handle_confirmation_command(interaction, self.logic.handle_execute_proposal)
+    @app_commands.rename(notify_roles="通知相关方")
+    @app_commands.describe(notify_roles="是否在发起确认时通知督导和监理组 (默认为是)")
+    async def execute_proposal(self, interaction: discord.Interaction, notify_roles: bool = True):
+        """将讨论中的提案变更为执行中。
 
+        Args:
+            interaction (discord.Interaction): 命令交互对象。
+            notify_roles (bool): 是否通知相关方，默认为是。
+        """
+        await self._handle_confirmation_command(
+            interaction, self.logic.handle_execute_proposal, notify_roles
+        )
 
-    @app_commands.command(name="提案完成", description="[议事督导+执行监理] 将执行中的提案变更为已结束")
+    @app_commands.command(
+        name="提案完成", description="[议事督导+执行监理] 将执行中的提案变更为已结束"
+    )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
-    async def complete_proposal(self, interaction: discord.Interaction):
-        await self._handle_confirmation_command(interaction, self.logic.handle_complete_proposal)
+    @app_commands.rename(notify_roles="通知相关方")
+    @app_commands.describe(notify_roles="是否在发起确认时通知督导和监理组 (默认为是)")
+    async def complete_proposal(self, interaction: discord.Interaction, notify_roles: bool = True):
+        """将执行中的提案变更为已结束。
+
+        Args:
+            interaction (discord.Interaction): 命令交互对象。
+            notify_roles (bool): 是否通知相关方，默认为是。
+        """
+        await self._handle_confirmation_command(
+            interaction, self.logic.handle_complete_proposal, notify_roles
+        )
 
     @app_commands.command(name="废弃", description="[执行监理] 将执行中的提案废弃")
     @RoleGuard.requireRoles("executionAuditor")
     async def abandon_proposal(self, interaction: discord.Interaction):
-        """ 通过弹出一个模态框来废弃一个提案。 """
+        """通过弹出一个模态框来废弃一个提案。
+
+        Args:
+            interaction (discord.Interaction): 命令交互对象。
+        """
         modal = AbandonReasonModal(self.bot, self.thread_manager)
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
     @app_commands.command(name="发起异议", description="对一个提案发起异议")
     async def raise_objection(self, interaction: discord.Interaction):
-        """
-        处理 /发起异议 命令。
+        """处理 /发起异议 命令，通过模态框收集信息。
+
+        Args:
+            interaction (discord.Interaction): 命令交互对象。
         """
         modal = ObjectionModal(self.bot)
 
@@ -185,8 +210,10 @@ class Moderation(commands.Cog):
         modal.on_submit = on_submit
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
-
-    @app_commands.command(name="创建提案投票", description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票")
+    @app_commands.command(
+        name="创建提案投票",
+        description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票",
+    )
     @app_commands.describe(
         duration_hours="投票持续时间（小时），默认为 48 小时。",
         anonymous="是否匿名投票，默认为 是。",
@@ -199,6 +226,14 @@ class Moderation(commands.Cog):
         anonymous: bool = True,
         realtime: bool = True,
     ):
+        """为当前帖子手动创建一个提案投票。
+
+        Args:
+            interaction (discord.Interaction): 命令交互对象。
+            duration_hours (app_commands.Range[int, 1, 720], optional): 投票持续时间（小时）。默认为 48。
+            anonymous (bool, optional): 是否匿名投票。默认为 True。
+            realtime (bool, optional): 是否实时显示票数。默认为 True。
+        """
         await safeDefer(interaction, ephemeral=True)
 
         if not isinstance(interaction.channel, discord.Thread):
@@ -220,10 +255,17 @@ class Moderation(commands.Cog):
                 starter_message = await thread.fetch_message(thread.id)
 
             if not starter_message:
-                await interaction.followup.send("无法获取帖子的启动消息，操作失败。", ephemeral=True)
+                await interaction.followup.send(
+                    "无法获取帖子的启动消息，操作失败。", ephemeral=True
+                )
                 return
 
-            proposer_id = starter_message.author.id
+            proposer_id = StringUtils.extract_proposer_id_from_content(starter_message.content)
+
+            # 如果正则没有匹配到，则回退到使用消息作者ID作为备用方案
+            if not proposer_id:
+                proposer_id = starter_message.author.id
+
             clean_title = StringUtils.clean_title(thread.name)
 
             async with UnitOfWork(self.bot.db_handler) as uow:
@@ -248,13 +290,24 @@ class Moderation(commands.Cog):
         except Exception as e:
             logger.error(f"手动创建提案投票时出错: {e}", exc_info=True)
             await interaction.followup.send(f"发生错误: {e}", ephemeral=True)
- 
+
     # --- 私有方法 ---
-    
+
     def _determine_target_thread_id(
         self, interaction: discord.Interaction, proposal_link: str
     ) -> int:
-        """从交互上下文或链接中解析出目标帖子ID。"""
+        """从交互上下文或链接中解析出目标帖子ID。
+
+        Args:
+            interaction (discord.Interaction): 当前的交互对象。
+            proposal_link (str): 用户提供的提案链接。
+
+        Raises:
+            ValueError: 如果链接格式不正确或在没有链接的情况下不在帖子内使用。
+
+        Returns:
+            int: 解析出的帖子ID。
+        """
         if proposal_link:
             thread_id = StringUtils.extract_thread_id_from_url(proposal_link)
             if not thread_id:
@@ -264,7 +317,6 @@ class Moderation(commands.Cog):
             return interaction.channel.id
         else:
             raise ValueError("此命令必须在提案帖子内使用，或通过“提案链接”参数指定目标帖子。")
-
 
     async def _handle_subsequent_objection_ui(
         self, interaction: discord.Interaction, dto: SubsequentObjectionDto
@@ -315,9 +367,14 @@ class Moderation(commands.Cog):
         self,
         interaction: discord.Interaction,
         logic_handler: Callable[..., Awaitable[ExecuteProposalResultDto | None]],
+        notify_roles: bool,
     ):
-        """
-        处理需要双重确认的命令（如 /进入执行, /完成提案）的通用逻辑。
+        """处理需要双重确认的命令（如 /进入执行, /完成提案）的通用逻辑。
+
+        Args:
+            interaction (discord.Interaction): 命令的交互对象。
+            logic_handler (Callable[..., Awaitable[ExecuteProposalResultDto | None]]): 要调用的具体逻辑处理函数。
+            notify_roles (bool): 是否在发起确认时通知相关方。
         """
         await self.bot.api_scheduler.submit(
             interaction.response.defer(ephemeral=True, thinking=True), 1
@@ -359,7 +416,7 @@ class Moderation(commands.Cog):
                 canceler_id=result_dto.session_dto.canceler_id,
                 confirmed_parties=result_dto.session_dto.confirmed_parties,
                 required_roles=result_dto.session_dto.required_roles,
-                role_display_names=role_display_names
+                role_display_names=role_display_names,
             )
 
             if not self.bot.user:
@@ -371,11 +428,26 @@ class Moderation(commands.Cog):
             embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
             view = ConfirmationView(self.bot)
 
+            content_to_send = None
+            if notify_roles:
+                roles_config = self.bot.config.get("roles", {})
+                moderator_role_id = roles_config.get("councilModerator")
+                auditor_role_id = roles_config.get("executionAuditor")
+
+                pings = []
+                if moderator_role_id:
+                    pings.append(f"<@&{moderator_role_id}>")
+                if auditor_role_id:
+                    pings.append(f"<@&{auditor_role_id}>")
+
+                if pings:
+                    content_to_send = " ".join(pings)
+
             message = await self.bot.api_scheduler.submit(
-                interaction.channel.send(embed=embed, view=view), 2
+                interaction.channel.send(content=content_to_send, embed=embed, view=view), 2
             )
 
-            # --- 更新消息ID (通过Logic层) ---
+            # --- 更新消息ID ---
             await self.logic.update_session_message_id(
                 session_id=result_dto.session_dto.id, message_id=message.id
             )
@@ -394,4 +466,3 @@ class Moderation(commands.Cog):
             await self.bot.api_scheduler.submit(
                 interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
             )
-

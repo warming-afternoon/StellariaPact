@@ -5,23 +5,16 @@ from typing import TYPE_CHECKING, Literal
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import \
-    ObjectionSupportQo
+from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
 
-from ....cogs.Moderation.dto.CollectionExpiredResultDto import \
-    CollectionExpiredResultDto
-from ....cogs.Moderation.dto.ConfirmationCompletedDto import \
-    ConfirmationSessionDto
-from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import \
-    HandleSupportObjectionResultDto
+from ....cogs.Moderation.dto.CollectionExpiredResultDto import CollectionExpiredResultDto
+from ....cogs.Moderation.dto.ConfirmationCompletedDto import ConfirmationSessionDto
+from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
 from ....cogs.Moderation.dto.ProposalDto import ProposalDto
-from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import \
-    BuildAdminReviewEmbedQo
-from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import \
-    BuildProposalFrozenEmbedQo
+from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
+from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
 from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
-from ....cogs.Moderation.views.ModerationEmbedBuilder import \
-    ModerationEmbedBuilder
+from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from ....share.DiscordUtils import DiscordUtils
@@ -76,11 +69,15 @@ class ModerationListener(commands.Cog):
             if not starter_message:
                 logger.warning(f"无法获取帖子 {thread.id} 的启动消息，无法创建提案。")
                 return
-            
+
             # 2. 更新帖子状态
             await self.thread_manager.update_status(thread, "discussion")
 
-            proposer_id = starter_message.author.id
+            proposer_id = StringUtils.extract_proposer_id_from_content(starter_message.content)
+
+            # 如果正则没有匹配到，则回退到使用消息作者ID作为备用方案
+            if not proposer_id:
+                proposer_id = starter_message.author.id
             clean_title = StringUtils.clean_title(thread.name)
 
             async with UnitOfWork(self.bot.db_handler) as uow:
@@ -241,7 +238,7 @@ class ModerationListener(commands.Cog):
                 await self.bot.api_scheduler.submit(
                     original_thread.send(embed=notification_embed), priority=4
                 )
-                
+
                 await self.thread_manager.update_status(original_thread, "frozen")
 
         except (RuntimeError, ValueError) as e:
@@ -328,7 +325,6 @@ class ModerationListener(commands.Cog):
             logger.error(
                 f"更新审核帖子 {dto.review_thread_id} 的 Embed 时出错: {e}", exc_info=True
             )
-
 
     async def _update_publicity_panel(self, result):
         """更新公示频道中的原始投票消息"""
@@ -575,7 +571,7 @@ class ModerationListener(commands.Cog):
     async def _update_thread_status_after_confirmation(
         self, thread_id: int, title: str, target_status: ProposalStatus
     ):
-        """ 根据确认结果更新帖子状态 """
+        """根据确认结果更新帖子状态"""
         try:
             thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
             if not thread:
