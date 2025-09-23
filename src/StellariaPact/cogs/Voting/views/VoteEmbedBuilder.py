@@ -56,7 +56,7 @@ class VoteEmbedBuilder:
             )
 
         embed.set_footer(
-            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度大于5"
+            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
         )
         return embed
 
@@ -97,7 +97,7 @@ class VoteEmbedBuilder:
             )
 
         embed.set_footer(
-            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度大于5"
+            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
         )
         return embed
 

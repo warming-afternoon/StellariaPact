@@ -6,9 +6,7 @@ import discord
 from discord.ext import commands, tasks
 from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
-    AnnouncementMonitorService,
-)
+from StellariaPact.cogs.Notification.AnnouncementMonitorService import AnnouncementMonitorService
 from StellariaPact.cogs.Notification.dto.AnnouncementDto import AnnouncementDto
 from StellariaPact.cogs.Notification.RepostService import RepostService
 from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
@@ -199,7 +197,8 @@ class BackgroundTasks(commands.Cog):
             )
             embed.add_field(name="公示截止时间", value=discord_timestamp)
 
-            content = f"<@&{self.stewards_role_id}>"
+            # content = f"<@&{self.stewards_role_id}>"
+            content = ""
             await self.bot.api_scheduler.submit(
                 coro=thread.send(content=content, embed=embed),
                 priority=8,

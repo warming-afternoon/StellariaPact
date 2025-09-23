@@ -3,18 +3,15 @@ import logging
 import re
 from datetime import datetime
 from typing import Literal, Optional
-from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
-    CreateAnnouncementQo
-from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import \
-    AnnouncementEmbedBuilder
-from StellariaPact.cogs.Notification.views.AnnouncementModal import \
-    AnnouncementModal
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
+from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
+from StellariaPact.cogs.Notification.views.AnnouncementModal import AnnouncementModal
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.DiscordUtils import DiscordUtils
@@ -61,7 +58,9 @@ class Notification(commands.Cog):
                     priority=1,
                 )
 
-    @app_commands.command(name="发布公示", description="[管理组/议事督导/执行监理]发布一个新的社区公示")
+    @app_commands.command(
+        name="发布公示", description="[管理组/议事督导/执行监理]发布一个新的社区公示"
+    )
     @RoleGuard.requireRoles("stewards", "councilModerator", "executionAuditor")
     @app_commands.rename(
         message_threshold="消息数阈值",
@@ -73,7 +72,7 @@ class Notification(commands.Cog):
         message_threshold="触发重复公示的消息数量 (默认: 1000)",
         time_interval_minutes="触发重复公示的时间间隔分钟数 (默认: 60)",
         enable_reposting="是否开启到期前反复宣传的功能 (默认: 开启)",
-        auto_execute="是否自动变更为执行中 (默认: 是)",
+        auto_execute="[管理组] 是否自动变更为执行中 (默认: 是)",
     )
     async def publish_announcement(
         self,
@@ -234,7 +233,9 @@ class Notification(commands.Cog):
                 coro=interaction.followup.send(error_message, ephemeral=True), priority=1
             )
 
-    @app_commands.command(name="修改公示时间", description="[管理组/议事督导/执行监理] 修改当前公示的持续时间")
+    @app_commands.command(
+        name="修改公示时间", description="[管理组/议事督导/执行监理] 修改当前公示的持续时间"
+    )
     @app_commands.rename(operation="操作", hours="小时数")
     @app_commands.describe(operation="选择要执行的操作", hours="要调整的小时数")
     @RoleGuard.requireRoles("stewards", "councilModerator", "executionAuditor")
@@ -292,7 +293,7 @@ class Notification(commands.Cog):
 
             new_ts_timestamp = int(new_end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
             new_ts_string = f"<t:{new_ts_timestamp}:F> (<t:{new_ts_timestamp}:R>)"
-            
+
             try:
                 starter_message = await self.bot.api_scheduler.submit(
                     coro=interaction.channel.fetch_message(interaction.channel.id),
@@ -306,7 +307,7 @@ class Notification(commands.Cog):
                 # 所有权检查: 仅当消息是机器人自己发的时候才继续
                 if starter_message.author.id == self.bot.user.id:
                     original_content = starter_message.content
-                    
+
                     # 精确内容匹配: 只查找机器人自己添加的、格式固定的截止时间字符串
                     deadline_pattern = re.compile(
                         r"(\*\*公示截止时间:\s*\*\*\s*)<t:\d+:[fF]>\s*\(<t:\d+:[rR]>\)"
@@ -346,7 +347,7 @@ class Notification(commands.Cog):
                 old_timestamp=old_ts,
                 new_timestamp=new_ts_string,
             )
-            
+
             await self.bot.api_scheduler.submit(
                 coro=interaction.channel.send(embed=embed), priority=5
             )

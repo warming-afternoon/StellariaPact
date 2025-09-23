@@ -38,7 +38,7 @@ class VotingMessageListener(commands.Cog):
             return False
 
         # 检查长度
-        is_long_enough = len(content_without_whitespace) > 5
+        is_long_enough = len(content_without_whitespace) > 4
 
         return is_long_enough
 

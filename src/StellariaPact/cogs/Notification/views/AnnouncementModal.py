@@ -80,11 +80,11 @@ class AnnouncementModal(ui.Modal, title="发布新公示"):
 
             try:
                 duration_hours = int(self.duration_hours_input.value)
-                if not (4 <= duration_hours <= 72):
-                    raise ValueError("公示持续小时数必须在 4-72 之间。")
+                if not (4 <= duration_hours <= 168):
+                    raise ValueError("公示持续小时数必须在 4-168 之间。")
             except (ValueError, TypeError):
                 await interaction.followup.send(
-                    "“公示持续小时数”必须是一个有效的整数。", ephemeral=True
+                    "“公示持续小时数”必须是一个有效的整数。(4~168)", ephemeral=True
                 )
                 return
 
