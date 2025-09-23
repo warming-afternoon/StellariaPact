@@ -1,16 +1,20 @@
 import asyncio
 import logging
+import re
 from datetime import datetime
 from typing import Literal, Optional
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-from zoneinfo import ZoneInfo
 
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
-from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
-from StellariaPact.cogs.Notification.views.AnnouncementModal import AnnouncementModal
+from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import \
+    CreateAnnouncementQo
+from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import \
+    AnnouncementEmbedBuilder
+from StellariaPact.cogs.Notification.views.AnnouncementModal import \
+    AnnouncementModal
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.DiscordUtils import DiscordUtils
@@ -57,7 +61,7 @@ class Notification(commands.Cog):
                     priority=1,
                 )
 
-    @app_commands.command(name="发布公示", description="发布一个新的社区公示")
+    @app_commands.command(name="发布公示", description="[管理组/议事督导/执行监理]发布一个新的社区公示")
     @RoleGuard.requireRoles("stewards", "councilModerator", "executionAuditor")
     @app_commands.rename(
         message_threshold="消息数阈值",
@@ -230,10 +234,10 @@ class Notification(commands.Cog):
                 coro=interaction.followup.send(error_message, ephemeral=True), priority=1
             )
 
-    @app_commands.command(name="修改公示时间", description="修改当前公示的持续时间")
+    @app_commands.command(name="修改公示时间", description="[管理组/议事督导/执行监理] 修改当前公示的持续时间")
     @app_commands.rename(operation="操作", hours="小时数")
     @app_commands.describe(operation="选择要执行的操作", hours="要调整的小时数")
-    @RoleGuard.requireRoles("stewards")
+    @RoleGuard.requireRoles("stewards", "councilModerator", "executionAuditor")
     async def modify_announcement_time(
         self,
         interaction: discord.Interaction,
@@ -286,46 +290,70 @@ class Notification(commands.Cog):
 
                 await uow.announcements.update_end_time(announcement.id, new_end_time)
 
-                # --- 编辑帖子首楼 ---
-                old_ts_timestamp = int(old_end_time_utc.timestamp())
-                new_ts_timestamp = int(new_end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
-                old_ts = f"<t:{old_ts_timestamp}:F> (<t:{old_ts_timestamp}:R>)"
-                new_ts = f"<t:{new_ts_timestamp}:F> (<t:{new_ts_timestamp}:R>)"
+            new_ts_timestamp = int(new_end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
+            new_ts_string = f"<t:{new_ts_timestamp}:F> (<t:{new_ts_timestamp}:R>)"
+            
+            try:
+                starter_message = await self.bot.api_scheduler.submit(
+                    coro=interaction.channel.fetch_message(interaction.channel.id),
+                    priority=3,
+                )
 
-                if isinstance(interaction.channel, discord.Thread):
-                    try:
-                        starter_message = await self.bot.api_scheduler.submit(
-                            coro=interaction.channel.fetch_message(interaction.channel.id),
-                            priority=3,
+                if not self.bot.user:
+                    logger.error("机器人尚未完全登录，无法获取自身用户对象。")
+                    return
+
+                # 所有权检查: 仅当消息是机器人自己发的时候才继续
+                if starter_message.author.id == self.bot.user.id:
+                    original_content = starter_message.content
+                    
+                    # 精确内容匹配: 只查找机器人自己添加的、格式固定的截止时间字符串
+                    deadline_pattern = re.compile(
+                        r"(\*\*公示截止时间:\s*\*\*\s*)<t:\d+:[fF]>\s*\(<t:\d+:[rR]>\)"
+                    )
+
+                    if deadline_pattern.search(original_content):
+                        # 如果两个条件都满足，则执行替换
+                        new_deadline_full_string = f"**公示截止时间:** {new_ts_string}"
+                        new_content = deadline_pattern.sub(
+                            new_deadline_full_string, original_content, count=1
                         )
-                        new_content = AnnouncementEmbedBuilder.create_thread_content(
-                            title=announcement.title,
-                            content=announcement.content,
-                            discord_timestamp=new_ts,
-                            author_id=announcement.announcerId,
-                        )
+
                         await self.bot.api_scheduler.submit(
                             coro=starter_message.edit(content=new_content), priority=5
                         )
-                    except (discord.NotFound, discord.Forbidden) as e:
-                        logger.warning(f"无法编辑帖子 {interaction.channel.id} 的首楼消息: {e}")
+                        logger.info(f"已成功更新帖子 {interaction.channel.id} 首楼的时间戳。")
+                    else:
+                        logger.info(
+                            f"帖子 {interaction.channel.id} 首楼由机器人发布，"
+                            "但未找到标准截止时间格式，故跳过编辑。"
+                        )
+                else:
+                    logger.info(
+                        f"帖子 {interaction.channel.id} 首楼由用户 "
+                        f"{starter_message.author.id} 发布，机器人无权编辑，跳过。"
+                    )
 
-                # --- 发送通知Embed ---
-                embed = AnnouncementEmbedBuilder.create_time_modification_embed(
-                    interaction_user=interaction.user,
-                    operation=operation,
-                    hours=hours,
-                    old_timestamp=old_ts,
-                    new_timestamp=new_ts,
-                )
-                # 在这个上下文中，interaction.channel 必然是 Thread，可以直接 send
-                await self.bot.api_scheduler.submit(
-                    coro=interaction.channel.send(embed=embed), priority=5
-                )
-                await self.bot.api_scheduler.submit(
-                    coro=interaction.followup.send("公示时间已成功修改。", ephemeral=True),
-                    priority=1,
-                )
+            except (discord.NotFound, discord.Forbidden) as e:
+                logger.warning(f"无法获取或编辑帖子 {interaction.channel.id} 的首楼消息: {e}")
+
+            # --- 发送通知Embed ---
+            old_ts = f"<t:{int(old_end_time_utc.timestamp())}:F> (<t:{int(old_end_time_utc.timestamp())}:R>)"
+            embed = AnnouncementEmbedBuilder.create_time_modification_embed(
+                interaction_user=interaction.user,
+                operation=operation,
+                hours=hours,
+                old_timestamp=old_ts,
+                new_timestamp=new_ts_string,
+            )
+            
+            await self.bot.api_scheduler.submit(
+                coro=interaction.channel.send(embed=embed), priority=5
+            )
+            await self.bot.api_scheduler.submit(
+                coro=interaction.followup.send("公示时间已成功修改。", ephemeral=True),
+                priority=1,
+            )
 
         except Exception as e:
             logger.error(f"修改公示时间时发生错误: {e}", exc_info=True)
