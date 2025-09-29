@@ -24,6 +24,7 @@ class VoteSession(BaseModel, table=True):
     )
     anonymousFlag: bool = Field(default=True, description="是否为匿名投票")
     realtimeFlag: bool = Field(default=True, description="是否实时展示投票进度")
+    notifyFlag: bool = Field(default=True, description="投票结束时是否通知相关方")
     status: int = Field(default=1, index=True, description="投票状态: 0-已结束, 1-进行中")
     endTime: Optional[datetime] = Field(default=None, description="投票截止时间")
     createdAt: datetime = Field(

@@ -20,6 +20,7 @@ class VoteDetailDto(BaseModel):
 
     is_anonymous: bool
     realtime_flag: bool
+    notify_flag: bool
     end_time: Optional[datetime]
     context_message_id: Optional[int]
     status: int  # 1 for active, 0 for closed

@@ -78,6 +78,15 @@ class VotingChoiceView(discord.ui.View):
         toggle_realtime_button.callback = self.toggle_realtime_callback
         self.add_item(toggle_realtime_button)
 
+        toggle_notify_button = discord.ui.Button(
+            label="切换通知",
+            style=discord.ButtonStyle.primary,
+            custom_id="toggle_notify",
+            row=1,
+        )
+        toggle_notify_button.callback = self.toggle_notify_callback
+        self.add_item(toggle_notify_button)
+
     def _add_inactive_admin_buttons(self):
         """动态添加投票已结束时的管理员按钮"""
         reopen_vote_button = discord.ui.Button(
@@ -115,6 +124,7 @@ class VotingChoiceView(discord.ui.View):
                 topic=clean_topic,
                 anonymous_flag=vote_details.is_anonymous,
                 realtime_flag=vote_details.realtime_flag,
+                notify_flag=vote_details.notify_flag,
                 end_time=vote_details.end_time,
                 vote_details=vote_details,
             )
@@ -286,22 +296,46 @@ class VotingChoiceView(discord.ui.View):
         )
         view.message = message
 
-    async def toggle_anonymous_callback(self, interaction: discord.Interaction):
-        """处理“切换匿名”按钮点击事件，发起二次确认"""
-        is_anonymous, _ = await self.logic.get_vote_flags(self.original_message_id)
-        current_status = is_anonymous
+    async def _handle_toggle_notify(self, interaction: discord.Interaction):
+        """处理切换结束通知的逻辑"""
+        try:
+            vote_details = await self.logic.toggle_notify(self.original_message_id)
+            await self._update_vote_panel_embed(vote_details)
+            embed = VoteEmbedBuilder.create_setting_changed_embed(
+                setting_name="投票结束通知提案委员",
+                new_status="开启" if vote_details.notify_flag else "关闭",
+                changed_by=interaction.user,
+            )
+            await self._post_public_announcement(embed)
+        except Exception as e:
+            logger.error(f"处理切换结束通知时出错: {e}", exc_info=True)
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("切换通知状态时发生内部错误。", ephemeral=True),
+                priority=1,
+            )
 
+    async def toggle_notify_callback(self, interaction: discord.Interaction):
+        """处理“切换通知”按钮点击事件，发起二次确认"""
+        _, _, is_notify = await self.logic.get_vote_flags(self.original_message_id)
+        current_status = is_notify
         await self._create_and_send_confirmation(
-            interaction, "匿名投票", current_status, self._handle_toggle_anonymous
+            interaction, "投票结束通知提案委员", current_status, self._handle_toggle_notify
         )
 
     async def toggle_realtime_callback(self, interaction: discord.Interaction):
         """处理“切换实时”按钮点击事件，发起二次确认"""
-        _, is_realtime = await self.logic.get_vote_flags(self.original_message_id)
+        _, is_realtime, _ = await self.logic.get_vote_flags(self.original_message_id)
         current_status = is_realtime
-
         await self._create_and_send_confirmation(
             interaction, "实时票数", current_status, self._handle_toggle_realtime
+        )
+
+    async def toggle_anonymous_callback(self, interaction: discord.Interaction):
+        """处理“切换匿名”按钮点击事件，发起二次确认"""
+        is_anonymous, _, _ = await self.logic.get_vote_flags(self.original_message_id)
+        current_status = is_anonymous
+        await self._create_and_send_confirmation(
+            interaction, "匿名投票", current_status, self._handle_toggle_anonymous
         )
 
     async def on_timeout(self) -> None:

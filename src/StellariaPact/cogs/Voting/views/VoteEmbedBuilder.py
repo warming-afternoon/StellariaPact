@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import discord
-from zoneinfo import ZoneInfo
 
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
@@ -24,6 +24,7 @@ class VoteEmbedBuilder:
         author: Optional[discord.User | discord.Member],
         realtime: bool,
         anonymous: bool,
+        notify_flag: bool,
         end_time: Optional[datetime] = None,
     ) -> discord.Embed:
         """
@@ -65,6 +66,7 @@ class VoteEmbedBuilder:
         topic: str,
         anonymous_flag: bool,
         realtime_flag: bool,
+        notify_flag: bool,
         end_time: Optional[datetime],
         vote_details: Optional[VoteDetailDto] = None,
     ) -> discord.Embed:
@@ -79,7 +81,7 @@ class VoteEmbedBuilder:
         )
         embed.add_field(name="是否匿名", value="✅ 是" if anonymous_flag else "❌ 否", inline=True)
         embed.add_field(name="实时票数", value="✅ 是" if realtime_flag else "❌ 否", inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
 
         if realtime_flag:
             approve_votes = vote_details.approve_votes if vote_details else 0
@@ -144,7 +146,7 @@ class VoteEmbedBuilder:
         """创建一个公开通示，告知某项设置已被更改。"""
         embed = discord.Embed(
             title="投票设置已更新",
-            description=f"**{setting_name}** 已被 {changed_by.mention} 切换为 **{new_status}**。",
+            description=f"**{setting_name}** 已被 {changed_by.mention} 切换为 **{new_status}**",
             color=discord.Color.blue(),
         )
         return embed

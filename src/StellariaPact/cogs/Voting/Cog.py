@@ -108,14 +108,17 @@ class Voting(commands.Cog):
                     all_embeds_to_send.extend(reject_embeds)
 
             # 准备要@的身份组
-            council_role_id = self.bot.config.get("roles", {}).get("councilModerator")
-            auditor_role_id = self.bot.config.get("roles", {}).get("executionAuditor")
-            mentions = []
-            if council_role_id:
-                mentions.append(f"<@&{council_role_id}>")
-            if auditor_role_id:
-                mentions.append(f"<@&{auditor_role_id}>")
-            content_to_send = " ".join(mentions)
+            content_to_send = ""
+            if result.notify_flag:
+                council_role_id = self.bot.config.get("roles", {}).get("councilModerator")
+                auditor_role_id = self.bot.config.get("roles", {}).get("executionAuditor")
+                mentions = []
+                if council_role_id:
+                    mentions.append(f"<@&{council_role_id}>")
+                if auditor_role_id:
+                    mentions.append(f"<@&{auditor_role_id}>")
+                if mentions:
+                    content_to_send = " ".join(mentions)
 
             # 分批发送所有 Embeds
             # Discord 一次最多发送 10 个 embeds
@@ -166,6 +169,7 @@ class Voting(commands.Cog):
                     topic=clean_topic,
                     anonymous_flag=vote_details.is_anonymous,
                     realtime_flag=vote_details.realtime_flag,
+                    notify_flag=vote_details.notify_flag,
                     end_time=vote_details.end_time,
                     vote_details=vote_details,
                 )

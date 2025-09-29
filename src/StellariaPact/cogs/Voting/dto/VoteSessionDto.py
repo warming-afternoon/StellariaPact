@@ -15,5 +15,6 @@ class VoteSessionDto(BaseDto):
     contextMessageId: Optional[int]
     anonymousFlag: bool
     realtimeFlag: bool
+    notifyFlag: bool
     status: int
     endTime: Optional[datetime]

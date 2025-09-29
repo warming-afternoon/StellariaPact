@@ -38,6 +38,7 @@ class ModerationEventListener(commands.Cog):
         duration_hours: int = 48,
         anonymous: bool = True,
         realtime: bool = True,
+        notify: bool = True,
     ):
         """
         监听到提案成功创建的事件，为其创建投票面板。
@@ -89,6 +90,7 @@ class ModerationEventListener(commands.Cog):
                     author=None,
                     realtime=realtime,
                     anonymous=anonymous,
+                    notify_flag=notify,
                     end_time=end_time,
                 )
                 message = await self.bot.api_scheduler.submit(
@@ -100,6 +102,7 @@ class ModerationEventListener(commands.Cog):
                     context_message_id=message.id,
                     realtime=realtime,
                     anonymous=anonymous,
+                    notifyFlag=notify,
                     end_time=end_time,
                 )
                 session_dto = await uow.voting.create_vote_session(qo)

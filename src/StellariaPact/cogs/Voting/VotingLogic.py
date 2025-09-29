@@ -86,15 +86,13 @@ class VotingLogic:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
             return VotingService.get_vote_details_dto(vote_session)
 
-    async def get_vote_flags(self, message_id: int) -> tuple[bool, bool]:
-        """
-        以轻量级方式仅获取投票会话的匿名和实时标志。
-        """
+    async def get_vote_flags(self, message_id: int) -> tuple[bool, bool, bool]:
+        """以轻量级方式仅获取投票会话的匿名、实时和通知标志。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
             flags = await uow.voting.get_vote_flags(message_id)
             if not flags:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
-            return flags  # (is_anonymous, is_realtime)
+            return flags  # (is_anonymous, is_realtime, is_notify)
 
     async def toggle_anonymous(self, message_id: int) -> VoteDetailDto:
         """切换指定投票的匿名状态。"""
@@ -120,6 +118,19 @@ class VotingLogic:
             final_session = await uow.voting.get_vote_session_with_details(message_id)
             if not final_session:
                 raise ValueError(f"在切换实时状态后无法重新获取会话 {message_id}。")
+            return VotingService.get_vote_details_dto(final_session)
+
+    async def toggle_notify(self, message_id: int) -> VoteDetailDto:
+        """切换指定投票的结束通知状态。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            updated_session = await uow.voting.toggle_notify(message_id)
+            if not updated_session:
+                raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
+            await uow.commit()
+            # 重新获取以加载 userVotes
+            final_session = await uow.voting.get_vote_session_with_details(message_id)
+            if not final_session:
+                raise ValueError(f"在切换通知状态后无法重新获取会话 {message_id}。")
             return VotingService.get_vote_details_dto(final_session)
 
     async def delete_vote_and_get_details(self, qo: DeleteVoteQo) -> VoteDetailDto:

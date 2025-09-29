@@ -14,4 +14,5 @@ class CreateVoteSessionQo(BaseDto):
     context_message_id: int
     realtime: bool = False
     anonymous: bool = True
+    notifyFlag: bool = True
     end_time: Optional[datetime] = None

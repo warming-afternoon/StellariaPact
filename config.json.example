@@ -27,8 +27,6 @@
   "roles": {
     "councilModerator": null,
     "executionAuditor": null,
-    "executiveTeam": null,
-    "headSteward": null,
     "stewards": null
   },
   "proxy": null,

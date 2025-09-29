@@ -12,6 +12,7 @@ class VoteStatusDto(BaseDto):
 
     is_anonymous: bool
     realtime_flag: bool
+    notify_flag: bool
     end_time: Optional[datetime]
     status: int  # 0-已结束, 1-进行中
     totalVotes: int

@@ -114,6 +114,7 @@ class VotingService:
             contextMessageId=qo.context_message_id,
             realtimeFlag=qo.realtime,
             anonymousFlag=qo.anonymous,
+            notifyFlag=qo.notifyFlag,
             endTime=qo.end_time,
         )
         self.session.add(new_session)
@@ -312,6 +313,7 @@ class VotingService:
         return VoteStatusDto(
             is_anonymous=vote_session.anonymousFlag,
             realtime_flag=vote_session.realtimeFlag,
+            notify_flag=vote_session.notifyFlag,
             end_time=vote_session.endTime,
             status=vote_session.status,
             totalVotes=len(all_votes),
@@ -418,18 +420,25 @@ class VotingService:
         self.session.add(vote_session)
         return vote_session
 
-    async def get_vote_flags(self, message_id: int) -> Optional[tuple[bool, bool]]:
-        """
-        以轻量级方式仅获取投票会话的匿名和实时标志。
-        """
-        statement = select(VoteSession.anonymousFlag, VoteSession.realtimeFlag).where(
-            VoteSession.contextMessageId == message_id
-        )
+    async def toggle_notify(self, message_id: int) -> Optional[VoteSession]:
+        """切换投票的结束通知状态。"""
+        vote_session = await self.get_vote_session_with_details(message_id)
+        if not vote_session:
+            return None
+        vote_session.notifyFlag = not vote_session.notifyFlag
+        self.session.add(vote_session)
+        return vote_session
+
+    async def get_vote_flags(self, message_id: int) -> Optional[tuple[bool, bool, bool]]:
+        """以轻量级方式仅获取投票会话的匿名、实时和通知标志。"""
+        statement = select(
+            VoteSession.anonymousFlag, VoteSession.realtimeFlag, VoteSession.notifyFlag
+        ).where(VoteSession.contextMessageId == message_id)
         result = await self.session.exec(statement)
         flags = result.one_or_none()
         if not flags:
             return None
-        return flags[0], flags[1]
+        return flags[0], flags[1], flags[2]
 
     async def reopen_vote_session(
         self, message_id: int, new_end_time: datetime
@@ -472,6 +481,7 @@ class VotingService:
         return VoteDetailDto(
             is_anonymous=vote_session.anonymousFlag,
             realtime_flag=vote_session.realtimeFlag,
+            notify_flag=vote_session.notifyFlag,
             end_time=vote_session.endTime,
             context_message_id=vote_session.contextMessageId,
             status=vote_session.status,

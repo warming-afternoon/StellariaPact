@@ -218,6 +218,7 @@ class Moderation(commands.Cog):
         duration_hours="投票持续时间（小时），默认为 48 小时。",
         anonymous="是否匿名投票，默认为 是。",
         realtime="是否实时显示票数，默认为 是。",
+        notify="投票结束时是否通知提案委员，默认为 是。",
     )
     async def create_proposal_vote(
         self,
@@ -225,6 +226,7 @@ class Moderation(commands.Cog):
         duration_hours: app_commands.Range[int, 1, 720] = 48,
         anonymous: bool = True,
         realtime: bool = True,
+        notify: bool = True,
     ):
         """为当前帖子手动创建一个提案投票。
 
@@ -282,7 +284,12 @@ class Moderation(commands.Cog):
             # 3. 派发事件以创建投票
             if proposal_dto:
                 self.bot.dispatch(
-                    "proposal_created", proposal_dto, duration_hours, anonymous, realtime
+                    "proposal_created",
+                    proposal_dto,
+                    duration_hours,
+                    anonymous,
+                    realtime,
+                    notify,
                 )
                 await interaction.followup.send("✅ 成功为本帖创建了新的投票！", ephemeral=True)
             else:
