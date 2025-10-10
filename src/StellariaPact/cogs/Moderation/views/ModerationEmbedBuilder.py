@@ -1,14 +1,15 @@
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Optional
+from zoneinfo import ZoneInfo
 
 import discord
-from zoneinfo import ZoneInfo
 
 from ....share.enums.ConfirmationStatus import ConfirmationStatus
 from ..qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
 from ..qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
 from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
-from ..qo.BuildObjectionReviewResultEmbedQo import BuildObjectionReviewResultEmbedQo
+from ..qo.BuildObjectionReviewResultEmbedQo import \
+    BuildObjectionReviewResultEmbedQo
 from ..qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
 from ..qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
 
@@ -105,14 +106,29 @@ class ModerationEmbedBuilder:
         kicked_user: discord.User | discord.Member,
         reason: str,
         target_message: discord.Message,
+        is_voting_allowed: bool,
+        mute_end_time: Optional[datetime] = None,
     ) -> discord.Embed:
         """
         创建踢出提案的处罚公示 Embed。
         """
+        description_lines = [f"**目标用户**: {kicked_user.mention}"]
+
+        if is_voting_allowed:
+            description_lines.append("**处理方式**:\n保留本帖投票资格")
+            color = discord.Color.orange()  # 使用警告色
+        else:
+            description_lines.append("**处理方式**:\n剥夺本帖投票资格")
+            color = discord.Color.red()  # 使用错误/危险色
+
+        if mute_end_time:
+            ts = int(mute_end_time.timestamp())
+            description_lines.append(f"**禁言至**: <t:{ts}:F> (<t:{ts}:R>)")
+
         embed = discord.Embed(
             title="议事成员资格变动公示",
-            description=f"**目标用户**: {kicked_user.mention}\n**处理方式**: 剥夺本帖议事资格",
-            color=discord.Color.red(),
+            description="\n".join(description_lines),
+            color=color,
             timestamp=datetime.now(ZoneInfo("UTC")),
         )
         embed.add_field(name="处理理由", value=reason, inline=False)

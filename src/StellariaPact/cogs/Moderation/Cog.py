@@ -17,7 +17,7 @@ from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationVie
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
-from StellariaPact.cogs.Moderation.views.ReasonModal import ReasonModal
+from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalModal
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.DiscordUtils import DiscordUtils
@@ -95,8 +95,8 @@ class Moderation(commands.Cog):
             )
             return
 
-        # 创建一个 ReasonModal 实例，并将所有需要的上下文传递给它。
-        modal = ReasonModal(bot=self.bot, original_interaction=interaction, target_message=message)
+        # 创建 KickProposalModal 实例
+        modal = KickProposalModal(bot=self.bot, original_interaction=interaction, target_message=message)
         await self.bot.api_scheduler.submit(
             coro=interaction.response.send_modal(modal), priority=1
         )

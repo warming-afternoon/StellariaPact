@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 from typing import Optional, Sequence
 
@@ -63,16 +64,21 @@ class ModerationService:
         return result.one_or_none()
 
     async def update_user_validation_status(
-        self, user_id: int, thread_id: int, is_valid: bool
+        self,
+        user_id: int,
+        thread_id: int,
+        is_valid: bool,
+        mute_end_time: Optional[datetime] = None,
     ) -> UserActivity:
         """
-        更新用户在特定帖子中的投票有效性状态。
+        更新用户在特定帖子中的投票有效性和禁言状态。
         如果记录不存在，则会创建一条新记录。
-
+        
         Args:
             user_id: 用户的Discord ID。
             thread_id: 上下文的帖子ID。
             is_valid: 用户投票是否有效。
+            mute_end_time: 禁言截止时间
 
         Returns:
             返回被创建或更新的 UserActivity 对象。
@@ -83,12 +89,14 @@ class ModerationService:
         if user_activity:
             # 如果记录存在，则更新其状态
             user_activity.validation = 1 if is_valid else 0
+            user_activity.muteEndTime = mute_end_time
         else:
             # 如果记录不存在，则创建一条新记录
             user_activity = UserActivity(
                 userId=user_id,
                 contextThreadId=thread_id,
                 validation=1 if is_valid else 0,
+                muteEndTime=mute_end_time,
             )
 
         self.session.add(user_activity)

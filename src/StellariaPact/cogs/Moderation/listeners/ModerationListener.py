@@ -1,11 +1,14 @@
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Literal
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Dict, Literal, Optional
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
+from sqlalchemy import and_, select, update
 
 from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
+from StellariaPact.models.UserActivity import UserActivity
 
 from ....cogs.Moderation.dto.CollectionExpiredResultDto import CollectionExpiredResultDto
 from ....cogs.Moderation.dto.ConfirmationCompletedDto import ConfirmationSessionDto
@@ -41,6 +44,110 @@ class ModerationListener(commands.Cog):
         self.bot = bot
         self.logic = ModerationLogic(bot)
         self.thread_manager = ProposalThreadManager(bot.config)
+        # 缓存结构: {thread_id: {user_id: mute_end_time}}
+        self.active_mutes: Dict[int, Dict[int, datetime]] = {}
+        self.clear_expired_mutes.start()
+
+    def cog_unload(self):
+        self.clear_expired_mutes.cancel()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self._load_active_mutes_into_cache()
+
+    async def _load_active_mutes_into_cache(self):
+        """从数据库加载所有当前有效的禁言记录到内存缓存中。"""
+        logger.info("正在加载有效的禁言记录到缓存...")
+        self.active_mutes.clear()
+        now = datetime.now(timezone.utc)
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            statement = select(UserActivity).where(
+                UserActivity.muteEndTime != None, UserActivity.muteEndTime > now  # type: ignore
+            )
+            results = await uow.session.exec(statement)  # type: ignore
+            for activity in results.all():
+                if activity.contextThreadId not in self.active_mutes:
+                    self.active_mutes[activity.contextThreadId] = {}
+                if activity.muteEndTime:
+                    self.active_mutes[activity.contextThreadId][
+                        activity.userId
+                    ] = activity.muteEndTime
+        logger.info(
+            f"成功加载 {sum(len(users) for users in self.active_mutes.values())} 条有效禁言记录。"
+        )
+
+    @tasks.loop(minutes=5)
+    async def clear_expired_mutes(self):
+        """每5分钟清理一次缓存和数据库中已过期的禁言记录。"""
+        logger.debug("正在清理已过期的禁言...")
+        now = datetime.now(timezone.utc)
+        expired_mutes_to_clear_from_db = []
+        
+        # 清理内存缓存
+        for thread_id, users in list(self.active_mutes.items()):
+            for user_id, end_time in list(users.items()):
+                if now >= end_time:
+                    del self.active_mutes[thread_id][user_id]
+                    expired_mutes_to_clear_from_db.append((user_id, thread_id))
+            if not self.active_mutes[thread_id]:
+                del self.active_mutes[thread_id]
+
+        # 清理数据库
+        if expired_mutes_to_clear_from_db:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                for user_id, thread_id in expired_mutes_to_clear_from_db:
+                    stmt = (
+                        update(UserActivity)
+                        .where(UserActivity.userId == user_id, UserActivity.contextThreadId == thread_id)
+                        .values(muteEndTime=None)
+                    )
+                    await uow.session.execute(stmt)
+                await uow.commit()
+            logger.info(f"已清理 {len(expired_mutes_to_clear_from_db)} 条过期的数据库禁言记录。")
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if (
+            message.author.bot
+            or not isinstance(message.channel, discord.Thread)
+            or not message.guild
+        ):
+            return
+
+        # 从缓存中快速检查
+        thread_mutes = self.active_mutes.get(message.channel.id)
+        if not thread_mutes:
+            return
+
+        mute_end_time = thread_mutes.get(message.author.id)
+        if not mute_end_time:
+            return
+
+        # 检查禁言是否仍然有效
+        if datetime.now(timezone.utc) < mute_end_time:
+            try:
+                await message.delete()
+                logger.info(f"已删除用户 {message.author.id} 在帖子 {message.channel.id} 中的消息，原因：禁言中。")
+            except discord.Forbidden:
+                logger.warning(f"缺少删除消息的权限，无法删除用户 {message.author.id} 的消息。")
+            except discord.NotFound:
+                pass # 消息可能已被用户自己删除
+
+    @commands.Cog.listener("on_thread_mute_updated")
+    async def on_thread_mute_updated(
+        self, thread_id: int, user_id: int, mute_end_time: Optional[datetime]
+    ):
+        """监听禁言更新事件，并实时更新缓存。"""
+        if thread_id not in self.active_mutes:
+            self.active_mutes[thread_id] = {}
+
+        if mute_end_time and mute_end_time > datetime.now(timezone.utc):
+            self.active_mutes[thread_id][user_id] = mute_end_time
+            logger.debug(f"缓存已更新：用户 {user_id} 在帖子 {thread_id} 中被禁言。")
+        elif user_id in self.active_mutes[thread_id]:
+            # 如果 mute_end_time 为 None 或已过期，则从缓存中移除
+            del self.active_mutes[thread_id][user_id]
+            logger.debug(f"缓存已更新：用户 {user_id} 在帖子 {thread_id} 中的禁言被移除。")
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):

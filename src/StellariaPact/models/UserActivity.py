@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.ext.declarative import declared_attr
@@ -16,6 +17,7 @@ class UserActivity(BaseModel, table=True):
     contextThreadId: int = Field(index=True, description="上下文的帖子ID")
     messageCount: int = Field(default=0, description="该用户在帖子中的有效发言次数")
     validation: int = Field(default=1, description="用户投票是否有效: 0-无效, 1-有效")
+    muteEndTime: Optional[datetime] = Field(default=None, description="禁言截止的UTC时间")
     lastUpdated: datetime = Field(
         default_factory=datetime.utcnow,
         sa_column_kwargs={
