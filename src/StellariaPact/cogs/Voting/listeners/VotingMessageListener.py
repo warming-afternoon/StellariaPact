@@ -112,6 +112,7 @@ class VotingMessageListener(commands.Cog):
                         new_embed = VoteEmbedBuilder.create_vote_panel_embed(
                             topic=thread.name,
                             anonymous_flag=details.is_anonymous,
+                            notify_flag=details.notify_flag,
                             realtime_flag=details.realtime_flag,
                             end_time=details.end_time,
                             vote_details=details,

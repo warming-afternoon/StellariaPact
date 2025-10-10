@@ -2,7 +2,12 @@ import asyncio
 import logging
 
 from StellariaPact.cogs.Moderation.Cog import Moderation
-from StellariaPact.cogs.Moderation.listeners.ModerationListener import ModerationListener
+from StellariaPact.cogs.Moderation.listeners.ModerationListener import (
+    ModerationListener,
+)
+from StellariaPact.cogs.Moderation.tasks.ThreadReconciliation import (
+    ThreadReconciliation,
+)
 from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
 from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -21,6 +26,10 @@ async def setup(bot: StellariaPactBot):
     bot.add_view(ObjectionManageView(bot))
     bot.add_view(ObjectionCreationVoteView(bot))
 
-    cogs_to_load = [Moderation(bot), ModerationListener(bot)]
+    cogs_to_load = [
+        Moderation(bot),
+        ModerationListener(bot),
+        ThreadReconciliation(bot),
+    ]
     await asyncio.gather(*[bot.add_cog(cog) for cog in cogs_to_load])
     logger.info(f"成功为 Moderation 模块加载了 {len(cogs_to_load)} 个 Cogs。")

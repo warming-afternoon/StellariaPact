@@ -17,6 +17,7 @@ from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
 from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
+from ....models.Objection import Objection
 from ....share.DiscordUtils import DiscordUtils
 from ....share.enums.ProposalStatus import ProposalStatus
 from ....share.StringUtils import StringUtils
@@ -44,60 +45,27 @@ class ModerationListener(commands.Cog):
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
         """
-        监听新帖子的创建，如果是提案，则负责创建提案实体、更新UI并派发事件。
+        监听新帖子的创建，如果是提案，则委托给 ModerationLogic 处理。
         """
+        # 短暂休眠以等待帖子的启动消息被处理/缓存
         await asyncio.sleep(0.5)
         # 检查是否为提案讨论帖
         discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
-        if not discussion_channel_id_str or thread.parent_id != int(discussion_channel_id_str):
+        if not discussion_channel_id_str or thread.parent_id != int(
+            discussion_channel_id_str
+        ):
             return
 
         # 检查它是否是异议帖，如果是，则忽略
         async with UnitOfWork(self.bot.db_handler) as uow:
-            objection_dto = await uow.moderation.get_objection_by_thread_id(thread.id)
-            if objection_dto:
+            objection = await uow.moderation.get_objection_by_thread_id(thread.id)
+            if objection:
                 logger.debug(f"帖子 {thread.id} 是异议帖，不由 ModerationListener 处理。")
                 return
 
-        logger.debug(f"ModerationListener 捕获到新的提案帖: {thread.id}")
-
-        try:
-            # 1. 获取发起人并创建提案
-            starter_message = thread.starter_message
-            if not starter_message:
-                starter_message = await thread.fetch_message(thread.id)
-            if not starter_message:
-                logger.warning(f"无法获取帖子 {thread.id} 的启动消息，无法创建提案。")
-                return
-
-            # 2. 更新帖子状态
-            await self.thread_manager.update_status(thread, "discussion")
-
-            proposer_id = StringUtils.extract_proposer_id_from_content(starter_message.content)
-
-            # 如果正则没有匹配到，则回退到使用消息作者ID作为备用方案
-            if not proposer_id:
-                proposer_id = starter_message.author.id
-            clean_title = StringUtils.clean_title(thread.name)
-
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                proposal_dto = await uow.moderation.create_proposal(
-                    thread.id, proposer_id, clean_title
-                )
-                await uow.commit()
-
-            # 3. 如果成功创建了新的提案，则派发事件
-            if proposal_dto:
-                # 对于自动创建的提案，使用默认的投票参数
-                self.bot.dispatch("proposal_created", proposal_dto, 48, True, True)
-            else:
-                logger.debug(f"提案 {thread.id} 已存在，不派发事件。")
-
-        except Exception as e:
-            logger.error(
-                f"ModerationListener 在处理帖子创建事件时发生错误 (ID: {thread.id}): {e}",
-                exc_info=True,
-            )
+        logger.debug(f"ModerationListener 捕获到一个新提案帖: {thread.id}")
+        # 将完整的工作流委托给逻辑层
+        await self.logic.handle_new_proposal_thread(thread)
 
     @commands.Cog.listener()
     async def on_objection_vote_finished(

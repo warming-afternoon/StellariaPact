@@ -2,12 +2,15 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import discord
 from sqlalchemy.exc import IntegrityError
 
 from ...models.Announcement import Announcement
 from ...share.enums.ObjectionStatus import ObjectionStatus
 from ...share.enums.ProposalStatus import ProposalStatus
+from ...share.enums.VoteDuration import VoteDuration
 from ...share.StellariaPactBot import StellariaPactBot
+from ...share.StringUtils import StringUtils
 from ...share.UnitOfWork import UnitOfWork
 from ..Voting.dto.VoteSessionDto import VoteSessionDto
 from ..Voting.dto.VoteStatusDto import VoteStatusDto
@@ -31,6 +34,7 @@ from .qo.CreateObjectionAndVoteSessionShellQo import CreateObjectionAndVoteSessi
 from .qo.CreateObjectionQo import CreateObjectionQo
 from .qo.EditObjectionReasonQo import EditObjectionReasonQo
 from .qo.ObjectionSupportQo import ObjectionSupportQo
+from .thread_manager import ProposalThreadManager
 
 logger = logging.getLogger(__name__)
 
@@ -690,6 +694,57 @@ class ModerationLogic:
             )
         except ValueError as e:
             return ObjectionReviewResultDto(success=False, message=str(e))
+
+    async def handle_new_proposal_thread(self, thread: discord.Thread) -> None:
+        """
+        处理一个新发现的提案帖子的完整工作流。
+        该方法可被 on_thread_create 监听器和审计任务共同调用。
+        """
+        try:
+            # 获取启动消息和提案人
+            starter_message = thread.starter_message
+            if not starter_message:
+                # 如果缓存为空，则必须拉取消息
+                starter_message = await thread.fetch_message(thread.id)
+            if not starter_message:
+                logger.warning(f"无法获取帖子 {thread.id} 的启动消息，中止提案创建。")
+                return
+
+            proposer_id = StringUtils.extract_proposer_id_from_content(starter_message.content)
+            if not proposer_id:
+                proposer_id = starter_message.author.id
+            clean_title = StringUtils.clean_title(thread.name)
+
+            # 在数据库中创建提案
+            proposal_dto = None
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                proposal_dto = await uow.moderation.create_proposal(
+                    thread.id, proposer_id, clean_title
+                )
+                await uow.commit()
+
+            # 如果创建了 *新* 的提案，则更新UI并派发事件
+            if proposal_dto:
+                logger.info(f"已处理新提案 '{clean_title}' (帖子 ID: {thread.id})。")
+                # 更新帖子外观（标签、标题前缀）
+                thread_manager = ProposalThreadManager(self.bot.config)
+                await thread_manager.update_status(thread, "discussion")
+                # 派发事件，让 Voting cog 创建投票面板
+                self.bot.dispatch(
+                    "proposal_created",
+                    proposal_dto,
+                    VoteDuration.PROPOSAL_DEFAULT,
+                    True,
+                    True,
+                )
+            else:
+                logger.debug(f"提案 (帖子 ID: {thread.id}) 已存在，跳过处理。")
+
+        except Exception as e:
+            logger.error(
+                f"处理新提案帖 {thread.id} 时发生错误: {e}",
+                exc_info=True,
+            )
 
     async def handle_proposal_execution_confirmed(self, proposal_id: int) -> ProposalDto | None:
         """
