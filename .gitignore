@@ -184,4 +184,5 @@ cython_debug/
 .vscode/
 .roo/
 data/
+temp/
 config.json

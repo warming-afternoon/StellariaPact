@@ -63,6 +63,18 @@ class VotingService:
         )
         await self.session.exec(statement)
 
+    async def update_voting_channel_message_id(self, session_id: int, message_id: int):
+        """
+        更新投票会话在投票频道中的消息ID。
+        """
+        statement = (
+            update(VoteSession)
+            .where(VoteSession.id == session_id)  # type: ignore
+            .values(votingChannelMessageId=message_id)
+            .returning(VoteSession.id)  # type: ignore
+        )
+        await self.session.exec(statement)
+
     async def get_vote_session_by_context_message_id(
         self, message_id: int
     ) -> Optional[VoteSession]:
@@ -71,6 +83,17 @@ class VotingService:
         """
         result = await self.session.exec(
             select(VoteSession).where(VoteSession.contextMessageId == message_id)
+        )
+        return result.one_or_none()
+
+    async def get_vote_session_by_voting_channel_message_id(
+        self, message_id: int
+    ) -> Optional[VoteSession]:
+        """
+        根据投票频道消息ID获取投票会话。
+        """
+        result = await self.session.exec(
+            select(VoteSession).where(VoteSession.votingChannelMessageId == message_id)
         )
         return result.one_or_none()
 

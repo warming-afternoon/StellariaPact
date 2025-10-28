@@ -149,66 +149,14 @@ class Moderation(commands.Cog):
     @app_commands.command(name="发起异议", description="对一个提案发起异议")
     async def raise_objection(self, interaction: discord.Interaction):
         """处理 /发起异议 命令，通过模态框收集信息。
+        实际处理逻辑由 on_objection_modal_submitted 监听器完成。
 
         Args:
             interaction (discord.Interaction): 命令交互对象。
         """
         modal = ObjectionModal(self.bot)
-
-        async def on_submit(interaction: discord.Interaction):
-            # 立即响应，防止超时
-            await safeDefer(interaction, ephemeral=True)
-
-            proposal_link = modal.proposal_link.value
-            reason = modal.reason.value
-
-            try:
-                # --- 阶段一: 创建数据库记录 ---
-                target_thread_id = self._determine_target_thread_id(interaction, proposal_link)
-
-                # 调用 Logic 层，它现在根据情况返回不同类型的 DTO
-                result_dto = await self.logic.handle_raise_objection(
-                    user_id=interaction.user.id,
-                    target_thread_id=target_thread_id,
-                    reason=reason,
-                )
-
-                # --- 阶段二: 根据结果处理UI ---
-                if isinstance(result_dto, ObjectionVotePanelDto):
-                    # 如果返回 DTO，说明是首次异议，派发事件让 Voting 模块创建面板
-                    assert isinstance(result_dto, ObjectionVotePanelDto)
-                    self.bot.dispatch("create_objection_vote_panel", result_dto, interaction)
-                    final_message = (
-                        "异议已成功发起！\n由于为首次异议，将直接在公示频道开启异议产生票收集。"
-                    )
-                elif isinstance(result_dto, SubsequentObjectionDto):
-                    # 如果返回 SubsequentObjectionDto，说明是后续异议，创建审核UI
-                    assert isinstance(result_dto, SubsequentObjectionDto)
-                    await self._handle_subsequent_objection_ui(interaction, result_dto)
-                    final_message = (
-                        "异议已成功发起！\n由于该提案已有其他异议，本次异议需要先由管理员审核。"
-                    )
-                else:
-                    # 兜底，理论上不应发生
-                    final_message = "操作已提交，但返回了未知的处理结果。"
-
-                # --- 最终确认 ---
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send(final_message, ephemeral=True), 1
-                )
-
-            except (ValueError, RuntimeError) as e:
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send(str(e), ephemeral=True), 1
-                )
-            except Exception as e:
-                logger.error(f"处理 'raise_objection' 命令时发生意外错误: {e}", exc_info=True)
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
-                )
-
-        modal.on_submit = on_submit
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
+
 
     @app_commands.command(
         name="创建提案投票",
@@ -219,6 +167,7 @@ class Moderation(commands.Cog):
         anonymous="是否匿名投票，默认为 是。",
         realtime="是否实时显示票数，默认为 是。",
         notify="投票结束时是否通知提案委员，默认为 是。",
+        create_in_voting_channel="是否在投票频道创建镜像投票，默认为 是。",
     )
     async def create_proposal_vote(
         self,
@@ -227,6 +176,7 @@ class Moderation(commands.Cog):
         anonymous: bool = True,
         realtime: bool = True,
         notify: bool = True,
+        create_in_voting_channel: bool = True,
     ):
         """为当前帖子手动创建一个提案投票。
 
@@ -235,6 +185,7 @@ class Moderation(commands.Cog):
             duration_hours (app_commands.Range[int, 1, 720], optional): 投票持续时间（小时）。默认为 48。
             anonymous (bool, optional): 是否匿名投票。默认为 True。
             realtime (bool, optional): 是否实时显示票数。默认为 True。
+            create_in_voting_channel (bool, optional): 是否在投票频道创建镜像投票。默认为 True。
         """
         await safeDefer(interaction, ephemeral=True)
 
@@ -269,11 +220,12 @@ class Moderation(commands.Cog):
                 proposer_id = starter_message.author.id
 
             clean_title = StringUtils.clean_title(thread.name)
+            content = starter_message.content
 
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 2. 尝试创建提案
                 proposal_dto = await uow.moderation.create_proposal(
-                    thread.id, proposer_id, clean_title
+                    thread.id, proposer_id, clean_title, content
                 )
                 # 如果提案已存在，则获取它
                 if not proposal_dto:
@@ -290,6 +242,7 @@ class Moderation(commands.Cog):
                     anonymous,
                     realtime,
                     notify,
+                    create_in_voting_channel,
                 )
                 await interaction.followup.send("✅ 成功为本帖创建了新的投票！", ephemeral=True)
             else:
@@ -299,76 +252,6 @@ class Moderation(commands.Cog):
             await interaction.followup.send(f"发生错误: {e}", ephemeral=True)
 
     # --- 私有方法 ---
-
-    def _determine_target_thread_id(
-        self, interaction: discord.Interaction, proposal_link: str
-    ) -> int:
-        """从交互上下文或链接中解析出目标帖子ID。
-
-        Args:
-            interaction (discord.Interaction): 当前的交互对象。
-            proposal_link (str): 用户提供的提案链接。
-
-        Raises:
-            ValueError: 如果链接格式不正确或在没有链接的情况下不在帖子内使用。
-
-        Returns:
-            int: 解析出的帖子ID。
-        """
-        if proposal_link:
-            thread_id = StringUtils.extract_thread_id_from_url(proposal_link)
-            if not thread_id:
-                raise ValueError("提供的链接格式不正确，无法识别帖子ID。")
-            return thread_id
-        elif isinstance(interaction.channel, discord.Thread):
-            return interaction.channel.id
-        else:
-            raise ValueError("此命令必须在提案帖子内使用，或通过“提案链接”参数指定目标帖子。")
-
-    async def _handle_subsequent_objection_ui(
-        self, interaction: discord.Interaction, dto: SubsequentObjectionDto
-    ):
-        """处理后续异议的UI交互（发送审核面板）。"""
-        # 获取频道
-        channel_id_str = self.bot.config.get("channels", {}).get("objection_audit")
-        if not channel_id_str:
-            raise RuntimeError("审核频道未配置")
-        if not self.bot.user:
-            raise RuntimeError("机器人未登录")
-        channel = await DiscordUtils.fetch_channel(self.bot, int(channel_id_str))
-
-        if not isinstance(channel, discord.ForumChannel):
-            raise RuntimeError(f"审核频道 (ID: {channel.id}) 不是一个论坛频道。")
-
-        # 构建 Embed 和 View
-        guild_id = self.bot.config.get("guild_id")
-        if not guild_id:
-            raise RuntimeError("服务器 ID (guild_id) 未配置")
-
-        embed_qo = BuildAdminReviewEmbedQo(
-            objection_id=dto.objection_id,
-            objector_id=dto.objector_id,
-            objection_reason=dto.objection_reason,
-            proposal_id=dto.proposal_id,
-            proposal_title=dto.proposal_title,
-            proposal_thread_id=dto.proposal_thread_id,
-            guild_id=int(guild_id),
-        )
-
-        embed = ModerationEmbedBuilder.build_admin_review_embed(embed_qo, self.bot.user)
-        view = ObjectionManageView(self.bot)
-
-        # 创建审核帖子
-        thread_name = f"异议审核 - {dto.proposal_title[:50]}"
-        thread_with_message = await self.bot.api_scheduler.submit(
-            channel.create_thread(name=thread_name, embed=embed, view=view), priority=3
-        )
-        thread = thread_with_message[0]
-
-        # 更新数据库中的审核帖子ID
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.moderation.update_objection_review_thread_id(dto.objection_id, thread.id)
-            await uow.commit()
 
     async def _handle_confirmation_command(
         self,

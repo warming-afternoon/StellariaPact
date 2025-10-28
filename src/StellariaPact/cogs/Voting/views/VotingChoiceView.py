@@ -165,8 +165,8 @@ class VotingChoiceView(discord.ui.View):
                     priority=1,
                 )
 
-            # 更新公共面板
-            await self._update_vote_panel_embed(vote_details)
+            # 分派事件以更新所有面板
+            self.bot.dispatch("vote_details_updated", vote_details)
         except PermissionError as e:
             await interaction.followup.send(str(e), ephemeral=True)
         except Exception as e:
@@ -203,8 +203,8 @@ class VotingChoiceView(discord.ui.View):
                     priority=1,
                 )
 
-            # 更新公共面板
-            await self._update_vote_panel_embed(vote_details)
+            # 分派事件以更新所有面板
+            self.bot.dispatch("vote_details_updated", vote_details)
 
         except Exception as e:
             logger.error(f"弃权时发生错误: {e}", exc_info=True)

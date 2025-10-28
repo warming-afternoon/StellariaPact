@@ -7,6 +7,7 @@ from StellariaPact.cogs.Voting.listeners.VotingMessageListener import VotingMess
 from StellariaPact.cogs.Voting.tasks.VoteCloser import VoteCloser
 from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import ObjectionFormalVoteView
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
+from StellariaPact.cogs.Voting.views.VotingChannelView import VotingChannelView
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ async def setup(bot: StellariaPactBot):
     # 注册持久化视图
     bot.add_view(VoteView(bot))
     bot.add_view(ObjectionFormalVoteView(bot))
+    bot.add_view(VotingChannelView(bot))
 
     # 实例化核心 Cog
     voting_cog = Voting(bot)

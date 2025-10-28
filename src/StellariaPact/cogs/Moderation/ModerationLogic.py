@@ -714,12 +714,13 @@ class ModerationLogic:
             if not proposer_id:
                 proposer_id = starter_message.author.id
             clean_title = StringUtils.clean_title(thread.name)
+            content = starter_message.content
 
             # 在数据库中创建提案
             proposal_dto = None
             async with UnitOfWork(self.bot.db_handler) as uow:
                 proposal_dto = await uow.moderation.create_proposal(
-                    thread.id, proposer_id, clean_title
+                    thread.id, proposer_id, clean_title, content
                 )
                 await uow.commit()
 
@@ -734,8 +735,10 @@ class ModerationLogic:
                     "proposal_created",
                     proposal_dto,
                     VoteDuration.PROPOSAL_DEFAULT,
-                    True,
-                    True,
+                    True, # anonymous
+                    True, # realtime
+                    True, # notify
+                    True, # create_in_voting_channel (自动创建时总是创建)
                 )
             else:
                 logger.debug(f"提案 (帖子 ID: {thread.id}) 已存在，跳过处理。")

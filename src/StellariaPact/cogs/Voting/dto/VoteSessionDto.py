@@ -13,6 +13,7 @@ class VoteSessionDto(BaseDto):
     contextThreadId: int
     objectionId: Optional[int]
     contextMessageId: Optional[int]
+    votingChannelMessageId: Optional[int]
     anonymousFlag: bool
     realtimeFlag: bool
     notifyFlag: bool

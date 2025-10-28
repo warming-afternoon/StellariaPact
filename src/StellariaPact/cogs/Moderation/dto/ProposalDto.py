@@ -10,5 +10,6 @@ class ProposalDto(BaseDto):
     id: int
     proposerId: int
     title: str
+    content: str
     status: ProposalStatus
     discussionThreadId: int | None

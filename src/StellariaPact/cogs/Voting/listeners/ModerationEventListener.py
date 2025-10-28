@@ -17,7 +17,9 @@ from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import ObjectionFor
 from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
+from StellariaPact.cogs.Voting.views.VotingChannelView import VotingChannelView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
@@ -39,12 +41,13 @@ class ModerationEventListener(commands.Cog):
         anonymous: bool = True,
         realtime: bool = True,
         notify: bool = True,
+        create_in_voting_channel: bool = True,
     ):
         """
         监听到提案成功创建的事件，为其创建投票面板。
         """
 
-        logger.info("接收到 'proposal_created' 事件")
+        logger.info(f"接收到 'proposal_created' 事件, 提案ID: {proposal_dto.id}")
         try:
             if not proposal_dto.discussionThreadId:
                 logger.warning(
@@ -106,6 +109,39 @@ class ModerationEventListener(commands.Cog):
                     end_time=end_time,
                 )
                 session_dto = await uow.voting.create_vote_session(qo)
+                
+                # --- 创建投票频道的镜像投票 ---
+                if create_in_voting_channel:
+                    voting_channel_id_str = self.bot.config.get("channels", {}).get("voting_channel")
+                    if voting_channel_id_str:
+                        voting_channel = await DiscordUtils.fetch_channel(self.bot, int(voting_channel_id_str))
+                        if isinstance(voting_channel, discord.TextChannel):
+                            # 创建一个临时的、初始状态的 VoteDetailDto
+                            initial_vote_details = VoteDetailDto(
+                                is_anonymous=anonymous, realtime_flag=realtime, notify_flag=notify,
+                                end_time=end_time, context_message_id=message.id, status=1,
+                                total_votes=0, approve_votes=0, reject_votes=0, voters=[]
+                            )
+                            
+                            channel_view = VotingChannelView(self.bot)
+                            channel_embed = VoteEmbedBuilder.build_voting_channel_embed(
+                                proposal=proposal_dto,
+                                vote_details=initial_vote_details,
+                                thread_jump_url=thread.jump_url
+                            )
+                            
+                            voting_channel_message = await self.bot.api_scheduler.submit(
+                                voting_channel.send(embed=channel_embed, view=channel_view), priority=4
+                            )
+                            
+                            # 更新数据库
+                            await uow.voting.update_voting_channel_message_id(session_dto.id, voting_channel_message.id)
+                            logger.debug(f"成功为会话 {session_dto.id} 创建镜像投票，消息ID: {voting_channel_message.id}")
+                        else:
+                            logger.warning("配置的 voting_channel 不是一个有效的文本频道。")
+                    else:
+                        logger.debug("未配置 voting_channel，跳过创建镜像投票。")
+
                 await uow.commit()
                 logger.debug(
                     f"成功为提案 {proposal_dto.id} 创建了新的投票会话 {session_dto.id}，消息ID: {message.id}"

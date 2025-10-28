@@ -10,6 +10,7 @@ from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
+from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
 
 
 class VoteEmbedBuilder:
@@ -274,4 +275,40 @@ class VoteEmbedBuilder:
             embed.add_field(name="投票状态", value="**已结束**", inline=False)
             embed.color = discord.Color.dark_grey()
 
+        return embed
+
+    @staticmethod
+    def build_voting_channel_embed(
+        proposal: ProposalDto,
+        vote_details: VoteDetailDto,
+        thread_jump_url: str
+    ) -> discord.Embed:
+        """
+        为投票频道构建镜像投票面板的Embed。
+        """
+        content_preview = (proposal.content[:1000] + '...') if len(proposal.content) > 1000 else proposal.content
+
+        embed = discord.Embed(
+            title=f"议题：{proposal.title}",
+            description=f"**提案内容预览:**\n{content_preview}\n\n[点击此处跳转到原提案帖进行讨论]({thread_jump_url})",
+            color=discord.Color.dark_purple()
+        )
+
+        if vote_details.realtime_flag:
+            embed.add_field(name="赞成", value=str(vote_details.approve_votes), inline=True)
+            embed.add_field(name="反对", value=str(vote_details.reject_votes), inline=True)
+            embed.add_field(name="总票数", value=str(vote_details.total_votes), inline=True)
+        else:
+            embed.add_field(name="状态", value="票数非实时显示", inline=False)
+
+        if vote_details.end_time:
+            end_time_ts = int(vote_details.end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
+            embed.add_field(
+                name="截止时间",
+                value=f"<t:{end_time_ts}:F> (<t:{end_time_ts}:R>)",
+                inline=False,
+            )
+        embed.set_footer(
+            text=f"投票资格 : 在讨论帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
+        )
         return embed

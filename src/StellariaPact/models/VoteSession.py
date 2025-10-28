@@ -22,6 +22,9 @@ class VoteSession(BaseModel, table=True):
     contextMessageId: Optional[int] = Field(
         default=None, index=True, description="投票面板消息的ID"
     )
+    votingChannelMessageId: Optional[int] = Field(
+        default=None, index=True, description="投票频道中镜像投票消息的ID"
+    )
     anonymousFlag: bool = Field(default=True, description="是否为匿名投票")
     realtimeFlag: bool = Field(default=True, description="是否实时展示投票进度")
     notifyFlag: bool = Field(default=True, description="投票结束时是否通知相关方")

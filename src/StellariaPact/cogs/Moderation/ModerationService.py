@@ -104,7 +104,7 @@ class ModerationService:
         return user_activity
 
     async def create_proposal(
-        self, thread_id: int, proposer_id: int, title: str
+        self, thread_id: int, proposer_id: int, title: str, content: str = ""
     ) -> Optional[ProposalDto]:
         """
         尝试创建一个新的提案，如果因唯一性约束而失败，则静默处理。
@@ -113,6 +113,7 @@ class ModerationService:
             thread_id: 提案讨论帖的ID。
             proposer_id: 提案发起人的ID。
             title: 提案的标题。
+            content: 提案的内容。
 
         Returns:
             成功创建则返回 ProposalDto，如果已存在则返回 None。
@@ -121,6 +122,7 @@ class ModerationService:
             discussionThreadId=thread_id,
             proposerId=proposer_id,
             title=title,
+            content=content,
             status=ProposalStatus.DISCUSSION,
         )
         self.session.add(new_proposal)

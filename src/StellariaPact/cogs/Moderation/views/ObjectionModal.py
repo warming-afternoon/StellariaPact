@@ -27,11 +27,12 @@ class ObjectionModal(discord.ui.Modal, title="发起异议"):
 
     async def on_submit(self, interaction: discord.Interaction):
         """
-        当用户提交模态框时被调用。
+        当用户提交模态框时，派发一个全局事件
         """
-        # 这里的逻辑将在 Cog 层中被重写或调用，
-        # 以便处理异议创建的核心业务逻辑。
-        # 目前仅作为演示，回复一个确认信息。
-        await interaction.response.send_message(
-            f"已收到您的异议，理由：\n> {self.reason.value}", ephemeral=True
+
+        self.bot.dispatch(
+            "objection_modal_submitted",
+            interaction,
+            self.proposal_link.value,
+            self.reason.value,
         )

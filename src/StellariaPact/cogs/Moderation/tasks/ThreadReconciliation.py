@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class ThreadReconciliation(commands.Cog):
     """
-    一个包含后台任务的 Cog，用于查找并处理可能被 on_thread_create 事件遗漏的提案帖子。
+    后台任务的 Cog，用于查找并处理可能被 on_thread_create 事件遗漏的提案帖子。
     """
 
     def __init__(self, bot: "StellariaPactBot"):
@@ -76,12 +76,12 @@ class ThreadReconciliation(commands.Cog):
                     await asyncio.sleep(1)  # 短暂延迟以避免在发现很多帖子时达到速率限制
 
         except Exception as e:
-            logger.error(f"提案帖子对账任务中发生意外错误: {e}", exc_info=True)
+            logger.error(f"提案帖子审计任务中发生意外错误: {e}", exc_info=True)
 
     @reconcile_missing_threads.before_loop
     async def before_reconciliation_loop(self):
         await self.bot.wait_until_ready()
-        logger.info("提案帖子对账任务已准备就绪。")
+        logger.info("提案帖子审计任务已准备就绪。")
 
 
 async def setup(bot: "StellariaPactBot"):
