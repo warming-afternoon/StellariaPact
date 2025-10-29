@@ -202,25 +202,21 @@ class Moderation(commands.Cog):
         thread = interaction.channel
 
         try:
-            # 1. 获取发起人信息
-            starter_message = thread.starter_message
-            if not starter_message:
-                starter_message = await thread.fetch_message(thread.id)
-
-            if not starter_message:
+            # 1. 获取发起人信息和首楼内容
+            content = await StringUtils.extract_starter_content(thread)
+            if not content:
                 await interaction.followup.send(
-                    "无法获取帖子的启动消息，操作失败。", ephemeral=True
+                    "无法获取帖子的首楼内容，操作失败。", ephemeral=True
                 )
                 return
 
-            proposer_id = StringUtils.extract_proposer_id_from_content(starter_message.content)
+            proposer_id = StringUtils.extract_proposer_id_from_content(content)
 
-            # 如果正则没有匹配到，则回退到使用消息作者ID作为备用方案
+            # 如果正则没有匹配到，则回退到使用帖子创建者ID作为备用方案
             if not proposer_id:
-                proposer_id = starter_message.author.id
+                proposer_id = thread.owner_id
 
             clean_title = StringUtils.clean_title(thread.name)
-            content = starter_message.content
 
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 2. 尝试创建提案

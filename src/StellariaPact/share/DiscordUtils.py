@@ -21,14 +21,14 @@ class DiscordUtils:
         bot: StellariaPactBot, channel_id: int
     ) -> discord.TextChannel | discord.ForumChannel:
         """
-        安全地获取一个频道，优先使用缓存，支持文本和论坛频道。
+        获取一个频道对象，优先使用缓存，支持文本和论坛频道
 
         Args:
-            bot: Bot 实例。
-            channel_id: 要获取的频道的 ID。
+            bot: Bot 实例
+            channel_id: 要获取的频道的 ID
 
         Returns:
-            获取到的频道对象。
+            获取到的频道对象
 
         Raises:
             RuntimeError: 如果无法获取频道，或者频道不是文本或论坛频道。
@@ -47,14 +47,14 @@ class DiscordUtils:
     @staticmethod
     async def fetch_thread(bot: StellariaPactBot, thread_id: int) -> Optional[discord.Thread]:
         """
-        安全地获取一个帖子，优先使用缓存。
+        获取一个帖子对象，优先使用缓存
 
         Args:
-            bot: Bot 实例。
-            thread_id: 要获取的帖子的 ID。
+            bot: Bot 实例
+            thread_id: 要获取的帖子的 ID
 
         Returns:
-            获取到的帖子对象，如果未找到则返回 None。
+            获取到的帖子对象，如果未找到则返回 None
         """
         thread = bot.get_channel(thread_id)
         if isinstance(thread, discord.Thread):
@@ -76,7 +76,7 @@ class DiscordUtils:
         target_tag_name: str,
     ) -> Optional[List[discord.ForumTag]]:
         """
-        计算帖子的新标签列表。
+        计算帖子的新标签列表
 
         Args:
             current_tags: 帖子当前的标签列表。
@@ -85,7 +85,7 @@ class DiscordUtils:
             target_tag_name: 要添加的目标标签在 config 中的键名。
 
         Returns:
-            计算出的新标签列表，如果无需更改则返回 None。
+            计算出的新标签列表，如果无需更改则返回 None
         """
         # 获取目标标签对象
         target_tag_id_str = config.get("tags", {}).get(target_tag_name)

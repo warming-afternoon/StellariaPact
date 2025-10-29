@@ -701,20 +701,16 @@ class ModerationLogic:
         该方法可被 on_thread_create 监听器和审计任务共同调用。
         """
         try:
-            # 获取启动消息和提案人
-            starter_message = thread.starter_message
-            if not starter_message:
-                # 如果缓存为空，则必须拉取消息
-                starter_message = await thread.fetch_message(thread.id)
-            if not starter_message:
-                logger.warning(f"无法获取帖子 {thread.id} 的启动消息，中止提案创建。")
+            # 获取首楼内容和提案人信息
+            content = await StringUtils.extract_starter_content(thread)
+            if not content:
+                logger.warning(f"无法获取帖子 {thread.id} 的首楼内容，中止提案创建。")
                 return
 
-            proposer_id = StringUtils.extract_proposer_id_from_content(starter_message.content)
+            proposer_id = StringUtils.extract_proposer_id_from_content(content)
             if not proposer_id:
-                proposer_id = starter_message.author.id
+                proposer_id = thread.owner_id
             clean_title = StringUtils.clean_title(thread.name)
-            content = starter_message.content
 
             # 在数据库中创建提案
             proposal_dto = None
