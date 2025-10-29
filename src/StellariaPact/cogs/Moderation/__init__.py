@@ -5,6 +5,8 @@ from StellariaPact.cogs.Moderation.Cog import Moderation
 from StellariaPact.cogs.Moderation.listeners.ModerationListener import (
     ModerationListener,
 )
+from StellariaPact.cogs.Moderation.listeners.NotificationEventListener import NotificationEventListener
+from StellariaPact.cogs.Moderation.listeners.VotingEventListener import VotingEventListener
 from StellariaPact.cogs.Moderation.tasks.ThreadReconciliation import (
     ThreadReconciliation,
 )
@@ -29,6 +31,8 @@ async def setup(bot: StellariaPactBot):
     cogs_to_load = [
         Moderation(bot),
         ModerationListener(bot),
+        VotingEventListener(bot),
+        NotificationEventListener(bot),
         ThreadReconciliation(bot),
     ]
     await asyncio.gather(*[bot.add_cog(cog) for cog in cogs_to_load])
