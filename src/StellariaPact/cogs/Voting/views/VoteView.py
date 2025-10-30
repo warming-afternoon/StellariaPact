@@ -6,7 +6,7 @@ from StellariaPact.cogs.Voting.Cog import Voting
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VotingChoiceView import VotingChoiceView
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
-from StellariaPact.share.DiscordUtils import send_private_panel
+from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
@@ -71,7 +71,7 @@ class VoteView(discord.ui.View):
                 is_vote_active=panel_data.is_vote_active,
                 can_manage=can_manage,
             )
-            await send_private_panel(self.bot, interaction, embed=embed, view=choice_view)
+            await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=choice_view)
         except Exception as e:
             await interaction.followup.send(f"处理投票管理面板时出错: {e}", ephemeral=True)
 

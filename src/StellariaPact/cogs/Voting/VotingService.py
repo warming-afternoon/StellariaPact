@@ -52,8 +52,7 @@ class VotingService:
 
     async def update_vote_session_message_id(self, session_id: int, message_id: int):
         """
-        在一个独立的事务中更新投票会话的消息ID。
-        这是两阶段提交的第二步。
+        更新投票会话的消息ID
         """
         statement = (
             update(VoteSession)
@@ -90,7 +89,7 @@ class VotingService:
         self, message_id: int
     ) -> Optional[VoteSession]:
         """
-        根据投票频道消息ID获取投票会话。
+        根据投票频道消息ID获取投票会话
         """
         result = await self.session.exec(
             select(VoteSession).where(VoteSession.votingChannelMessageId == message_id)
@@ -99,7 +98,7 @@ class VotingService:
 
     async def get_vote_session_with_details(self, message_id: int) -> Optional[VoteSession]:
         """
-        根据消息ID获取投票会话，并预加载所有关联的 UserVotes。
+        根据消息ID获取投票会话，并预加载所有关联的 UserVotes
         """
         statement = (
             select(VoteSession)
@@ -113,7 +112,7 @@ class VotingService:
         self, thread_id: int
     ) -> Sequence[VoteSession]:
         """
-        获取帖子内所有的投票会话，并预加载每个会话的投票详情。
+        获取帖子内所有的投票会话，并预加载每个会话的投票详情
         """
         statement = (
             select(VoteSession)
@@ -208,7 +207,7 @@ class VotingService:
         self, user_id: int, session_id: int
     ) -> Optional[UserVoteDto]:
         """
-        根据会话ID获取用户的投票记录。
+        根据会话ID获取用户的投票记录
         """
         statement = select(UserVote).where(
             UserVote.userId == user_id, UserVote.sessionId == session_id
@@ -221,7 +220,7 @@ class VotingService:
 
     async def delete_user_vote_by_message_id(self, user_id: int, message_id: int) -> bool:
         """
-        根据消息ID删除用户的投票记录。
+        根据消息ID删除用户的投票记录
         """
         vote_session = await self.get_vote_session_by_context_message_id(message_id)
         if not vote_session or not vote_session.id:
@@ -502,6 +501,9 @@ class VotingService:
             voters = [VoterInfo(user_id=vote.userId, choice=vote.choice) for vote in all_votes]
 
         return VoteDetailDto(
+            context_thread_id=vote_session.contextThreadId,
+            objection_id=vote_session.objectionId,
+            voting_channel_message_id=getattr(vote_session, 'votingChannelMessageId', None),
             is_anonymous=vote_session.anonymousFlag,
             realtime_flag=vote_session.realtimeFlag,
             notify_flag=vote_session.notifyFlag,

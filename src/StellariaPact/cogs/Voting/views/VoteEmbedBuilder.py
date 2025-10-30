@@ -11,6 +11,7 @@ from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
 
 
 class VoteEmbedBuilder:
@@ -275,6 +276,43 @@ class VoteEmbedBuilder:
             embed.add_field(name="投票状态", value="**已结束**", inline=False)
             embed.color = discord.Color.dark_grey()
 
+        return embed
+
+    @staticmethod
+    def build_objection_voting_channel_embed(
+        objection: ObjectionDetailsDto,
+        vote_details: VoteDetailDto,
+        thread_jump_url: str
+    ) -> discord.Embed:
+        """
+        为投票频道构建异议裁决的镜像投票面板Embed
+        """
+        # 描述可以突出显示异议理由
+        objection_reason_preview = (objection.objection_reason[:600] + '\n\n...\n\n') if len(objection.objection_reason) > 600 else objection.objection_reason
+
+        embed = discord.Embed(
+            title=f"异议裁决投票: {objection.proposal_title}",
+            url=thread_jump_url,
+            description=f"**异议原因**:\n{objection_reason_preview}",
+            color=discord.Color.orange()  # 使用橙色以区分普通投票
+        )
+
+        if vote_details.end_time:
+            end_time_ts = int(vote_details.end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
+            embed.add_field(
+                name="截止时间",
+                value=f"<t:{end_time_ts}:F> (<t:{end_time_ts}:R>)",
+                inline=False,
+            )
+
+        if vote_details.realtime_flag:
+            embed.add_field(name="同意异议", value=str(vote_details.approve_votes), inline=True)
+            embed.add_field(name="反对异议", value=str(vote_details.reject_votes), inline=True)
+            embed.add_field(name="总票数", value=str(vote_details.total_votes), inline=True)
+
+        embed.set_footer(
+            text=f"投票资格 : 在异议讨论帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
+        )
         return embed
 
     @staticmethod

@@ -26,6 +26,7 @@ dependencies = [
 dev = [
     "ruff",
     "pre-commit",
+    "alembic",
 ]
 
 [project.scripts]

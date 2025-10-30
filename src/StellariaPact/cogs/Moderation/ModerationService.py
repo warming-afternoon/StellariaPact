@@ -198,6 +198,34 @@ class ModerationService:
         """
         return await self.session.get(Objection, objection_id)
 
+    async def get_objection_details_by_id(self, objection_id: int) -> Optional[ObjectionDetailsDto]:
+        """
+        根据异议ID获取异议的详细信息，包括其关联的提案。
+        """
+        statement = (
+            select(Objection)
+            .where(Objection.id == objection_id)
+            .options(selectinload(Objection.proposal))  # type: ignore
+        )
+        result = await self.session.exec(statement)
+        objection = result.one_or_none()
+
+        if not objection or not objection.proposal:
+            return None
+
+        # 向类型检查器断言 ID 的存在，因为它们是从数据库加载的
+        assert objection.id is not None, "Objection ID should not be None"
+        assert objection.proposal.id is not None, "Associated Proposal ID should not be None"
+
+        # 将模型数据打包到 DTO 中
+        return ObjectionDetailsDto(
+            objection_id=objection.id,
+            objection_reason=objection.reason,
+            objector_id=objection.objectorId,
+            proposal_id=objection.proposal.id,
+            proposal_title=objection.proposal.title,
+        )
+
     async def get_objection_by_review_thread_id(
         self, review_thread_id: int
     ) -> Optional[Objection]:

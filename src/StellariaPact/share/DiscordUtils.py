@@ -126,37 +126,36 @@ class DiscordUtils:
 
         return new_tags
 
+    @staticmethod
+    async def send_private_panel(
+        bot: "StellariaPactBot",
+        interaction: discord.Interaction,
+        embed: discord.Embed,
+        view: discord.ui.View,
+    ):
+        """
+        尝试通过私信发送一个面板，如果失败则回退到临时的私密消息。
+        """
+        try:
+            # 尝试发送私信
+            message = await bot.api_scheduler.submit(
+                interaction.user.send(embed=embed, view=view), priority=1
+            )
+            # 如果视图有关联的 message 属性，则进行设置
+            if hasattr(view, "message"):
+                view.message = message  # type: ignore
 
-async def send_private_panel(
-    bot: "StellariaPactBot",
-    interaction: discord.Interaction,
-    embed: discord.Embed,
-    view: discord.ui.View,
-):
-    """
-    尝试通过私信发送一个面板，如果失败则回退到临时的私密消息。
-    """
-    try:
-        # 尝试发送私信
-        message = await bot.api_scheduler.submit(
-            interaction.user.send(embed=embed, view=view), priority=1
-        )
-        # 如果视图有关联的 message 属性，则进行设置
-        if hasattr(view, "message"):
-            voting_view: "VotingChoiceView" = view  # type: ignore
-            voting_view.message = message
-
-    except discord.Forbidden:
-        # 私信被屏蔽，回退到发送私密消息
-        await bot.api_scheduler.submit(
-            interaction.followup.send(embed=embed, view=view, ephemeral=True),
-            priority=1,
-        )
-    except Exception as e:
-        # 处理其他可能的异常
-        logger.error(f"发送私密面板时发生未知错误: {e}", exc_info=True)
-        if not interaction.response.is_done():
+        except discord.Forbidden:
+            # 私信被屏蔽，回退到发送私密消息
             await bot.api_scheduler.submit(
-                interaction.followup.send("发送管理面板时出错，请重试。", ephemeral=True),
+                interaction.followup.send(embed=embed, view=view, ephemeral=True),
                 priority=1,
             )
+        except Exception as e:
+            # 处理其他可能的异常
+            logger.error(f"发送私密面板时发生未知错误: {e}", exc_info=True)
+            if not interaction.response.is_done():
+                await bot.api_scheduler.submit(
+                    interaction.followup.send("发送管理面板时出错，请重试。", ephemeral=True),
+                    priority=1,
+                )

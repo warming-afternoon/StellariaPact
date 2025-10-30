@@ -37,29 +37,6 @@ class VotingLogic:
             await uow.voting.update_vote_session_message_id(session_id, message_id)
             await uow.commit()
 
-    async def create_objection_vote_session(
-        self,
-        thread_id: int,
-        objection_id: int,
-        message_id: int,
-        end_time: datetime,
-    ) -> None:
-        """
-        在数据库中创建异议投票会话。
-        """
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            qo = CreateVoteSessionQo(
-                thread_id=thread_id,
-                objection_id=objection_id,
-                context_message_id=message_id,
-                realtime=False,
-                anonymous=True,
-                end_time=end_time,
-            )
-            await uow.voting.create_vote_session(qo)
-
-        logger.info(f"为异议 {objection_id} 在帖子 {thread_id} 中创建数据库投票会话。")
-
     async def record_vote_and_get_details(self, qo: RecordVoteQo) -> VoteDetailDto:
         """
         处理用户的投票动作，并返回更新后的投票详情。

@@ -18,6 +18,9 @@ class VoteDetailDto(BaseModel):
     投票详细状态的数据传输对象
     """
 
+    context_thread_id: int
+    objection_id: Optional[int]
+    voting_channel_message_id: Optional[int]
     is_anonymous: bool
     realtime_flag: bool
     notify_flag: bool
