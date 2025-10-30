@@ -44,7 +44,7 @@ class Voting(commands.Cog):
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ):
         """
-        这个 Cog 的局部错误处理器。
+        投票 Cog 的局部错误处理器
         """
         original_error = getattr(error, "original", error)
 
@@ -196,18 +196,18 @@ class Voting(commands.Cog):
         thread_id: int,
     ):
         """
-        在投票动作后，统一更新公开的投票面板和私有的管理面板。
+        在用户投票后，统一更新公开的投票面板和私有的管理面板
         """
-        # 更新私有面板
-        if interaction.message and interaction.message.embeds:
-            new_embed = interaction.message.embeds[0]
-            new_embed.set_field_at(3, name="当前投票", value=choice_text, inline=False)
-            await self.bot.api_scheduler.submit(
-                interaction.edit_original_response(embed=new_embed), 1
-            )
-
-        # 更新公开面板
         try:
+            # 更新私有面板
+            if interaction.message and interaction.message.embeds:
+                new_embed = interaction.message.embeds[0]
+                new_embed.set_field_at(3, name="当前投票", value=choice_text, inline=False)
+                await self.bot.api_scheduler.submit(
+                    interaction.edit_original_response(embed=new_embed), 1
+                )
+            
+            # 更新公开面板
             thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
             if not isinstance(thread, (discord.TextChannel, discord.Thread)):
                 logger.warning(f"无法为投票 {vote_details.context_message_id} 找到有效的帖子。")
@@ -228,7 +228,7 @@ class Voting(commands.Cog):
                 f"无法获取或编辑帖子 {thread_id} 中的原始投票消息 {vote_details.context_message_id}"
             )
         except Exception as e:
-            logger.error(f"更新主投票面板时出错: {e}", exc_info=True)
+            logger.error(f"更新投票面板时出错: {e}", exc_info=True)
 
     async def _dispatch_formal_vote_event(
         self,
@@ -236,7 +236,7 @@ class Voting(commands.Cog):
         original_message_id: int,
         thread_id: int,
         event_name: str,
-        choice: int | None = None,  # choice 变为可选参数
+        choice: int | None = None,
     ):
         """
         异步辅助方法，用于分发正式投票事件。
@@ -363,7 +363,7 @@ class Voting(commands.Cog):
         self, interaction: discord.Interaction, original_message_id: int, thread_id: int
     ):
         """
-        处理用户从私有面板发起的弃权动作。
+        处理用户从私有面板发起的弃权
         """
         await safeDefer(interaction)
 
@@ -391,7 +391,9 @@ class Voting(commands.Cog):
             await safeDefer(interaction, ephemeral=True)
 
             if not interaction.message or not interaction.guild:
-                await interaction.followup.send("此交互似乎已失效。", ephemeral=True)
+                await self.bot.api_scheduler.submit(
+                    interaction.followup.send("此交互似乎已失效。", ephemeral=True),1
+                )
                 return
 
             async with UnitOfWork(self.bot.db_handler) as uow:
@@ -400,7 +402,9 @@ class Voting(commands.Cog):
                 )
 
                 if not session or not session.contextMessageId or not session.contextThreadId:
-                    await interaction.followup.send("找不到关联的原始投票信息。", ephemeral=True)
+                    await self.bot.api_scheduler.submit(
+                        interaction.followup.send("找不到关联的原始投票信息", ephemeral=True),1
+                    )
                     return
 
                 context_thread_id = session.contextThreadId
@@ -441,7 +445,9 @@ class Voting(commands.Cog):
 
         except Exception as e:
             logger.error(f"处理投票频道管理点击时出错: {e}", exc_info=True)
-            await interaction.followup.send("处理请求时出错。", ephemeral=True)
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("处理请求时出错", ephemeral=True),1
+            )
 
     @commands.Cog.listener("on_vote_view_raise_objection_clicked")
     async def on_vote_view_raise_objection_clicked(self, interaction: discord.Interaction):
@@ -449,7 +455,7 @@ class Voting(commands.Cog):
         try:
             # 既然是从帖子内点击，可以直接获取信息
             if not interaction.channel or not interaction.guild:
-                await interaction.followup.send("此交互似乎已失效。", ephemeral=True)
+                await interaction.response.send_message("此交互似乎已失效。", ephemeral=True)
                 return
 
             # 构建提案链接
@@ -463,8 +469,9 @@ class Voting(commands.Cog):
 
         except Exception as e:
             logger.error(f"处理帖子内发起异议点击时出错: {e}", exc_info=True)
-            if not interaction.response.is_done():
-                await interaction.response.send_message("处理请求时出错。", ephemeral=True)
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message("处理请求时出错", ephemeral=True),1
+            )
 
     @commands.Cog.listener("on_voting_channel_raise_objection_clicked")
     async def on_voting_channel_raise_objection_clicked(
@@ -502,8 +509,9 @@ class Voting(commands.Cog):
 
         except Exception as e:
             logger.error(f"处理投票频道发起异议点击时出错: {e}", exc_info=True)
-            if not interaction.response.is_done():
-                await interaction.response.send_message("处理请求时出错。", ephemeral=True)
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message("处理请求时出错", ephemeral=True),1
+            )
 
     @commands.Cog.listener("on_vote_details_updated")
     async def on_vote_details_updated(self, vote_details: VoteDetailDto):

@@ -35,7 +35,6 @@ class VotingChannelView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         """
-        点击后直接弹出异议模态框。
+        点击后弹出异议模态框
         """
-        # 我们需要获取原始提案的链接来预填 modal
         self.bot.dispatch("voting_channel_raise_objection_clicked", interaction)

@@ -286,19 +286,14 @@ class VoteEmbedBuilder:
         """
         为投票频道构建镜像投票面板的Embed。
         """
-        content_preview = (proposal.content[:1000] + '...') if len(proposal.content) > 1000 else proposal.content
+        content_preview = (proposal.content[:600] + '\n\n...\n\n') if len(proposal.content) > 600 else proposal.content
 
         embed = discord.Embed(
-            title=f"议题：「{proposal.title}」",
+            title=f"{proposal.title}",
             url=f"{thread_jump_url}",
-            description=f"**提案内容预览:**\n{content_preview}\n\n",
+            description=f"{content_preview}",
             color=discord.Color.blue()
         )
-
-        if vote_details.realtime_flag:
-            embed.add_field(name="赞成", value=str(vote_details.approve_votes), inline=True)
-            embed.add_field(name="反对", value=str(vote_details.reject_votes), inline=True)
-            embed.add_field(name="总票数", value=str(vote_details.total_votes), inline=True)
 
         if vote_details.end_time:
             end_time_ts = int(vote_details.end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
@@ -307,6 +302,12 @@ class VoteEmbedBuilder:
                 value=f"<t:{end_time_ts}:F> (<t:{end_time_ts}:R>)",
                 inline=False,
             )
+
+        if vote_details.realtime_flag:
+            embed.add_field(name="赞成", value=str(vote_details.approve_votes), inline=True)
+            embed.add_field(name="反对", value=str(vote_details.reject_votes), inline=True)
+            embed.add_field(name="总票数", value=str(vote_details.total_votes), inline=True)
+
         embed.set_footer(
             text=f"投票资格 : 在讨论帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
         )
