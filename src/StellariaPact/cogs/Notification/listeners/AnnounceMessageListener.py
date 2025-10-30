@@ -48,7 +48,7 @@ class AnnounceMessageListener(commands.Cog):
         await self.load_monitored_channels()
         self.update_cache_to_db.start()
 
-    @tasks.loop(seconds=10)
+    @tasks.loop(seconds=60)
     async def update_cache_to_db(self):
         """后台任务，定期将内存中的消息计数缓存写入数据库。"""
         await self.flush_message_cache()

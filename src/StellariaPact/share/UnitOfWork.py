@@ -22,14 +22,14 @@ class UnitOfWork:
     """
     一个实现了工作单元模式的异步上下文管理器。
 
-    它封装了数据库会话和事务管理，并提供了对各个服务（仓库）的访问。
+    它封装了数据库会话和事务管理，并提供了对各个服务（仓库）的访问<br>
     这确保了在单个业务操作中的所有数据库更改要么一起提交，要么一起回滚。
 
-    用法:
-    async with UnitOfWork() as uow:
-        await uow.voting.record_user_vote(...)
-        await uow.announcements.create_announcement(...)
-        await uow.commit()
+    用法:<br>
+    async with UnitOfWork() as uow:<br>
+        await uow.voting.record_user_vote(...)<br>
+        await uow.announcements.create_announcement(...)<br>
+        await uow.commit()<br>
     """
 
     def __init__(self, db_handler: Optional["DatabaseHandler"]):

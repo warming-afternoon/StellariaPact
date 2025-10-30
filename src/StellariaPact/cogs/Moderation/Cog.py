@@ -25,6 +25,7 @@ from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
+from StellariaPact.share.enums.VoteDuration import VoteDuration
 
 logger = logging.getLogger("stellaria_pact.moderation")
 
@@ -55,7 +56,8 @@ class Moderation(commands.Cog):
         "councilModerator",
     )
     async def kick_proposal(self, interaction: discord.Interaction, message: discord.Message):
-        """[议事督导] 消息右键菜单命令，用于将消息作者踢出提案。
+        """
+        [议事督导] 消息右键菜单命令，用于将消息作者踢出提案。
 
         Args:
             interaction (discord.Interaction): 交互对象。
@@ -108,7 +110,8 @@ class Moderation(commands.Cog):
     @app_commands.rename(notify_roles="通知相关方")
     @app_commands.describe(notify_roles="是否在发起确认时通知督导和监理组 (默认为是)")
     async def execute_proposal(self, interaction: discord.Interaction, notify_roles: bool = True):
-        """将讨论中的提案变更为执行中。
+        """
+        将讨论中的提案变更为执行中。
 
         Args:
             interaction (discord.Interaction): 命令交互对象。
@@ -125,7 +128,8 @@ class Moderation(commands.Cog):
     @app_commands.rename(notify_roles="通知相关方")
     @app_commands.describe(notify_roles="是否在发起确认时通知督导和监理组 (默认为是)")
     async def complete_proposal(self, interaction: discord.Interaction, notify_roles: bool = True):
-        """将执行中的提案变更为已结束。
+        """
+        将执行中的提案变更为已结束。
 
         Args:
             interaction (discord.Interaction): 命令交互对象。
@@ -138,7 +142,8 @@ class Moderation(commands.Cog):
     @app_commands.command(name="废弃", description="[执行监理] 将执行中的提案废弃")
     @RoleGuard.requireRoles("executionAuditor")
     async def abandon_proposal(self, interaction: discord.Interaction):
-        """通过弹出一个模态框来废弃一个提案。
+        """
+        通过弹出一个模态框来废弃一个提案
 
         Args:
             interaction (discord.Interaction): 命令交互对象。
@@ -148,7 +153,8 @@ class Moderation(commands.Cog):
 
     @app_commands.command(name="发起异议", description="对一个提案发起异议")
     async def raise_objection(self, interaction: discord.Interaction):
-        """处理 /发起异议 命令，通过模态框收集信息。
+        """
+        处理 /发起异议 命令，通过模态框收集信息。
         实际处理逻辑由 on_objection_modal_submitted 监听器完成。
 
         Args:
@@ -163,16 +169,16 @@ class Moderation(commands.Cog):
         description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票",
     )
     @app_commands.describe(
-        duration_hours="投票持续时间（小时），默认为 48 小时。",
-        anonymous="是否匿名投票，默认为 是。",
-        realtime="是否实时显示票数，默认为 是。",
-        notify="投票结束时是否通知提案委员，默认为 是。",
-        create_in_voting_channel="是否在投票频道创建镜像投票，默认为 是。",
+        duration_hours="投票持续时间（小时），默认为 72 小时",
+        anonymous="是否匿名投票，默认为 是",
+        realtime="是否实时显示票数，默认为 是",
+        notify="投票结束时是否通知提案委员，默认为 是",
+        create_in_voting_channel="是否在投票频道创建镜像投票，默认为 是",
     )
     async def create_proposal_vote(
         self,
         interaction: discord.Interaction,
-        duration_hours: app_commands.Range[int, 1, 720] = 48,
+        duration_hours: app_commands.Range[int, 1, 720] = VoteDuration.PROPOSAL_DEFAULT,
         anonymous: bool = True,
         realtime: bool = True,
         notify: bool = True,
@@ -182,10 +188,10 @@ class Moderation(commands.Cog):
 
         Args:
             interaction (discord.Interaction): 命令交互对象。
-            duration_hours (app_commands.Range[int, 1, 720], optional): 投票持续时间（小时）。默认为 48。
-            anonymous (bool, optional): 是否匿名投票。默认为 True。
-            realtime (bool, optional): 是否实时显示票数。默认为 True。
-            create_in_voting_channel (bool, optional): 是否在投票频道创建镜像投票。默认为 True。
+            duration_hours (app_commands.Range[int, 1, 720], optional): 投票持续时间（小时）。默认为 72
+            anonymous (bool, optional): 是否匿名投票。默认为 True
+            realtime (bool, optional): 是否实时显示票数。默认为 True
+            create_in_voting_channel (bool, optional): 是否在投票频道创建镜像投票。默认为 True
         """
         await safeDefer(interaction, ephemeral=True)
 

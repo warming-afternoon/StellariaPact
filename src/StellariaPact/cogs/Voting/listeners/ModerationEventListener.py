@@ -24,6 +24,7 @@ from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
+from StellariaPact.share.enums.VoteDuration import VoteDuration
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class ModerationEventListener(commands.Cog):
     async def on_proposal_created(
         self,
         proposal_dto: ProposalDto,
-        duration_hours: int = 48,
+        duration_hours: int = VoteDuration.PROPOSAL_DEFAULT,
         anonymous: bool = True,
         realtime: bool = True,
         notify: bool = True,
@@ -72,34 +73,36 @@ class ModerationEventListener(commands.Cog):
                 )
                 return
 
+            # 尝试从帖子内容中解析截止时间
+            end_time = TimeUtils.parse_discord_timestamp(starter_message.content)
+
+            # 如果解析出的时间已过期，则忽略它
+            if end_time and end_time < datetime.now(timezone.utc):
+                end_time = None
+            
+            # 如果没有有效的截止时间，则根据传入参数计算
+            if end_time is None:
+                target_tz = self.bot.config.get("timezone", "UTC")
+                end_time = TimeUtils.get_utc_end_time(
+                    duration_hours=duration_hours, target_tz=target_tz
+                )
+            
+            # 创建投票面板
+            view = VoteView(self.bot)
+            embed = VoteEmbedBuilder.create_initial_vote_embed(
+                topic=proposal_dto.title,
+                author=None,
+                realtime=realtime,
+                anonymous=anonymous,
+                notify_flag=notify,
+                end_time=end_time,
+            )
+            message = await self.bot.api_scheduler.submit(
+                thread.send(embed=embed, view=view), priority=5
+            )
+            
+            # 创建投票会话记录
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 尝试从帖子内容中解析截止时间
-                end_time = TimeUtils.parse_discord_timestamp(starter_message.content)
-
-                # 如果解析出的时间已过期，则忽略它
-                if end_time and end_time < datetime.now(timezone.utc):
-                    end_time = None
-
-                # 如果没有有效的截止时间，则根据传入参数计算
-                if end_time is None:
-                    target_tz = self.bot.config.get("timezone", "UTC")
-                    end_time = TimeUtils.get_utc_end_time(
-                        duration_hours=duration_hours, target_tz=target_tz
-                    )
-
-                view = VoteView(self.bot)
-                embed = VoteEmbedBuilder.create_initial_vote_embed(
-                    topic=proposal_dto.title,
-                    author=None,
-                    realtime=realtime,
-                    anonymous=anonymous,
-                    notify_flag=notify,
-                    end_time=end_time,
-                )
-                message = await self.bot.api_scheduler.submit(
-                    thread.send(embed=embed, view=view), priority=5
-                )
-
                 qo = CreateVoteSessionQo(
                     thread_id=thread.id,
                     context_message_id=message.id,
@@ -165,7 +168,7 @@ class ModerationEventListener(commands.Cog):
         )
         try:
             # 1. 计算结束时间
-            end_time = datetime.now(timezone.utc) + timedelta(hours=48)
+            end_time = datetime.now(timezone.utc) + timedelta(hours=VoteDuration.OBJECTION_DEFAULT)
 
             # 2. 构建 UI
             view = ObjectionFormalVoteView(self.bot)
@@ -248,7 +251,7 @@ class ModerationEventListener(commands.Cog):
         self, message: discord.Message, result_dto: HandleSupportObjectionResultDto
     ):
         """监听更新异议投票面板的请求"""
-        logger.info(f"Received request to update objection vote panel for message {message.id}")
+        
         try:
             original_embed = message.embeds[0]
             if not message.guild:

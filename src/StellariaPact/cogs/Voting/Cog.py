@@ -456,8 +456,7 @@ class Voting(commands.Cog):
             proposal_link = f"https://discord.com/channels/{interaction.guild.id}/{interaction.channel.id}"
 
             # 创建并预填异议模态框
-            modal = ObjectionModal(self.bot)
-            modal.proposal_link.default = proposal_link
+            modal = ObjectionModal(self.bot, proposal_link=proposal_link)
 
             # 发送模态框给用户
             await interaction.response.send_modal(modal)
@@ -497,8 +496,7 @@ class Voting(commands.Cog):
             )
 
             # 创建异议模态框
-            modal = ObjectionModal(self.bot)
-            modal.proposal_link.default = proposal_link
+            modal = ObjectionModal(self.bot, proposal_link=proposal_link)
 
             await interaction.response.send_modal(modal)
 

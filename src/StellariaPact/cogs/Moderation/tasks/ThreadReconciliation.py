@@ -35,7 +35,7 @@ class ThreadReconciliation(commands.Cog):
         try:
             discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
             if not discussion_channel_id_str:
-                logger.warning("讨论频道未配置，跳过审计任务")
+                logger.warning("提案讨论频道未配置，跳过审计任务")
                 return
 
             channel = await DiscordUtils.fetch_channel(self.bot, int(discussion_channel_id_str))
@@ -51,7 +51,7 @@ class ThreadReconciliation(commands.Cog):
 
             # 获取最近归档的帖子
             try:
-                async for thread in channel.archived_threads(limit=100):  # 限制在一个合理的数量
+                async for thread in channel.archived_threads(limit=100):
                     if thread.created_at and thread.created_at > three_days_ago:
                         threads_to_check.append(thread)
 
@@ -66,14 +66,8 @@ class ThreadReconciliation(commands.Cog):
                 if not thread.created_at or thread.created_at <= three_days_ago:
                     continue
 
-                async with UnitOfWork(self.bot.db_handler) as uow:
-                    proposal = await uow.moderation.get_proposal_by_thread_id(thread.id)
-
-                if not proposal:
-                    logger.info(f"审计任务发现一个遗漏的提案帖: {thread.name} ({thread.id})。正在处理...")
-                    # 这是一个新的、未处理的帖子。委托给逻辑处理器。
-                    await self.logic.handle_new_proposal_thread(thread)
-                    await asyncio.sleep(1)  # 短暂延迟以避免在发现很多帖子时达到速率限制
+                await self.logic.process_new_discussion_thread(thread)
+                await asyncio.sleep(1)  # 短暂延迟以避免在发现很多帖子时达到速率限制
 
         except Exception as e:
             logger.error(f"提案帖子审计任务中发生意外错误: {e}", exc_info=True)

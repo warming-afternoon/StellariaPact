@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 class ModerationListener(commands.Cog):
     """
-    专门用于监听与议事管理模块相关的内部和外部事件。
+    监听与议事管理模块相关的内部事件
     """
 
     def __init__(self, bot: "StellariaPactBot"):
@@ -56,7 +56,7 @@ class ModerationListener(commands.Cog):
         await self._load_active_mutes_into_cache()
 
     async def _load_active_mutes_into_cache(self):
-        """从数据库加载所有当前有效的禁言记录到内存缓存中。"""
+        """从数据库加载所有当前有效的禁言记录到内存缓存中"""
         logger.info("正在加载有效的禁言记录到缓存...")
         self.active_mutes.clear()
         now = datetime.now(timezone.utc)
@@ -78,7 +78,7 @@ class ModerationListener(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def clear_expired_mutes(self):
-        """每5分钟清理一次缓存和数据库中已过期的禁言记录。"""
+        """每5分钟清理一次缓存和数据库中已过期的禁言记录"""
         logger.debug("正在清理已过期的禁言...")
         now = datetime.now(timezone.utc)
         expired_mutes_to_clear_from_db = []
@@ -107,6 +107,9 @@ class ModerationListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        """
+        监听消息事件，检查并删除被禁言用户发送的消息
+        """
         if (
             message.author.bot
             or not isinstance(message.channel, discord.Thread)
@@ -114,7 +117,7 @@ class ModerationListener(commands.Cog):
         ):
             return
 
-        # 从缓存中快速检查
+        # 从缓存中快速检查是否被禁言
         thread_mutes = self.active_mutes.get(message.channel.id)
         if not thread_mutes:
             return
@@ -123,7 +126,7 @@ class ModerationListener(commands.Cog):
         if not mute_end_time:
             return
 
-        # 检查禁言是否仍然有效
+        # 检查禁言是否结束
         if datetime.now(timezone.utc) < mute_end_time:
             try:
                 await message.delete()
@@ -137,7 +140,7 @@ class ModerationListener(commands.Cog):
     async def on_thread_mute_updated(
         self, thread_id: int, user_id: int, mute_end_time: Optional[datetime]
     ):
-        """监听禁言更新事件，并实时更新缓存。"""
+        """监听禁言更新事件，并实时更新缓存"""
         if thread_id not in self.active_mutes:
             self.active_mutes[thread_id] = {}
 
@@ -152,32 +155,23 @@ class ModerationListener(commands.Cog):
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
         """
-        监听新帖子的创建，如果是提案，则委托给 ModerationLogic 处理。
+        监听新帖子的创建，如果在提案讨论区，则委托给 ModerationLogic 处理
         """
         # 短暂休眠以等待帖子的启动消息被处理/缓存
         await asyncio.sleep(0.5)
-        # 检查是否为提案讨论帖
+        # 检查是否在提案讨论区
         discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
         if not discussion_channel_id_str or thread.parent_id != int(
             discussion_channel_id_str
         ):
             return
 
-        # 检查它是否是异议帖，如果是，则忽略
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            objection = await uow.moderation.get_objection_by_thread_id(thread.id)
-            if objection:
-                logger.debug(f"帖子 {thread.id} 是异议帖，不由 ModerationListener 处理。")
-                return
-
-        logger.debug(f"ModerationListener 捕获到一个新提案帖: {thread.id}")
-        # 将完整的工作流委托给逻辑层
-        await self.logic.handle_new_proposal_thread(thread)
+        await self.logic.process_new_discussion_thread(thread)
 
     @commands.Cog.listener()
     async def on_objection_goal_reached(self, result_dto: HandleSupportObjectionResultDto):
         """
-        监听异议支持票数达到目标的事件，创建异议帖。
+        监听异议支持票数达到目标的事件，创建异议帖
         """
         logger.info(f"异议 {result_dto.objection_id} 已达到目标票数，准备创建异议帖。")
 
@@ -259,7 +253,7 @@ class ModerationListener(commands.Cog):
     async def on_objection_modal_submitted(
         self, interaction: discord.Interaction, proposal_link: str, reason: str
     ):
-        """监听并处理从 ObjectionModal 提交的异议。"""
+        """监听并处理从 ObjectionModal 提交的异议"""
         # 立即响应，防止超时
         await safeDefer(interaction, ephemeral=True)
 
@@ -427,12 +421,10 @@ class ModerationListener(commands.Cog):
             return
 
         try:
-            # 假设需要更新的消息是帖子的第一条消息
-            history = review_thread.history(limit=1, oldest_first=True)
-            original_message = await history.__anext__()
-
+            # 获取帖子的启动消息
+            original_message = review_thread.starter_message
             if not original_message:
-                logger.warning(f"审核帖子 {dto.review_thread_id} 中没有消息，无法更新。")
+                logger.warning(f"审核帖子 {dto.review_thread_id} 中没有启动消息，无法更新。")
                 return
 
             # 构建新的 Embed
@@ -451,8 +443,6 @@ class ModerationListener(commands.Cog):
             await self.bot.api_scheduler.submit(original_message.edit(embed=new_embed), priority=3)
             logger.info(f"成功更新了审核帖子 {dto.review_thread_id} 中的异议理由。")
 
-        except StopAsyncIteration:
-            logger.warning(f"审核帖子 {dto.review_thread_id} 为空，无法找到消息进行更新。")
         except Exception as e:
             logger.error(
                 f"更新审核帖子 {dto.review_thread_id} 的 Embed 时出错: {e}", exc_info=True

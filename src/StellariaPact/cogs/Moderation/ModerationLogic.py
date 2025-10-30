@@ -695,12 +695,28 @@ class ModerationLogic:
         except ValueError as e:
             return ObjectionReviewResultDto(success=False, message=str(e))
 
-    async def handle_new_proposal_thread(self, thread: discord.Thread) -> None:
+    async def process_new_discussion_thread(self, thread: discord.Thread) -> None:
         """
-        处理一个新发现的提案帖子的完整工作流。
-        该方法可被 on_thread_create 监听器和审计任务共同调用。
+        处理一个新发现的、未被记录的讨论区帖子<br>
+        该方法会先判断帖子是提案还是异议，然后执行相应的处理
         """
         try:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                # 检查它是否是一个已知的异议帖
+                objection = await uow.moderation.get_objection_by_thread_id(thread.id)
+                if objection:
+                    # logger.debug(f"帖子 {thread.id} 是一个已知的异议帖，跳过处理")
+                    return
+
+                # 检查它是否已经是一个已知的提案帖
+                proposal = await uow.moderation.get_proposal_by_thread_id(thread.id)
+                if proposal:
+                    # logger.debug(f"提案 (帖子 ID: {thread.id}) 已存在，跳过处理")
+                    return
+
+            # 如果以上都不是，则认定为新提案，执行创建流程
+            logger.info(f"发现新的提案帖: {thread.name} ({thread.id})。正在处理...")
+            
             # 获取首楼内容和提案人信息
             content = await StringUtils.extract_starter_content(thread)
             if not content:
@@ -731,17 +747,15 @@ class ModerationLogic:
                     "proposal_created",
                     proposal_dto,
                     VoteDuration.PROPOSAL_DEFAULT,
-                    True, # anonymous
-                    True, # realtime
-                    True, # notify
-                    True, # create_in_voting_channel (自动创建时总是创建)
+                    True,  # anonymous
+                    True,  # realtime
+                    True,  # notify
+                    True,  # create_in_voting_channel
                 )
-            else:
-                logger.debug(f"提案 (帖子 ID: {thread.id}) 已存在，跳过处理。")
 
         except Exception as e:
             logger.error(
-                f"处理新提案帖 {thread.id} 时发生错误: {e}",
+                f"处理新讨论帖 {thread.id} 时发生错误: {e}",
                 exc_info=True,
             )
 

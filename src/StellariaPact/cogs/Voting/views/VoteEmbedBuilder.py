@@ -289,17 +289,16 @@ class VoteEmbedBuilder:
         content_preview = (proposal.content[:1000] + '...') if len(proposal.content) > 1000 else proposal.content
 
         embed = discord.Embed(
-            title=f"议题：{proposal.title}",
-            description=f"**提案内容预览:**\n{content_preview}\n\n[点击此处跳转到原提案帖进行讨论]({thread_jump_url})",
-            color=discord.Color.dark_purple()
+            title=f"议题：「{proposal.title}」",
+            url=f"{thread_jump_url}",
+            description=f"**提案内容预览:**\n{content_preview}\n\n",
+            color=discord.Color.blue()
         )
 
         if vote_details.realtime_flag:
             embed.add_field(name="赞成", value=str(vote_details.approve_votes), inline=True)
             embed.add_field(name="反对", value=str(vote_details.reject_votes), inline=True)
             embed.add_field(name="总票数", value=str(vote_details.total_votes), inline=True)
-        else:
-            embed.add_field(name="状态", value="票数非实时显示", inline=False)
 
         if vote_details.end_time:
             end_time_ts = int(vote_details.end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())

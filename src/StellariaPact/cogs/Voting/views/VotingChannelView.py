@@ -1,5 +1,4 @@
 import discord
-from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
