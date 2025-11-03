@@ -74,7 +74,7 @@ class VotingEventListener(commands.Cog):
 
             if not final_result:
                 logger.warning(
-                    f"处理异议支持票收集到期事件 (异议ID: {session_dto.objectionId}) 未返回有效结果"
+                    f"处理异议支持票收集到期事件 (ID: {session_dto.objectionId}) 未返回有效结果"
                 )
                 return
 

@@ -5,7 +5,9 @@ from StellariaPact.cogs.Moderation.Cog import Moderation
 from StellariaPact.cogs.Moderation.listeners.ModerationListener import (
     ModerationListener,
 )
-from StellariaPact.cogs.Moderation.listeners.NotificationEventListener import NotificationEventListener
+from StellariaPact.cogs.Moderation.listeners.NotificationEventListener import (
+    NotificationEventListener,
+)
 from StellariaPact.cogs.Moderation.listeners.VotingEventListener import VotingEventListener
 from StellariaPact.cogs.Moderation.tasks.ThreadReconciliation import (
     ThreadReconciliation,

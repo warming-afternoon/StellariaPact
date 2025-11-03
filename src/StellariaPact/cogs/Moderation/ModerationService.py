@@ -1,5 +1,5 @@
-from datetime import datetime
 import logging
+from datetime import datetime
 from typing import Optional, Sequence
 
 from sqlalchemy import func, update
@@ -73,7 +73,7 @@ class ModerationService:
         """
         更新用户在特定帖子中的投票有效性和禁言状态。
         如果记录不存在，则会创建一条新记录。
-        
+
         Args:
             user_id: 用户的Discord ID。
             thread_id: 上下文的帖子ID。
@@ -198,7 +198,9 @@ class ModerationService:
         """
         return await self.session.get(Objection, objection_id)
 
-    async def get_objection_details_by_id(self, objection_id: int) -> Optional[ObjectionDetailsDto]:
+    async def get_objection_details_by_id(
+        self, objection_id: int
+    ) -> Optional[ObjectionDetailsDto]:
         """
         根据异议ID获取异议的详细信息，包括其关联的提案。
         """

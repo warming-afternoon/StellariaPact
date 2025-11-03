@@ -6,26 +6,21 @@ from discord import app_commands
 from discord.ext import commands
 
 from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import ExecuteProposalResultDto
-from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from StellariaPact.cogs.Moderation.dto.SubsequentObjectionDto import SubsequentObjectionDto
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
-from StellariaPact.cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
 from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
 from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
-from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
-from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalModal
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
 from StellariaPact.share.auth.RoleGuard import RoleGuard
-from StellariaPact.share.DiscordUtils import DiscordUtils
+from StellariaPact.share.enums.VoteDuration import VoteDuration
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
-from StellariaPact.share.enums.VoteDuration import VoteDuration
 
 logger = logging.getLogger("stellaria_pact.moderation")
 
@@ -98,7 +93,9 @@ class Moderation(commands.Cog):
             return
 
         # 创建 KickProposalModal 实例
-        modal = KickProposalModal(bot=self.bot, original_interaction=interaction, target_message=message)
+        modal = KickProposalModal(
+            bot=self.bot, original_interaction=interaction, target_message=message
+        )
         await self.bot.api_scheduler.submit(
             coro=interaction.response.send_modal(modal), priority=1
         )
@@ -163,7 +160,6 @@ class Moderation(commands.Cog):
         modal = ObjectionModal(self.bot)
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
-
     @app_commands.command(
         name="创建提案投票",
         description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票",
@@ -188,7 +184,8 @@ class Moderation(commands.Cog):
 
         Args:
             interaction (discord.Interaction): 命令交互对象。
-            duration_hours (app_commands.Range[int, 1, 720], optional): 投票持续时间（小时）。默认为 72
+            duration_hours (app_commands.Range[int, 1, 720], optional): 投票持续时间（小时）。
+                默认为 72。
             anonymous (bool, optional): 是否匿名投票。默认为 True
             realtime (bool, optional): 是否实时显示票数。默认为 True
             create_in_voting_channel (bool, optional): 是否在投票频道创建镜像投票。默认为 True
@@ -265,7 +262,9 @@ class Moderation(commands.Cog):
 
         Args:
             interaction (discord.Interaction): 命令的交互对象。
-            logic_handler (Callable[..., Awaitable[ExecuteProposalResultDto | None]]): 要调用的具体逻辑处理函数。
+            logic_handler (
+                Callable[..., Awaitable[ExecuteProposalResultDto | None]]
+            ): 要调用的具体逻辑处理函数。
             notify_roles (bool): 是否在发起确认时通知相关方。
         """
         await self.bot.api_scheduler.submit(

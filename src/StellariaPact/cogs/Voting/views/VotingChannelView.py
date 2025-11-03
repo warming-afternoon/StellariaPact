@@ -1,4 +1,5 @@
 import discord
+
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 

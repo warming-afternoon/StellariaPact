@@ -30,15 +30,15 @@ class ObjectionModal(discord.ui.Modal, title="发起异议"):
     def set_proposal_link(self, proposal_link: str) -> None:
         """
         设置提案链接的默认值
-        
+
         Args:
             proposal_link: 提案链接URL
         """
         if not isinstance(proposal_link, str):
             raise TypeError("proposal_link 必须是字符串类型")
-        if proposal_link and not proposal_link.startswith(('http://', 'https://')):
+        if proposal_link and not proposal_link.startswith(("http://", "https://")):
             raise ValueError("proposal_link 必须是有效的URL")
-        
+
         self.proposal_link.default = proposal_link
 
     async def on_submit(self, interaction: discord.Interaction):

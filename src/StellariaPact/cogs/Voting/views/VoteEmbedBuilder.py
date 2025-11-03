@@ -6,12 +6,12 @@ from zoneinfo import ZoneInfo
 
 import discord
 
+from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
+from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
-from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
 
 
 class VoteEmbedBuilder:
@@ -59,7 +59,8 @@ class VoteEmbedBuilder:
             )
 
         embed.set_footer(
-            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
+            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
+            f"有效发言 : 去除表情后, 长度 ≥ 5"
         )
         return embed
 
@@ -101,7 +102,8 @@ class VoteEmbedBuilder:
             )
 
         embed.set_footer(
-            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
+            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
+            f"有效发言 : 去除表情后, 长度 ≥ 5"
         )
         return embed
 
@@ -280,21 +282,23 @@ class VoteEmbedBuilder:
 
     @staticmethod
     def build_objection_voting_channel_embed(
-        objection: ObjectionDetailsDto,
-        vote_details: VoteDetailDto,
-        thread_jump_url: str
+        objection: ObjectionDetailsDto, vote_details: VoteDetailDto, thread_jump_url: str
     ) -> discord.Embed:
         """
         为投票频道构建异议裁决的镜像投票面板Embed
         """
         # 描述可以突出显示异议理由
-        objection_reason_preview = (objection.objection_reason[:600] + '\n\n...\n\n') if len(objection.objection_reason) > 600 else objection.objection_reason
+        objection_reason_preview = (
+            (objection.objection_reason[:600] + "\n\n...\n\n")
+            if len(objection.objection_reason) > 600
+            else objection.objection_reason
+        )
 
         embed = discord.Embed(
             title=f"异议裁决投票: {objection.proposal_title}",
             url=thread_jump_url,
             description=f"**异议原因**:\n{objection_reason_preview}",
-            color=discord.Color.orange()  # 使用橙色以区分普通投票
+            color=discord.Color.orange(),  # 使用橙色以区分普通投票
         )
 
         if vote_details.end_time:
@@ -311,26 +315,29 @@ class VoteEmbedBuilder:
             embed.add_field(name="总票数", value=str(vote_details.total_votes), inline=True)
 
         embed.set_footer(
-            text=f"投票资格 : 在异议讨论帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
+            text=f"投票资格 : 在异议讨论帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
+            f"有效发言 : 去除表情后, 长度 ≥ 5"
         )
         return embed
 
     @staticmethod
     def build_voting_channel_embed(
-        proposal: ProposalDto,
-        vote_details: VoteDetailDto,
-        thread_jump_url: str
+        proposal: ProposalDto, vote_details: VoteDetailDto, thread_jump_url: str
     ) -> discord.Embed:
         """
         为投票频道构建镜像投票面板的Embed。
         """
-        content_preview = (proposal.content[:600] + '\n\n...\n\n') if len(proposal.content) > 600 else proposal.content
+        content_preview = (
+            (proposal.content[:600] + "\n\n...\n\n")
+            if len(proposal.content) > 600
+            else proposal.content
+        )
 
         embed = discord.Embed(
             title=f"{proposal.title}",
             url=f"{thread_jump_url}",
             description=f"{content_preview}",
-            color=discord.Color.blue()
+            color=discord.Color.blue(),
         )
 
         if vote_details.end_time:
@@ -347,6 +354,7 @@ class VoteEmbedBuilder:
             embed.add_field(name="总票数", value=str(vote_details.total_votes), inline=True)
 
         embed.set_footer(
-            text=f"投票资格 : 在讨论帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
+            text=f"投票资格 : 点击标题，在跳转到的讨论帖内有效发言数 ≥"
+            f" {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
         )
         return embed

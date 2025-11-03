@@ -6,7 +6,7 @@ import discord
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Voting.views.VotingChoiceView import VotingChoiceView
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +98,9 @@ class DiscordUtils:
 
         if not target_tag:
             logger.error(
-                f"配置错误：在论坛的可用标签中，找不到 config.json 中为 '{target_tag_name}' 配置的 ID "
-                f"({target_tag_id})。请检查您的 config.json 文件和服务器标签设置。"
+                f"配置错误：在论坛的可用标签中，找不到 config.json 中为 "
+                f"'{target_tag_name}' 配置的 ID ({target_tag_id})。"
+                f"请检查您的 config.json 文件和服务器标签设置。"
             )
             return None
 

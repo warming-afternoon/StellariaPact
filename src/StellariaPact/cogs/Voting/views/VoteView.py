@@ -71,7 +71,9 @@ class VoteView(discord.ui.View):
                 is_vote_active=panel_data.is_vote_active,
                 can_manage=can_manage,
             )
-            await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=choice_view)
+            await DiscordUtils.send_private_panel(
+                self.bot, interaction, embed=embed, view=choice_view
+            )
         except Exception as e:
             await interaction.followup.send(f"处理投票管理面板时出错: {e}", ephemeral=True)
 

@@ -1,10 +1,10 @@
 import asyncio
 import logging
 import random
+from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
-from zoneinfo import ZoneInfo
 
 from StellariaPact.cogs.Notification.AnnouncementMonitorService import AnnouncementMonitorService
 from StellariaPact.cogs.Notification.dto.AnnouncementDto import AnnouncementDto

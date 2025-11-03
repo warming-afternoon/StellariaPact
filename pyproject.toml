@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "StellariaPact"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Discord bot for StellariaPact."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
     "discord.py[speed]",

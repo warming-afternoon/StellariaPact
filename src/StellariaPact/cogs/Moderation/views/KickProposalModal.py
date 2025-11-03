@@ -78,7 +78,9 @@ class KickProposalModal(discord.ui.Modal, title="踢出提案"):
                 if mute_minutes < 0:
                     raise ValueError("禁言时长不能为负数。")
             except ValueError:
-                await modal_interaction.followup.send("禁言时长必须是一个有效的非负整数。", ephemeral=True)
+                await modal_interaction.followup.send(
+                    "禁言时长必须是一个有效的非负整数。", ephemeral=True
+                )
                 return
 
             mute_end_time = None
@@ -92,7 +94,7 @@ class KickProposalModal(discord.ui.Modal, title="踢出提案"):
 
             # --- 数据库操作 ---
             async with UnitOfWork(self.bot.db_handler) as uow:
-                activity = await uow.moderation.update_user_validation_status(
+                await uow.moderation.update_user_validation_status(
                     user_id=self.kicked_user.id,
                     thread_id=thread.id,
                     is_valid=is_voting_allowed,
@@ -122,4 +124,6 @@ class KickProposalModal(discord.ui.Modal, title="踢出提案"):
 
         except Exception as e:
             logger.error(f"在处理踢出提案时发生错误: {e}", exc_info=True)
-            await modal_interaction.followup.send("处理请求时发生错误，请联系技术人员。", ephemeral=True)
+            await modal_interaction.followup.send(
+                "处理请求时发生错误，请联系技术人员。", ephemeral=True
+            )

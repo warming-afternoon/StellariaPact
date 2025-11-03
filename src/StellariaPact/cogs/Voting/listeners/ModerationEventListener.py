@@ -11,6 +11,7 @@ from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetai
 from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
 from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
 from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import ObjectionCreationVoteView
+from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import ObjectionFormalVoteView
@@ -19,12 +20,11 @@ from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.cogs.Voting.views.VotingChannelView import VotingChannelView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
 from StellariaPact.share.DiscordUtils import DiscordUtils
+from StellariaPact.share.enums.VoteDuration import VoteDuration
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
-from StellariaPact.share.enums.VoteDuration import VoteDuration
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +57,7 @@ class ModerationEventListener(commands.Cog):
             # --- 创建帖子内投票 ---
             if not proposal_dto.discussionThreadId:
                 logger.warning(
-                    f"提案 {proposal_dto.id} 没有关联的 discussionThreadId，"
-                    "无法创建投票面板。"
+                    f"提案 {proposal_dto.id} 没有关联的 discussionThreadId，无法创建投票面板。"
                 )
                 return
 
@@ -84,19 +83,23 @@ class ModerationEventListener(commands.Cog):
             # 如果解析出的时间已过期，则忽略它
             if end_time and end_time < datetime.now(timezone.utc):
                 end_time = None
-            
+
             # 如果没有有效的截止时间，则根据传入参数计算
             if end_time is None:
                 target_tz = self.bot.config.get("timezone", "UTC")
                 end_time = TimeUtils.get_utc_end_time(
                     duration_hours=duration_hours, target_tz=target_tz
                 )
-            
+
             # 创建投票面板
             view = VoteView(self.bot)
             embed = VoteEmbedBuilder.create_initial_vote_embed(
-                topic=proposal_dto.title, author=None, realtime=realtime,
-                anonymous=anonymous, notify_flag=notify, end_time=end_time,
+                topic=proposal_dto.title,
+                author=None,
+                realtime=realtime,
+                anonymous=anonymous,
+                notify_flag=notify,
+                end_time=end_time,
             )
             message = await self.bot.api_scheduler.submit(
                 thread.send(embed=embed, view=view), priority=5
@@ -105,16 +108,17 @@ class ModerationEventListener(commands.Cog):
             # 创建投票会话记录
             async with UnitOfWork(self.bot.db_handler) as uow:
                 qo = CreateVoteSessionQo(
-                    thread_id=thread.id, context_message_id=message.id,
-                    realtime=realtime, anonymous=anonymous,
-                    notifyFlag=notify, end_time=end_time,
+                    thread_id=thread.id,
+                    context_message_id=message.id,
+                    realtime=realtime,
+                    anonymous=anonymous,
+                    notifyFlag=notify,
+                    end_time=end_time,
                 )
                 session_dto = await uow.voting.create_vote_session(qo)
                 await uow.commit()
-            
-            logger.debug(
-                f"成功为提案 {proposal_dto.id} 创建了核心投票会话 {session_dto.id}。"
-            )
+
+            logger.debug(f"成功为提案 {proposal_dto.id} 创建了核心投票会话 {session_dto.id}。")
 
         except Exception as e:
             logger.error(
@@ -138,23 +142,29 @@ class ModerationEventListener(commands.Cog):
                         context_thread_id=thread.id,
                         objection_id=None,
                         voting_channel_message_id=None,
-                        is_anonymous=anonymous, realtime_flag=realtime, notify_flag=notify,
-                        end_time=end_time, context_message_id=message.id, status=1,
-                        total_votes=0, approve_votes=0, reject_votes=0, voters=[]
+                        is_anonymous=anonymous,
+                        realtime_flag=realtime,
+                        notify_flag=notify,
+                        end_time=end_time,
+                        context_message_id=message.id,
+                        status=1,
+                        total_votes=0,
+                        approve_votes=0,
+                        reject_votes=0,
+                        voters=[],
                     )
-                    
+
                     channel_view = VotingChannelView(self.bot)
                     channel_embed = VoteEmbedBuilder.build_voting_channel_embed(
                         proposal=proposal_dto,
                         vote_details=initial_vote_details,
-                        thread_jump_url=thread.jump_url
+                        thread_jump_url=thread.jump_url,
                     )
-                    
+
                     voting_channel_message = await self.bot.api_scheduler.submit(
-                        voting_channel.send(embed=channel_embed, view=channel_view),
-                        priority=4
+                        voting_channel.send(embed=channel_embed, view=channel_view), priority=4
                     )
-                    
+
                     # 更新数据库
                     async with UnitOfWork(self.bot.db_handler) as uow:
                         await uow.voting.update_voting_channel_message_id(
@@ -172,8 +182,7 @@ class ModerationEventListener(commands.Cog):
                 logger.debug("未配置 voting_channel，跳过创建镜像投票。")
         except Exception as e:
             logger.error(
-                f"为会话 {session_dto.id} 创建镜像投票时发生非致命错误: {e}",
-                exc_info=True
+                f"为会话 {session_dto.id} 创建镜像投票时发生非致命错误: {e}", exc_info=True
             )
 
     @commands.Cog.listener()
@@ -185,7 +194,8 @@ class ModerationEventListener(commands.Cog):
         采用两阶段提交模式
         """
         logger.info(
-            f"接收到 'objection_thread_created' 事件，在新异议帖 '{thread.name}' (ID: {thread.id}) 中创建投票面板。"
+            f"接收到 'objection_thread_created' 事件，"
+            f"在新异议帖 '{thread.name}' (ID: {thread.id}) 中创建投票面板。"
         )
         session_dto = None
         try:
@@ -213,51 +223,64 @@ class ModerationEventListener(commands.Cog):
                 )
                 session_dto = await uow.voting.create_vote_session(qo)
                 await uow.commit()
-            
+
             logger.debug(
                 f"成功为异议 {objection_dto.objection_id} 创建了核心投票会话 {session_dto.id}。"
             )
 
         except Exception as e:
             logger.error(f"无法在异议帖 {thread.id} 中创建核心投票面板: {e}", exc_info=True)
-            return # 如果核心功能失败，则直接返回
+            return  # 如果核心功能失败，则直接返回
 
         # 尝试创建并关联投票频道的镜像
         # 这是一个独立的try-except块，它的失败不应影响主流程
         if not session_dto:
             return
-            
+
         try:
             voting_channel_id_str = self.bot.config.get("channels", {}).get("voting_channel")
             if voting_channel_id_str:
-                voting_channel = await DiscordUtils.fetch_channel(self.bot, int(voting_channel_id_str))
+                voting_channel = await DiscordUtils.fetch_channel(
+                    self.bot, int(voting_channel_id_str)
+                )
                 if isinstance(voting_channel, discord.TextChannel):
                     initial_vote_details = VoteDetailDto(
                         context_thread_id=thread.id,
                         objection_id=objection_dto.objection_id,
                         voting_channel_message_id=None,
-                        is_anonymous=True, realtime_flag=True, notify_flag=True,
-                        end_time=end_time, context_message_id=message_in_thread.id, status=1,
-                        total_votes=0, approve_votes=0, reject_votes=0, voters=[]
+                        is_anonymous=True,
+                        realtime_flag=True,
+                        notify_flag=True,
+                        end_time=end_time,
+                        context_message_id=message_in_thread.id,
+                        status=1,
+                        total_votes=0,
+                        approve_votes=0,
+                        reject_votes=0,
+                        voters=[],
                     )
                     channel_view = VotingChannelView(self.bot)
                     channel_embed = VoteEmbedBuilder.build_objection_voting_channel_embed(
                         objection=objection_dto,
                         vote_details=initial_vote_details,
-                        thread_jump_url=thread.jump_url
+                        thread_jump_url=thread.jump_url,
                     )
-                    
+
                     voting_channel_message = await self.bot.api_scheduler.submit(
                         voting_channel.send(embed=channel_embed, view=channel_view), priority=4
                     )
-                    
+
                     # 更新数据库
                     async with UnitOfWork(self.bot.db_handler) as uow:
-                        await uow.voting.update_voting_channel_message_id(session_dto.id, voting_channel_message.id)
+                        await uow.voting.update_voting_channel_message_id(
+                            session_dto.id, voting_channel_message.id
+                        )
                         await uow.commit()
                     logger.debug(f"成功为异议会话 {session_dto.id} 创建并关联了镜像投票")
         except Exception as e:
-            logger.error(f"为异议会话 {session_dto.id} 创建镜像投票时发生非致命错误: {e}", exc_info=True)
+            logger.error(
+                f"为异议会话 {session_dto.id} 创建镜像投票时发生非致命错误: {e}", exc_info=True
+            )
 
     @commands.Cog.listener()
     async def on_create_objection_vote_panel(
@@ -319,7 +342,7 @@ class ModerationEventListener(commands.Cog):
         self, message: discord.Message, result_dto: HandleSupportObjectionResultDto
     ):
         """监听更新异议投票面板的请求"""
-        
+
         try:
             original_embed = message.embeds[0]
             if not message.guild:

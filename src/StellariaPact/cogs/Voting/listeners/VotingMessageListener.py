@@ -120,7 +120,8 @@ class VotingMessageListener(commands.Cog):
                         update_tasks.append(msg.edit(embed=new_embed))
                     except discord.NotFound:
                         logger.warning(
-                            f"在帖子 {thread.id} 中未找到投票消息 {details.context_message_id}，无法更新面板。"
+                            f"在帖子 {thread.id} 中未找到投票消息 "
+                            f"{details.context_message_id}，无法更新面板。"
                         )
                     except IndexError:
                         logger.warning(

@@ -716,7 +716,7 @@ class ModerationLogic:
 
             # 如果以上都不是，则认定为新提案，执行创建流程
             logger.info(f"发现新的提案帖: {thread.name} ({thread.id})。正在处理...")
-            
+
             # 获取首楼内容和提案人信息
             content = await StringUtils.extract_starter_content(thread)
             if not content:

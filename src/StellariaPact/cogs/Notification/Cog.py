@@ -3,11 +3,11 @@ import logging
 import re
 from datetime import datetime
 from typing import Literal, Optional
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-from zoneinfo import ZoneInfo
 
 from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
 from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
@@ -89,7 +89,8 @@ class Notification(commands.Cog):
         if auto_execute and not RoleGuard.hasRoles(interaction, "stewards"):
             await self.bot.api_scheduler.submit(
                 coro=interaction.response.send_message(
-                    "权限不足：只有 `管理组` 才能发布“自动进入执行”的公示。\n请将 `结束时自动进入执行` 选项设置为 `False` 后重试。",
+                    "权限不足：只有 `管理组` 才能发布“自动进入执行”的公示。\n"
+                    "请将 `结束时自动进入执行` 选项设置为 `False` 后重试。",
                     ephemeral=True,
                 ),
                 priority=1,
@@ -339,7 +340,10 @@ class Notification(commands.Cog):
                 logger.warning(f"无法获取或编辑帖子 {interaction.channel.id} 的首楼消息: {e}")
 
             # --- 发送通知Embed ---
-            old_ts = f"<t:{int(old_end_time_utc.timestamp())}:F> (<t:{int(old_end_time_utc.timestamp())}:R>)"
+            old_ts = (
+                f"<t:{int(old_end_time_utc.timestamp())}:F> "
+                f"(<t:{int(old_end_time_utc.timestamp())}:R>)"
+            )
             embed = AnnouncementEmbedBuilder.create_time_modification_embed(
                 interaction_user=interaction.user,
                 operation=operation,

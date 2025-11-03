@@ -30,5 +30,6 @@ class NotificationEventListener(commands.Cog):
         )
         await self.logic.handle_announcement_finished(announcement)
 
+
 async def setup(bot: "StellariaPactBot"):
     await bot.add_cog(NotificationEventListener(bot))

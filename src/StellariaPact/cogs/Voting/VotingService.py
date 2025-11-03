@@ -503,7 +503,7 @@ class VotingService:
         return VoteDetailDto(
             context_thread_id=vote_session.contextThreadId,
             objection_id=vote_session.objectionId,
-            voting_channel_message_id=getattr(vote_session, 'votingChannelMessageId', None),
+            voting_channel_message_id=getattr(vote_session, "votingChannelMessageId", None),
             is_anonymous=vote_session.anonymousFlag,
             realtime_flag=vote_session.realtimeFlag,
             notify_flag=vote_session.notifyFlag,

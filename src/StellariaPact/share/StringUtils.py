@@ -56,7 +56,7 @@ class StringUtils:
             if not starter_message:
                 # 如果启动消息不可用，则通过API获取
                 starter_message = await thread.fetch_message(thread.id)
-            
+
             if starter_message:
                 return StringUtils.clean_proposal_content(starter_message.content)
             return None
@@ -81,7 +81,7 @@ class StringUtils:
             "",
             cleaned_content,
         )
-        
+
         # 匹配 "> ## xxx", 替换成更适合在 embed 中显示的
         cleaned_content = re.sub(
             r"[\r\n]*\>\s*\#{2,}\s*",

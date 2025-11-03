@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from datetime import datetime
 from typing import List, Optional
 
 import discord
@@ -9,7 +8,6 @@ from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo

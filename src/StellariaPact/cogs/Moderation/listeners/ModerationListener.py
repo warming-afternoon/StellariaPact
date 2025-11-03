@@ -5,26 +5,26 @@ from typing import TYPE_CHECKING, Dict, Literal, Optional
 
 import discord
 from discord.ext import commands, tasks
-from sqlalchemy import and_, select, update
+from sqlalchemy import select, update
 
 from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
 from StellariaPact.models.UserActivity import UserActivity
 
 from ....cogs.Moderation.dto.ConfirmationCompletedDto import ConfirmationSessionDto
 from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
+from ....cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
 from ....cogs.Moderation.dto.ProposalDto import ProposalDto
+from ....cogs.Moderation.dto.SubsequentObjectionDto import SubsequentObjectionDto
 from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
 from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
 from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
 from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from ....cogs.Moderation.views.ObjectionManageView import ObjectionManageView
 from ....share.DiscordUtils import DiscordUtils
 from ....share.enums.ProposalStatus import ProposalStatus
+from ....share.SafeDefer import safeDefer
 from ....share.StringUtils import StringUtils
 from ....share.UnitOfWork import UnitOfWork
-from ....cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from ....cogs.Moderation.dto.SubsequentObjectionDto import SubsequentObjectionDto
-from ....cogs.Moderation.views.ObjectionManageView import ObjectionManageView
-from ....share.SafeDefer import safeDefer
 from ..ModerationLogic import ModerationLogic
 from ..thread_manager import ProposalThreadManager
 
@@ -62,16 +62,17 @@ class ModerationListener(commands.Cog):
         now = datetime.now(timezone.utc)
         async with UnitOfWork(self.bot.db_handler) as uow:
             statement = select(UserActivity).where(
-                UserActivity.muteEndTime != None, UserActivity.muteEndTime > now  # type: ignore
+                UserActivity.muteEndTime != None,  # type: ignore # noqa: E711
+                UserActivity.muteEndTime > now,  # type: ignore
             )
             results = await uow.session.exec(statement)  # type: ignore
             for activity in results.all():
                 if activity.contextThreadId not in self.active_mutes:
                     self.active_mutes[activity.contextThreadId] = {}
                 if activity.muteEndTime:
-                    self.active_mutes[activity.contextThreadId][
-                        activity.userId
-                    ] = activity.muteEndTime
+                    self.active_mutes[activity.contextThreadId][activity.userId] = (
+                        activity.muteEndTime
+                    )
         logger.info(
             f"成功加载 {sum(len(users) for users in self.active_mutes.values())} 条有效禁言记录。"
         )
@@ -82,7 +83,7 @@ class ModerationListener(commands.Cog):
         logger.debug("正在清理已过期的禁言...")
         now = datetime.now(timezone.utc)
         expired_mutes_to_clear_from_db = []
-        
+
         # 清理内存缓存
         for thread_id, users in list(self.active_mutes.items()):
             for user_id, end_time in list(users.items()):
@@ -98,7 +99,10 @@ class ModerationListener(commands.Cog):
                 for user_id, thread_id in expired_mutes_to_clear_from_db:
                     stmt = (
                         update(UserActivity)
-                        .where(UserActivity.userId == user_id, UserActivity.contextThreadId == thread_id)
+                        .where(
+                            UserActivity.userId == user_id,
+                            UserActivity.contextThreadId == thread_id,
+                        )
                         .values(muteEndTime=None)
                     )
                     await uow.session.execute(stmt)
@@ -130,11 +134,14 @@ class ModerationListener(commands.Cog):
         if datetime.now(timezone.utc) < mute_end_time:
             try:
                 await message.delete()
-                logger.info(f"已删除用户 {message.author.id} 在帖子 {message.channel.id} 中的消息，原因：禁言中。")
+                logger.info(
+                    f"已删除用户 {message.author.id} 在帖子 {message.channel.id} "
+                    "中的消息，原因：禁言中。"
+                )
             except discord.Forbidden:
                 logger.warning(f"缺少删除消息的权限，无法删除用户 {message.author.id} 的消息。")
             except discord.NotFound:
-                pass # 消息可能已被用户自己删除
+                pass  # 消息可能已被用户自己删除
 
     @commands.Cog.listener("on_thread_mute_updated")
     async def on_thread_mute_updated(
@@ -161,9 +168,7 @@ class ModerationListener(commands.Cog):
         await asyncio.sleep(0.5)
         # 检查是否在提案讨论区
         discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
-        if not discussion_channel_id_str or thread.parent_id != int(
-            discussion_channel_id_str
-        ):
+        if not discussion_channel_id_str or thread.parent_id != int(discussion_channel_id_str):
             return
 
         await self.logic.process_new_discussion_thread(thread)
@@ -225,7 +230,8 @@ class ModerationListener(commands.Cog):
                 )
             else:
                 logger.warning(
-                    f"未能获取到 ObjectionDetailsDto，无法为异议帖 {objection_thread.id} 派发创建投票事件。"
+                    f"未能获取到 ObjectionDetailsDto，无法为异议帖 {objection_thread.id} "
+                    "派发创建投票事件。"
                 )
 
             # 更新原提案帖的标签和标题
@@ -297,7 +303,9 @@ class ModerationListener(commands.Cog):
                 interaction.followup.send(str(e), ephemeral=True), 1
             )
         except Exception as e:
-            logger.error(f"处理 'on_objection_modal_submitted' 事件时发生意外错误: {e}", exc_info=True)
+            logger.error(
+                f"处理 'on_objection_modal_submitted' 事件时发生意外错误: {e}", exc_info=True
+            )
             await self.bot.api_scheduler.submit(
                 interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
             )
@@ -536,7 +544,8 @@ class ModerationListener(commands.Cog):
                 )
             else:
                 logger.warning(
-                    f"从 logic 层返回的 proposal_dto 为空，无法更新帖子状态。Proposal ID: {session.targetId}"
+                    "从 logic 层返回的 proposal_dto 为空，无法更新帖子状态。"
+                    f"Proposal ID: {session.targetId}"
                 )
 
         except Exception as e:

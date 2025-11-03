@@ -7,7 +7,6 @@ from discord.ext import commands, tasks
 
 from ....share.DiscordUtils import DiscordUtils
 from ....share.StellariaPactBot import StellariaPactBot
-from ....share.UnitOfWork import UnitOfWork
 from ..ModerationLogic import ModerationLogic
 
 logger = logging.getLogger(__name__)
