@@ -28,19 +28,16 @@ class AnnounceMessageListener(commands.Cog):
         self.message_cache: DefaultDict[int, int] = defaultdict(int)
         self.cache_lock = asyncio.Lock()
 
-    def cog_unload(self):
+    async def cog_unload(self):
         """在 Cog 卸载时，确保缓存被写入数据库。"""
-        if self.update_cache_to_db.is_running():
-            self.update_cache_to_db.cancel()
-        # 尝试同步执行一次最后的写入
+        self.update_cache_to_db.cancel()
+        logger.info("执行频道监听缓存刷新...")
         try:
-            # 创建一个新的事件循环来运行异步的 flush 操作
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.flush_message_cache())
-            loop.close()
+            # 在卸载时最后运行一次，以确保所有剩余的缓存都已刷新
+            await self.flush_message_cache()
+            logger.info("频道监听缓存刷新成功。")
         except Exception as e:
-            logger.error(f"在 cog_unload 期间同步刷新缓存失败: {e}", exc_info=True)
+            logger.error(f"在 cog_unload 期间刷新缓存失败: {e}", exc_info=True)
 
     @commands.Cog.listener()
     async def on_ready(self):
