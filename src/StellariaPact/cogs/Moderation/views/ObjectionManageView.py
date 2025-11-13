@@ -65,7 +65,7 @@ class ObjectionManageView(discord.ui.View):
                 )
 
             objection_id = objection.id
-            objector_id = objection.objectorId
+            objector_id = objection.objector_id
 
         assert objection_id is not None, "Objection ID cannot be None"
         assert objector_id is not None, "Objector ID cannot be None"

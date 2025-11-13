@@ -7,9 +7,9 @@ class UserActivityDto(BaseModel):
     """
 
     id: int
-    userId: int
-    contextThreadId: int
-    messageCount: int
+    user_id: int
+    context_thread_id: int
+    message_count: int
     validation: bool
 
     class Config:

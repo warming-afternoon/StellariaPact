@@ -25,7 +25,7 @@ class EligibilityService:
             return False
 
         # 检查发言数和管理员设置的有效性状态
-        message_count = user_activity.messageCount
+        message_count = user_activity.message_count
         is_valid_by_admin = user_activity.validation
 
         return message_count >= EligibilityService.REQUIRED_MESSAGES and is_valid_by_admin

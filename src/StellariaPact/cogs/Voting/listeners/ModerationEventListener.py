@@ -11,6 +11,7 @@ from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetai
 from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
 from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
 from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import ObjectionCreationVoteView
+from StellariaPact.cogs.Voting.dto.OptionResult import OptionResult
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
@@ -38,6 +39,7 @@ class ModerationEventListener(commands.Cog):
     async def on_proposal_created(
         self,
         proposal_dto: ProposalDto,
+        options: list[str],
         duration_hours: int = VoteDuration.PROPOSAL_DEFAULT,
         anonymous: bool = True,
         realtime: bool = True,
@@ -56,16 +58,16 @@ class ModerationEventListener(commands.Cog):
         end_time = None
         try:
             # --- 创建帖子内投票 ---
-            if not proposal_dto.discussionThreadId:
+            if not proposal_dto.discussion_thread_id:
                 logger.warning(
-                    f"提案 {proposal_dto.id} 没有关联的 discussionThreadId，无法创建投票面板。"
+                    f"提案 {proposal_dto.id} 没有关联的 discussion_thread_id，无法创建投票面板。"
                 )
                 return
 
-            thread = await DiscordUtils.fetch_thread(self.bot, proposal_dto.discussionThreadId)
+            thread = await DiscordUtils.fetch_thread(self.bot, proposal_dto.discussion_thread_id)
             if not thread:
                 logger.warning(
-                    f"无法找到帖子 {proposal_dto.discussionThreadId}，"
+                    f"无法找到帖子 {proposal_dto.discussion_thread_id}，"
                     f"无法为提案 {proposal_dto.id} 创建投票面板。"
                 )
                 return
@@ -73,7 +75,7 @@ class ModerationEventListener(commands.Cog):
             starter_message = thread.starter_message or await thread.fetch_message(thread.id)
             if not starter_message:
                 logger.warning(
-                    f"无法找到帖子 {proposal_dto.discussionThreadId} 的启动消息，"
+                    f"无法找到帖子 {proposal_dto.discussion_thread_id} 的启动消息，"
                     "无法解析投票截止时间。"
                 )
                 return
@@ -108,15 +110,24 @@ class ModerationEventListener(commands.Cog):
 
             # 创建投票会话记录
             async with UnitOfWork(self.bot.db_handler) as uow:
+                total_choices = len(options) if options else 1
+
                 qo = CreateVoteSessionQo(
                     thread_id=thread.id,
                     context_message_id=message.id,
                     realtime=realtime,
                     anonymous=anonymous,
-                    notifyFlag=notify,
+                    notify_flag=notify,
                     end_time=end_time,
+                    total_choices=total_choices,
                 )
                 session_dto = await uow.voting.create_vote_session(qo)
+                if not session_dto.id:
+                    raise ValueError("创建投票会话后未能获取ID")
+
+                if options:
+                    await uow.voting.create_vote_options(session_dto.id, options)
+
                 await uow.commit()
 
             logger.debug(f"成功为提案 {proposal_dto.id} 创建了核心投票会话 {session_dto.id}。")
@@ -139,6 +150,22 @@ class ModerationEventListener(commands.Cog):
                 )
                 if isinstance(voting_channel, discord.TextChannel):
                     # 创建一个临时的、初始状态的 VoteDetailDto
+                    vote_details_options = []
+                    total_choices = 1
+                    if options:
+                        total_choices = len(options)
+
+                        vote_details_options = [
+                            OptionResult(
+                                choice_index=i + 1,
+                                choice_text=text,
+                                approve_votes=0,
+                                reject_votes=0,
+                                total_votes=0,
+                            )
+                            for i, text in enumerate(options)
+                        ]
+
                     initial_vote_details = VoteDetailDto(
                         context_thread_id=thread.id,
                         objection_id=None,
@@ -149,9 +176,8 @@ class ModerationEventListener(commands.Cog):
                         end_time=end_time,
                         context_message_id=message.id,
                         status=1,
-                        total_votes=0,
-                        approve_votes=0,
-                        reject_votes=0,
+                        total_choices=total_choices,
+                        options=vote_details_options,
                         voters=[],
                     )
 
@@ -170,7 +196,10 @@ class ModerationEventListener(commands.Cog):
                             content_to_send = f"<@&{role_id}>"
 
                     voting_channel_message = await self.bot.api_scheduler.submit(
-                        voting_channel.send(content=content_to_send, embed=channel_embed, view=channel_view), priority=4
+                        voting_channel.send(
+                            content=content_to_send, embed=channel_embed, view=channel_view
+                        ),
+                        priority=4,
                     )
 
                     # 更新数据库
@@ -262,9 +291,8 @@ class ModerationEventListener(commands.Cog):
                         end_time=end_time,
                         context_message_id=message_in_thread.id,
                         status=1,
-                        total_votes=0,
-                        approve_votes=0,
-                        reject_votes=0,
+                        total_choices=1,
+                        options=[],
                         voters=[],
                     )
                     channel_view = VotingChannelView(self.bot)

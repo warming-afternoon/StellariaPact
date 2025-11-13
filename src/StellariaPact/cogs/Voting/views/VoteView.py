@@ -67,8 +67,7 @@ class VoteView(discord.ui.View):
                 logic=voting_cog.logic,
                 original_message_id=interaction.message.id,
                 thread_id=interaction.channel.id,
-                is_eligible=panel_data.is_eligible,
-                is_vote_active=panel_data.is_vote_active,
+                panel_data=panel_data,
                 can_manage=can_manage,
             )
             await DiscordUtils.send_private_panel(

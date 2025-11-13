@@ -1,9 +1,10 @@
-from asyncio.log import logger
-from typing import Awaitable, Callable
+import logging
+from typing import Any, Awaitable, Callable, Coroutine, Optional
 
 import discord
 
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
+from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 from StellariaPact.cogs.Voting.views.AdjustTimeModal import AdjustTimeModal
@@ -15,11 +16,10 @@ from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
 
+logger = logging.getLogger(__name__)
+
 
 class VotingChoiceView(discord.ui.View):
-    approve_button: discord.ui.Button
-    reject_button: discord.ui.Button
-    abstain_button: discord.ui.Button
     """
     提供给合格用户进行投票选择的临时视图。
     """
@@ -30,8 +30,7 @@ class VotingChoiceView(discord.ui.View):
         logic: VotingLogic,
         original_message_id: int,
         thread_id: int,
-        is_eligible: bool,
-        is_vote_active: bool,
+        panel_data: VotingChoicePanelDto,
         can_manage: bool,
     ):
         super().__init__(timeout=890)  # 15分钟后超时
@@ -39,26 +38,63 @@ class VotingChoiceView(discord.ui.View):
         self.logic = logic
         self.thread_id = thread_id
         self.original_message_id = original_message_id
-        self.is_vote_active = is_vote_active
         self.message: discord.Message | None = None
+        self.is_vote_active = panel_data.is_vote_active
 
-        # 如果用户无资格，或者投票已结束，则禁用投票按钮
-        if not is_eligible or not is_vote_active:
-            self.approve_button.disabled = True
-            self.reject_button.disabled = True
-            self.abstain_button.disabled = True
+        is_disabled = not panel_data.is_eligible or not panel_data.is_vote_active
 
-        # 如果拥有对应权限，则添加管理按钮
+        # 动态添加投票按钮
+        for i, option in enumerate(panel_data.options):
+            approve_btn = discord.ui.Button(
+                label=f"赞成: {option.choice_text[:30]}",
+                style=discord.ButtonStyle.success,
+                row=i,
+                custom_id=f"approve_{option.choice_index}",
+                disabled=is_disabled,
+            )
+            reject_btn = discord.ui.Button(
+                label=f"反对: {option.choice_text[:30]}",
+                style=discord.ButtonStyle.danger,
+                row=i,
+                custom_id=f"reject_{option.choice_index}",
+                disabled=is_disabled,
+            )
+            abstain_btn = discord.ui.Button(
+                label="弃票",
+                style=discord.ButtonStyle.secondary,
+                row=i,
+                custom_id=f"abstain_{option.choice_index}",
+                disabled=is_disabled,
+            )
+
+            approve_btn.callback = self.create_callback(  # type: ignore
+                choice=1, choice_index=option.choice_index
+            )
+            reject_btn.callback = self.create_callback(  # type: ignore
+                choice=0, choice_index=option.choice_index
+            )
+            abstain_btn.callback = self.create_callback(  # type: ignore
+                choice=None, choice_index=option.choice_index
+            )
+
+            self.add_item(approve_btn)
+            self.add_item(reject_btn)
+            self.add_item(abstain_btn)
+
         if can_manage:
+            start_row = len(panel_data.options)
             if self.is_vote_active:
-                self._add_active_admin_buttons()
+                self._add_active_admin_buttons(start_row)
             else:
-                self._add_inactive_admin_buttons()
+                self._add_inactive_admin_buttons(start_row)
 
-    def _add_active_admin_buttons(self):
+    def _add_active_admin_buttons(self, start_row: int):
         """动态添加投票进行中时的管理员按钮"""
         adjust_time_button = discord.ui.Button(
-            label="调整时间", style=discord.ButtonStyle.primary, custom_id="adjust_time", row=1
+            label="调整时间",
+            style=discord.ButtonStyle.primary,
+            custom_id="adjust_time",
+            row=start_row,
         )
         adjust_time_button.callback = self.adjust_time_callback
         self.add_item(adjust_time_button)
@@ -67,13 +103,16 @@ class VotingChoiceView(discord.ui.View):
             label="切换匿名",
             style=discord.ButtonStyle.primary,
             custom_id="toggle_anonymous",
-            row=1,
+            row=start_row,
         )
         toggle_anonymous_button.callback = self.toggle_anonymous_callback
         self.add_item(toggle_anonymous_button)
 
         toggle_realtime_button = discord.ui.Button(
-            label="切换实时", style=discord.ButtonStyle.primary, custom_id="toggle_realtime", row=1
+            label="切换实时",
+            style=discord.ButtonStyle.primary,
+            custom_id="toggle_realtime",
+            row=start_row,
         )
         toggle_realtime_button.callback = self.toggle_realtime_callback
         self.add_item(toggle_realtime_button)
@@ -82,15 +121,18 @@ class VotingChoiceView(discord.ui.View):
             label="切换通知",
             style=discord.ButtonStyle.primary,
             custom_id="toggle_notify",
-            row=1,
+            row=start_row,
         )
         toggle_notify_button.callback = self.toggle_notify_callback
         self.add_item(toggle_notify_button)
 
-    def _add_inactive_admin_buttons(self):
+    def _add_inactive_admin_buttons(self, start_row: int):
         """动态添加投票已结束时的管理员按钮"""
         reopen_vote_button = discord.ui.Button(
-            label="重新开启投票", style=discord.ButtonStyle.primary, custom_id="reopen_vote", row=1
+            label="重新开启投票",
+            style=discord.ButtonStyle.primary,
+            custom_id="reopen_vote",
+            row=start_row,
         )
         reopen_vote_button.callback = self.reopen_vote_callback
         self.add_item(reopen_vote_button)
@@ -139,7 +181,18 @@ class VotingChoiceView(discord.ui.View):
                 exc_info=True,
             )
 
-    async def _record_vote(self, interaction: discord.Interaction, choice: int):
+    def create_callback(
+        self, choice: Optional[int], choice_index: int
+    ) -> Callable[[discord.Interaction], Coroutine[Any, Any, None]]:
+        async def callback(interaction: discord.Interaction):
+            if choice is None:
+                await self._abstain(interaction, choice_index)
+            else:
+                await self._record_vote(interaction, choice, choice_index)
+
+        return callback
+
+    async def _record_vote(self, interaction: discord.Interaction, choice: int, choice_index: int):
         await safeDefer(interaction)
         try:
             vote_details = await self.logic.record_vote_and_get_details(
@@ -148,24 +201,24 @@ class VotingChoiceView(discord.ui.View):
                     message_id=self.original_message_id,
                     thread_id=self.thread_id,
                     choice=choice,
+                    choice_index=choice_index,
                 )
             )
 
             # 更新私有面板
             if interaction.message:
-                new_embed = interaction.message.embeds[0]
-                new_embed.set_field_at(
-                    3,
-                    name="当前投票",
-                    value=f"{'✅' if choice == 1 else '❌'} {'赞成' if choice == 1 else '反对'}",
-                    inline=False,
+                # 重新获取数据以刷新整个面板
+                new_panel_data = await self.logic.prepare_voting_choice_data(
+                    interaction.user.id, self.thread_id, self.original_message_id
                 )
-                await self.bot.api_scheduler.submit(
-                    interaction.edit_original_response(embed=new_embed, view=self),
-                    priority=1,
+                title = (
+                    interaction.message.embeds[0].title.split(" ")[0]
+                    if interaction.message.embeds and interaction.message.embeds[0].title
+                    else "投票管理"
                 )
+                new_embed = VoteEmbedBuilder.create_management_panel_embed(title, new_panel_data)
+                await interaction.edit_original_response(embed=new_embed, view=self)
 
-            # 分派事件以更新所有面板
             self.bot.dispatch("vote_details_updated", vote_details)
         except PermissionError as e:
             await interaction.followup.send(str(e), ephemeral=True)
@@ -174,38 +227,30 @@ class VotingChoiceView(discord.ui.View):
             if not interaction.response.is_done():
                 await interaction.followup.send("记录投票时发生错误。", ephemeral=True)
 
-    @discord.ui.button(label="赞成", style=discord.ButtonStyle.success, row=0)
-    async def approve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._record_vote(interaction, 1)
-
-    @discord.ui.button(label="反对", style=discord.ButtonStyle.danger, row=0)
-    async def reject_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._record_vote(interaction, 0)
-
-    @discord.ui.button(label="弃票", style=discord.ButtonStyle.secondary, row=0)
-    async def abstain_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _abstain(self, interaction: discord.Interaction, choice_index: int):
         await safeDefer(interaction)
         try:
-            # 调用新的核心业务逻辑
             vote_details = await self.logic.delete_vote_and_get_details(
                 DeleteVoteQo(
                     user_id=interaction.user.id,
                     message_id=self.original_message_id,
+                    choice_index=choice_index,
                 )
             )
-
             # 更新私有面板
             if interaction.message:
-                new_embed = interaction.message.embeds[0]
-                new_embed.set_field_at(3, name="当前投票", value="未投票", inline=False)
-                await self.bot.api_scheduler.submit(
-                    interaction.edit_original_response(embed=new_embed, view=self),
-                    priority=1,
+                new_panel_data = await self.logic.prepare_voting_choice_data(
+                    interaction.user.id, self.thread_id, self.original_message_id
                 )
+                title = (
+                    interaction.message.embeds[0].title.split(" ")[0]
+                    if interaction.message.embeds and interaction.message.embeds[0].title
+                    else "投票管理"
+                )
+                new_embed = VoteEmbedBuilder.create_management_panel_embed(title, new_panel_data)
+                await interaction.edit_original_response(embed=new_embed, view=self)
 
-            # 分派事件以更新所有面板
             self.bot.dispatch("vote_details_updated", vote_details)
-
         except Exception as e:
             logger.error(f"弃权时发生错误: {e}", exc_info=True)
             if not interaction.response.is_done():

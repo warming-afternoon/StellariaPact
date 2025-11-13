@@ -69,7 +69,7 @@ class Voting(commands.Cog):
         监听通用投票结束事件，并发送最终结果。
         """
         try:
-            thread = await DiscordUtils.fetch_thread(self.bot, session.contextThreadId)
+            thread = await DiscordUtils.fetch_thread(self.bot, session.context_thread_id)
             if not thread:
                 logger.warning(f"无法为投票会话 {session.id} 找到有效的帖子。")
                 return
@@ -77,8 +77,8 @@ class Voting(commands.Cog):
             topic = StringUtils.clean_title(thread.name)
 
             jump_url = None
-            if session.contextMessageId:
-                jump_url = f"https://discord.com/channels/{thread.guild.id}/{thread.id}/{session.contextMessageId}"
+            if session.context_message_id:
+                jump_url = f"https://discord.com/channels/{thread.guild.id}/{thread.id}/{session.context_message_id}"
 
             logger.info(f"投票会话 {session.id} 结束，生成跳转链接: {jump_url}")
 
@@ -91,8 +91,8 @@ class Voting(commands.Cog):
 
             # 如果不是匿名投票，则构建并添加投票者名单
             if not result.is_anonymous and result.voters:
-                approve_voter_ids = [v.userId for v in result.voters if v.choice == 1]
-                reject_voter_ids = [v.userId for v in result.voters if v.choice == 0]
+                approve_voter_ids = [v.user_id for v in result.voters if v.choice == 1]
+                reject_voter_ids = [v.user_id for v in result.voters if v.choice == 0]
 
                 if approve_voter_ids:
                     approve_embeds = VoteEmbedBuilder.build_voter_list_embeds(
@@ -422,14 +422,14 @@ class Voting(commands.Cog):
                     interaction.message.id
                 )
 
-                if not session or not session.contextMessageId or not session.contextThreadId:
+                if not session or not session.context_message_id or not session.context_thread_id:
                     await self.bot.api_scheduler.submit(
                         interaction.followup.send("找不到关联的原始投票信息", ephemeral=True), 1
                     )
                     return
 
-                context_thread_id = session.contextThreadId
-                context_message_id = session.contextMessageId
+                context_thread_id = session.context_thread_id
+                context_message_id = session.context_message_id
                 guild_id = interaction.guild.id
 
             # 准备投票管理面板数据
@@ -457,8 +457,7 @@ class Voting(commands.Cog):
                 logic=self.logic,
                 original_message_id=context_message_id,
                 thread_id=context_thread_id,
-                is_eligible=panel_data.is_eligible,
-                is_vote_active=panel_data.is_vote_active,
+                panel_data=panel_data,
                 can_manage=can_manage,
             )
 
@@ -511,14 +510,14 @@ class Voting(commands.Cog):
                     interaction.message.id
                 )
 
-                if not session or not session.contextThreadId:
+                if not session or not session.context_thread_id:
                     await interaction.response.send_message(
                         "找不到关联的原始投票信息。", ephemeral=True
                     )
                     return
 
                 # 在 with 块内部安全地访问 session 对象的属性，并存入局部变量
-                context_thread_id = session.contextThreadId
+                context_thread_id = session.context_thread_id
                 guild_id = interaction.guild.id
 
             # 构建提案链接

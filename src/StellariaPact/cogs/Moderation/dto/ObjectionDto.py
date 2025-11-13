@@ -8,9 +8,9 @@ class ObjectionDto(BaseDto):
     """
 
     id: int
-    proposalId: int
-    objectorId: int
+    proposal_id: int
+    objector_id: int
     reason: str
     status: ObjectionStatus
-    requiredVotes: int
-    objectionThreadId: int | None
+    required_votes: int
+    objection_thread_id: int | None

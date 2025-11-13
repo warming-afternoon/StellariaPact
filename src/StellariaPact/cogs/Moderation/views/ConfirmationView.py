@@ -52,13 +52,13 @@ class ConfirmationView(discord.ui.View):
                     interaction.followup.send("未找到相关的确认会话。", ephemeral=True), 1
                 )
 
-            if interaction.user.id in session.confirmedParties.values():
+            if interaction.user.id in session.confirmed_parties.values():
                 return await self.bot.api_scheduler.submit(
                     interaction.followup.send("您已经确认过了，不能重复确认。", ephemeral=True),
                     1,
                 )
 
-            unconfirmed_roles = set(session.requiredRoles) - set(session.confirmedParties.keys())
+            unconfirmed_roles = set(session.required_roles) - set(session.confirmed_parties.keys())
             role_to_confirm = next(
                 (
                     role_key
@@ -83,7 +83,7 @@ class ConfirmationView(discord.ui.View):
             role_display_names = {}
             if interaction.guild and hasattr(self.bot, "config"):
                 roles_config = self.bot.config.get("roles", {})
-                for role_key in updated_session.requiredRoles:
+                for role_key in updated_session.required_roles:
                     role_id = roles_config.get(role_key)
                     if role_id:
                         role = interaction.guild.get_role(int(role_id))
@@ -94,9 +94,9 @@ class ConfirmationView(discord.ui.View):
             qo = BuildConfirmationEmbedQo(
                 context=updated_session.context,
                 status=updated_session.status,
-                canceler_id=updated_session.cancelerId,
-                confirmed_parties=updated_session.confirmedParties or {},
-                required_roles=updated_session.requiredRoles,
+                canceler_id=updated_session.canceler_id,
+                confirmed_parties=updated_session.confirmed_parties or {},
+                required_roles=updated_session.required_roles,
                 role_display_names=role_display_names,
             )
             embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
@@ -142,7 +142,7 @@ class ConfirmationView(discord.ui.View):
                 )
 
             # 检查用户是否有权取消
-            if not RoleGuard.hasRoles(interaction, *session.requiredRoles):
+            if not RoleGuard.hasRoles(interaction, *session.required_roles):
                 return await self.bot.api_scheduler.submit(
                     interaction.followup.send("您没有权限取消此操作。", ephemeral=True), 1
                 )
@@ -155,7 +155,7 @@ class ConfirmationView(discord.ui.View):
             role_display_names = {}
             if interaction.guild and hasattr(self.bot, "config"):
                 roles_config = self.bot.config.get("roles", {})
-                for role_key in updated_session.requiredRoles:
+                for role_key in updated_session.required_roles:
                     role_id = roles_config.get(role_key)
                     if role_id:
                         role = interaction.guild.get_role(int(role_id))
@@ -166,9 +166,9 @@ class ConfirmationView(discord.ui.View):
             qo = BuildConfirmationEmbedQo(
                 context=updated_session.context,
                 status=updated_session.status,
-                canceler_id=updated_session.cancelerId,
-                confirmed_parties=updated_session.confirmedParties or {},
-                required_roles=updated_session.requiredRoles,
+                canceler_id=updated_session.canceler_id,
+                confirmed_parties=updated_session.confirmed_parties or {},
+                required_roles=updated_session.required_roles,
                 role_display_names=role_display_names,
             )
 

@@ -70,7 +70,7 @@ class AnnounceMessageListener(commands.Cog):
                         select(AnnouncementChannelMonitor.id)  # type: ignore
                         .join(Announcement)
                         .where(
-                            AnnouncementChannelMonitor.channelId == channel_id,
+                            AnnouncementChannelMonitor.channel_id == channel_id,
                             Announcement.status == 1,
                         )
                     )
@@ -85,7 +85,7 @@ class AnnounceMessageListener(commands.Cog):
                         update(AnnouncementChannelMonitor)
                         .where(AnnouncementChannelMonitor.id.in_(monitor_ids))  # type: ignore
                         .values(
-                            messageCountSinceLast=AnnouncementChannelMonitor.messageCountSinceLast
+                            message_count_since_last=AnnouncementChannelMonitor.message_count_since_last
                             + increment
                         )
                         .execution_options(synchronize_session=False)
@@ -106,7 +106,7 @@ class AnnounceMessageListener(commands.Cog):
         logger.debug("正在从数据库加载被监控的频道列表...")
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                stmt = select(func.distinct(AnnouncementChannelMonitor.channelId))
+                stmt = select(func.distinct(AnnouncementChannelMonitor.channel_id))
                 result = await uow.session.execute(stmt)
                 self.monitored_channels = {row[0] for row in result.fetchall()}
                 logger.debug(f"加载了 {len(self.monitored_channels)} 个被监控的频道。")

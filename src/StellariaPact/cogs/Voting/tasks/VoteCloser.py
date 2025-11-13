@@ -46,9 +46,9 @@ class VoteCloser(commands.Cog):
 
                     async with UnitOfWork(self.bot.db_handler) as uow_atomic:
                         # 在关闭会话前，先获取其关联的异议状态
-                        if session_dto.objectionId:
+                        if session_dto.objection_id:
                             objection = await uow_atomic.moderation.get_objection_by_id(
-                                session_dto.objectionId
+                                session_dto.objection_id
                             )
                             if objection:
                                 objection_id = objection.id

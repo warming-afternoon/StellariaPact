@@ -8,9 +8,9 @@ class CreateAnnouncementQo(BaseModel):
     创建新公示的查询对象
     """
 
-    discussionThreadId: int
-    announcerId: int
+    discussion_thread_id: int
+    announcer_id: int
     title: str
     content: str
-    endTime: datetime
-    autoExecute: bool
+    end_time: datetime
+    auto_execute: bool
