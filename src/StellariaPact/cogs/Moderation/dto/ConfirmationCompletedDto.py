@@ -10,9 +10,9 @@ class ConfirmationSessionDto(BaseDto):
 
     id: int
     context: str
-    targetId: int
-    messageId: int
-    requiredRoles: list[str]
-    confirmedParties: Optional[dict[str, int]] = None
+    target_id: int
+    message_id: int
+    required_roles: list[str]
+    confirmed_parties: Optional[dict[str, int]] = None
     status: int
-    cancelerId: Optional[int] = None
+    canceler_id: Optional[int] = None

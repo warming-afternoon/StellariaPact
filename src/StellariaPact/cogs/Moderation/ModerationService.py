@@ -57,8 +57,8 @@ class ModerationService:
             如果找到则返回 UserActivity 对象，否则返回 None。
         """
         statement = select(UserActivity).where(
-            UserActivity.userId == user_id,
-            UserActivity.contextThreadId == thread_id,
+            UserActivity.user_id == user_id,
+            UserActivity.context_thread_id == thread_id,
         )
         result = await self.session.exec(statement)
         return result.one_or_none()
@@ -89,14 +89,14 @@ class ModerationService:
         if user_activity:
             # 如果记录存在，则更新其状态
             user_activity.validation = 1 if is_valid else 0
-            user_activity.muteEndTime = mute_end_time
+            user_activity.mute_end_time = mute_end_time
         else:
             # 如果记录不存在，则创建一条新记录
             user_activity = UserActivity(
-                userId=user_id,
-                contextThreadId=thread_id,
+                user_id=user_id,
+                context_thread_id=thread_id,
                 validation=1 if is_valid else 0,
-                muteEndTime=mute_end_time,
+                mute_end_time=mute_end_time,
             )
 
         self.session.add(user_activity)
@@ -119,8 +119,8 @@ class ModerationService:
             成功创建则返回 ProposalDto，如果已存在则返回 None。
         """
         new_proposal = Proposal(
-            discussionThreadId=thread_id,
-            proposerId=proposer_id,
+            discussion_thread_id=thread_id,
+            proposer_id=proposer_id,
             title=title,
             content=content,
             status=ProposalStatus.DISCUSSION,
@@ -149,7 +149,7 @@ class ModerationService:
         """
         statement = (
             update(Proposal)
-            .where(Proposal.discussionThreadId == thread_id)  # type: ignore
+            .where(Proposal.discussion_thread_id == thread_id)  # type: ignore
             .values(status=status)
             .returning(Proposal.id)  # type: ignore
         )
@@ -167,7 +167,7 @@ class ModerationService:
         """
         根据帖子ID获取提案dto
         """
-        statement = select(Proposal).where(Proposal.discussionThreadId == thread_id)
+        statement = select(Proposal).where(Proposal.discussion_thread_id == thread_id)
         result = await self.session.exec(statement)
         proposal = result.one_or_none()
         if proposal:
@@ -186,8 +186,8 @@ class ModerationService:
         """
         statement = (
             select(Objection)
-            .where(Objection.proposalId == proposal_id)
-            .order_by(Objection.createdAt.asc())  # type: ignore
+            .where(Objection.proposal_id == proposal_id)
+            .order_by(Objection.created_at.asc())  # type: ignore
         )
         result = await self.session.exec(statement)
         return result.all()
@@ -223,7 +223,7 @@ class ModerationService:
         return ObjectionDetailsDto(
             objection_id=objection.id,
             objection_reason=objection.reason,
-            objector_id=objection.objectorId,
+            objector_id=objection.objector_id,
             proposal_id=objection.proposal.id,
             proposal_title=objection.proposal.title,
         )
@@ -234,7 +234,7 @@ class ModerationService:
         """
         根据审核帖子ID获取异议。
         """
-        statement = select(Objection).where(Objection.reviewThreadId == review_thread_id)
+        statement = select(Objection).where(Objection.review_thread_id == review_thread_id)
         result = await self.session.exec(statement)
         return result.one_or_none()
 
@@ -248,7 +248,7 @@ class ModerationService:
         if not objection:
             raise ValueError(f"未找到ID为 {objection_id} 的异议。")
 
-        if objection.objectorId != user_id:
+        if objection.objector_id != user_id:
             raise PermissionError("只有异议发起人才能修改理由。")
 
         objection.reason = new_reason
@@ -263,7 +263,7 @@ class ModerationService:
         """
         statement = (
             select(Objection)
-            .where(Objection.objectionThreadId == thread_id)
+            .where(Objection.objection_thread_id == thread_id)
             .options(selectinload(Objection.proposal))  # type: ignore
         )
         result = await self.session.exec(statement)
@@ -280,7 +280,7 @@ class ModerationService:
         return ObjectionDetailsDto(
             objection_id=objection.id,
             objection_reason=objection.reason,
-            objector_id=objection.objectorId,
+            objector_id=objection.objector_id,
             proposal_id=objection.proposal.id,
             proposal_title=objection.proposal.title,
         )
@@ -290,10 +290,10 @@ class ModerationService:
         创建一个新的异议，并返回其 DTO。
         """
         new_objection = Objection(
-            proposalId=qo.proposal_id,
-            objectorId=qo.objector_id,
+            proposal_id=qo.proposal_id,
+            objector_id=qo.objector_id,
             reason=qo.reason,
-            requiredVotes=qo.required_votes,
+            required_votes=qo.required_votes,
             status=qo.status,
         )
         self.session.add(new_objection)
@@ -310,10 +310,10 @@ class ModerationService:
         """
         # 创建异议
         new_objection = Objection(
-            proposalId=qo.proposal_id,
+            proposal_id=qo.proposal_id,
             objector_id=qo.objector_id,
             reason=qo.reason,
-            requiredVotes=qo.required_votes,
+            required_votes=qo.required_votes,
             status=qo.status,
         )
         self.session.add(new_objection)
@@ -322,12 +322,13 @@ class ModerationService:
         # 创建投票会话空壳
         assert new_objection.id is not None, "Objection ID is None after flush"
         new_vote_session = VoteSession(
-            contextThreadId=qo.thread_id,
-            objectionId=new_objection.id,
-            contextMessageId=None,  # 设置为空，等待后续更新
-            anonymousFlag=qo.is_anonymous,
-            realtimeFlag=qo.is_realtime,
-            endTime=qo.end_time,
+            guild_id=qo.guild_id,
+            context_thread_id=qo.thread_id,
+            objection_id=new_objection.id,
+            context_message_id=None,  # 设置为空，等待后续更新
+            anonymous_flag=qo.is_anonymous,
+            realtime_flag=qo.is_realtime,
+            end_time=qo.end_time,
         )
         self.session.add(new_vote_session)
         await self.session.flush()
@@ -364,7 +365,7 @@ class ModerationService:
             logger.warning(f"尝试更新异议帖子ID时，未找到ID为 {objection_id} 的异议。")
             return None
 
-        objection.objectionThreadId = objection_thread_id
+        objection.objection_thread_id = objection_thread_id
         self.session.add(objection)
         await self.session.flush()
         await self.session.refresh(objection)
@@ -382,7 +383,7 @@ class ModerationService:
             logger.warning(f"尝试更新审核帖子ID时，未找到ID为 {objection_id} 的异议。")
             return None
 
-        objection.reviewThreadId = review_thread_id
+        objection.review_thread_id = review_thread_id
         self.session.add(objection)
         await self.session.flush()
         await self.session.refresh(objection)
@@ -404,10 +405,10 @@ class ModerationService:
 
         session = ConfirmationSession(
             context=qo.context,
-            targetId=qo.target_id,
-            messageId=qo.message_id,
-            requiredRoles=qo.required_roles,
-            confirmedParties=confirmed_parties,
+            target_id=qo.target_id,
+            message_id=qo.message_id,
+            required_roles=qo.required_roles,
+            confirmed_parties=confirmed_parties,
         )
         self.session.add(session)
         await self.session.flush()
@@ -419,9 +420,9 @@ class ModerationService:
             id=session.id,
             context=session.context,
             status=session.status,
-            canceler_id=session.cancelerId,
-            confirmed_parties=session.confirmedParties or {},
-            required_roles=session.requiredRoles,
+            canceler_id=session.canceler_id,
+            confirmed_parties=session.confirmed_parties or {},
+            required_roles=session.required_roles,
         )
 
     async def update_confirmation_session_message_id(self, session_id: int, message_id: int):
@@ -431,7 +432,7 @@ class ModerationService:
         statement = (
             update(ConfirmationSession)
             .where(ConfirmationSession.id == session_id)  # type: ignore
-            .values(messageId=message_id)
+            .values(message_id=message_id)
         )
         await self.session.exec(statement)  # type: ignore
 
@@ -441,7 +442,7 @@ class ModerationService:
         """
         根据消息ID获取确认会话。
         """
-        statement = select(ConfirmationSession).where(ConfirmationSession.messageId == message_id)
+        statement = select(ConfirmationSession).where(ConfirmationSession.message_id == message_id)
         result = await self.session.exec(statement)
         return result.one_or_none()
 
@@ -451,17 +452,17 @@ class ModerationService:
         """
         向确认会话添加一个确认方。
         """
-        # 确保 confirmedParties 是一个可修改的字典
-        if session.confirmedParties is None:
-            session.confirmedParties = {}
+        # 确保 confirmed_parties 是一个可修改的字典
+        if session.confirmed_parties is None:
+            session.confirmed_parties = {}
 
         # 创建副本以触发 SQLAlchemy 的变更检测
-        new_confirmed_parties = session.confirmedParties.copy()
+        new_confirmed_parties = session.confirmed_parties.copy()
         new_confirmed_parties[role] = user_id
-        session.confirmedParties = new_confirmed_parties
+        session.confirmed_parties = new_confirmed_parties
 
         # 检查是否所有角色都已确认
-        if set(session.requiredRoles) == set(session.confirmedParties.keys()):
+        if set(session.required_roles) == set(session.confirmed_parties.keys()):
             session.status = ConfirmationStatus.COMPLETED
 
         self.session.add(session)
@@ -475,7 +476,7 @@ class ModerationService:
         取消一个确认会话。
         """
         session.status = ConfirmationStatus.CANCELED
-        session.cancelerId = user_id
+        session.canceler_id = user_id
         self.session.add(session)
         await self.session.flush()
         return session
@@ -493,7 +494,7 @@ class ModerationService:
         Raises:
             ValueError: 如果找不到提案或提案状态不正确。
         """
-        statement = select(Proposal).where(Proposal.discussionThreadId == qo.thread_id)
+        statement = select(Proposal).where(Proposal.discussion_thread_id == qo.thread_id)
         result = await self.session.exec(statement)
         proposal = result.one_or_none()
 
@@ -531,7 +532,7 @@ class ModerationService:
         # 数据读取与验证（一次性预加载所有关联数据）
         vote_session_statement = (
             select(VoteSession)
-            .where(VoteSession.contextMessageId == qo.messageId)
+            .where(VoteSession.context_message_id == qo.message_id)
             .options(
                 selectinload(VoteSession.objection).selectinload(Objection.proposal)  # type: ignore
             )
@@ -555,7 +556,7 @@ class ModerationService:
 
         # 检查用户投票状态
         user_vote_statement = select(UserVote).where(
-            UserVote.sessionId == vote_session.id, UserVote.userId == qo.userId
+            UserVote.session_id == vote_session.id, UserVote.user_id == qo.user_id
         )
         user_vote = (await self.session.exec(user_vote_statement)).one_or_none()
 
@@ -567,7 +568,7 @@ class ModerationService:
             if user_has_voted:
                 user_action_result = "already_supported"
             else:
-                new_vote = UserVote(sessionId=vote_session.id, userId=qo.userId, choice=1)
+                new_vote = UserVote(session_id=vote_session.id, user_id=qo.user_id, choice=1)
                 self.session.add(new_vote)
                 user_action_result = "supported"
         elif qo.action == "withdraw":
@@ -581,15 +582,17 @@ class ModerationService:
 
         # 获取最新票数
         count_statement = (
-            select(func.count()).select_from(UserVote).where(UserVote.sessionId == vote_session.id)
+            select(func.count())
+            .select_from(UserVote)
+            .where(UserVote.session_id == vote_session.id)
         )
         current_supporters = (await self.session.exec(count_statement)).one()
 
         # 组装并返回DTO
         return HandleSupportObjectionResultDto(
             current_supporters=current_supporters,
-            required_supporters=objection.requiredVotes,
-            is_goal_reached=(current_supporters >= objection.requiredVotes),
+            required_supporters=objection.required_votes,
+            is_goal_reached=(current_supporters >= objection.required_votes),
             is_vote_recorded=user_action_result in ["supported", "already_supported"],
             user_action_result=user_action_result,
             objection_status=objection.status,
@@ -597,7 +600,7 @@ class ModerationService:
             objection_id=objection.id,
             proposal_id=proposal.id,
             proposal_title=proposal.title,
-            proposal_discussion_thread_id=proposal.discussionThreadId,
-            objector_id=objection.objectorId,
+            proposal_discussion_thread_id=proposal.discussion_thread_id,
+            objector_id=objection.objector_id,
             objection_reason=objection.reason,
         )

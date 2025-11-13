@@ -174,12 +174,12 @@ class Notification(commands.Cog):
             # --- 步骤 2: 数据库操作 ---
             async with UnitOfWork(self.bot.db_handler) as uow:
                 qo = CreateAnnouncementQo(
-                    discussionThreadId=thread.id,
-                    announcerId=interaction.user.id,
+                    discussion_thread_id=thread.id,
+                    announcer_id=interaction.user.id,
                     title=title,
                     content=content,
-                    endTime=end_time,
-                    autoExecute=auto_execute,
+                    end_time=end_time,
+                    auto_execute=auto_execute,
                 )
                 announcement_dto = await uow.announcements.create_announcement(qo)
 
@@ -282,7 +282,7 @@ class Notification(commands.Cog):
                     )
                     return
 
-                old_end_time_utc = announcement.endTime.replace(tzinfo=ZoneInfo("UTC"))
+                old_end_time_utc = announcement.end_time.replace(tzinfo=ZoneInfo("UTC"))
                 time_change_hours = hours if operation == "延长" else -hours
                 new_end_time = TimeUtils.get_utc_end_time(
                     time_change_hours,

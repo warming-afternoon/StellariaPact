@@ -49,7 +49,10 @@ class VotingLogic:
                 raise PermissionError("投票资格已失效，无法投票。可能是因为删除了之前的有效发言。")
 
             updated_session = await uow.voting.record_vote(qo)
-            return VotingService.get_vote_details_dto(updated_session)
+            vote_options = None
+            if updated_session.id:
+                vote_options = await uow.voting.get_vote_options(updated_session.id)
+            return VotingService.get_vote_details_dto(updated_session, vote_options)
 
     async def get_vote_details(self, message_id: int) -> VoteDetailDto:
         """
@@ -59,7 +62,11 @@ class VotingLogic:
             vote_session = await uow.voting.get_vote_session_with_details(message_id)
             if not vote_session:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
-            return VotingService.get_vote_details_dto(vote_session)
+
+            vote_options = None
+            if vote_session.id:
+                vote_options = await uow.voting.get_vote_options(vote_session.id)
+            return VotingService.get_vote_details_dto(vote_session, vote_options)
 
     async def get_vote_flags(self, message_id: int) -> tuple[bool, bool, bool]:
         """以轻量级方式仅获取投票会话的匿名、实时和通知标志。"""
@@ -114,11 +121,14 @@ class VotingLogic:
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             updated_session = await uow.voting.delete_vote(
-                user_id=qo.user_id, message_id=qo.message_id
+                user_id=qo.user_id, message_id=qo.message_id, choice_index=qo.choice_index
             )
             if not updated_session:
                 raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
-            return VotingService.get_vote_details_dto(updated_session)
+            vote_options = None
+            if updated_session.id:
+                vote_options = await uow.voting.get_vote_options(updated_session.id)
+            return VotingService.get_vote_details_dto(updated_session, vote_options)
 
     async def prepare_voting_choice_data(
         self, user_id: int, thread_id: int, message_id: int
@@ -129,27 +139,44 @@ class VotingLogic:
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 并行获取所有需要的数据
             user_activity_task = uow.voting.check_user_eligibility(user_id, thread_id)
-            vote_session_task = uow.voting.get_vote_session_by_context_message_id(message_id)
+            vote_session_task = uow.voting.get_vote_session_with_details(message_id)
             user_activity, vote_session = await asyncio.gather(
                 user_activity_task, vote_session_task
             )
 
-            user_vote = None
-            if vote_session and vote_session.id:
-                user_vote = await uow.voting.get_user_vote_by_session_id(user_id, vote_session.id)
+            vote_options_dto = []
+            current_votes = {}
 
-            message_count = user_activity.messageCount if user_activity else 0
+            if vote_session and vote_session.id:
+                vote_options = await uow.voting.get_vote_options(vote_session.id)
+                vote_details = VotingService.get_vote_details_dto(vote_session, vote_options)
+                vote_options_dto = vote_details.options
+
+                # 获取用户对每个选项的投票
+                user_votes = [v for v in vote_session.userVotes if v.user_id == user_id]
+                for v in user_votes:
+                    current_votes[v.choice_index] = v.choice
+
+            message_count = user_activity.message_count if user_activity else 0
             is_eligible = EligibilityService.is_eligible(user_activity)
             is_validation_revoked = user_activity.validation is False if user_activity else False
             is_vote_active = vote_session.status == 1 if vote_session else False
-            current_vote_choice = user_vote.choice if user_vote else None
+
+            if not vote_session or not vote_session.context_message_id:
+                raise ValueError(
+                    "Vote session or context_message_id not found, cannot prepare panel data."
+                )
 
             return VotingChoicePanelDto(
+                guild_id=vote_session.guild_id,
+                thread_id=vote_session.context_thread_id,
+                message_id=vote_session.context_message_id,
                 is_eligible=is_eligible,
                 is_vote_active=is_vote_active,
                 message_count=message_count,
-                current_vote_choice=current_vote_choice,
                 is_validation_revoked=is_validation_revoked,
+                options=vote_options_dto,
+                current_votes=current_votes,
             )
 
     async def handle_message_creation(self, qo: UpdateUserActivityQo) -> None:
@@ -185,12 +212,14 @@ class VotingLogic:
                 qo.thread_id
             )
 
-            # 在内存中为每个会话构建 DTO
-            details_to_update = [
-                VotingService.get_vote_details_dto(session)
-                for session in all_sessions_in_thread
-                if session.contextMessageId
-            ]
+            # 获取所有会话及其关联的、更新后的投票
+            details_to_update: List[VoteDetailDto] = []
+            for session in all_sessions_in_thread:
+                if session.id:
+                    vote_options = await uow.voting.get_vote_options(session.id)
+                    details_to_update.append(
+                        VotingService.get_vote_details_dto(session, vote_options)
+                    )
             return details_to_update
 
     async def reopen_vote(
@@ -206,9 +235,9 @@ class VotingLogic:
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 获取当前会话以记录旧的结束时间
             current_session = await uow.voting.get_vote_session_by_context_message_id(message_id)
-            if not current_session or not current_session.endTime:
+            if not current_session or not current_session.end_time:
                 raise RuntimeError(f"无法为消息 {message_id} 找到投票会话或其结束时间。")
-            old_end_time = current_session.endTime
+            old_end_time = current_session.end_time
 
             target_tz = self.bot.config.get("timezone", "UTC")
             new_end_time = TimeUtils.get_utc_end_time(
@@ -225,7 +254,10 @@ class VotingLogic:
             if not final_session:
                 raise RuntimeError("重新获取会话失败。")
 
-            vote_details = VotingService.get_vote_details_dto(final_session)
+            vote_options = None
+            if final_session.id:
+                vote_options = await uow.voting.get_vote_options(final_session.id)
+            vote_details = VotingService.get_vote_details_dto(final_session, vote_options)
             self.bot.dispatch(
                 "vote_settings_changed",
                 thread_id,
@@ -252,13 +284,16 @@ class VotingLogic:
             result_dto = await uow.voting.adjust_vote_time(qo)
             await uow.commit()
 
-            if not result_dto.vote_session.contextMessageId:
+            if not result_dto.vote_session.context_message_id:
                 raise ValueError("找不到关联的消息ID。")
 
             final_session = await uow.voting.get_vote_session_with_details(message_id)
             if not final_session:
                 raise RuntimeError("重新获取会话失败。")
-            vote_details = VotingService.get_vote_details_dto(final_session)
+            vote_options = None
+            if final_session.id:
+                vote_options = await uow.voting.get_vote_options(final_session.id)
+            vote_details = VotingService.get_vote_details_dto(final_session, vote_options)
             change_text = (
                 f"延长了 **{hours_to_adjust}** 小时"
                 if hours_to_adjust > 0
@@ -271,6 +306,6 @@ class VotingLogic:
                 vote_details,
                 operator,
                 f"调整了投票时间，{change_text}。",
-                result_dto.vote_session.endTime,
+                result_dto.vote_session.end_time,
                 result_dto.old_end_time,
             )

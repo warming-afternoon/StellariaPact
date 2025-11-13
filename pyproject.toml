@@ -49,3 +49,14 @@ select = [
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.uv.sources]
+stellariapact = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "alembic>=1.17.1",
+    "pre-commit>=4.2.0",
+    "ruff>=0.12.7",
+    "stellariapact",
+]

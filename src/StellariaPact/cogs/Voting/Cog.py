@@ -69,7 +69,7 @@ class Voting(commands.Cog):
         监听通用投票结束事件，并发送最终结果。
         """
         try:
-            thread = await DiscordUtils.fetch_thread(self.bot, session.contextThreadId)
+            thread = await DiscordUtils.fetch_thread(self.bot, session.context_thread_id)
             if not thread:
                 logger.warning(f"无法为投票会话 {session.id} 找到有效的帖子。")
                 return
@@ -77,8 +77,8 @@ class Voting(commands.Cog):
             topic = StringUtils.clean_title(thread.name)
 
             jump_url = None
-            if session.contextMessageId:
-                jump_url = f"https://discord.com/channels/{thread.guild.id}/{thread.id}/{session.contextMessageId}"
+            if session.context_message_id:
+                jump_url = f"https://discord.com/channels/{thread.guild.id}/{thread.id}/{session.context_message_id}"
 
             logger.info(f"投票会话 {session.id} 结束，生成跳转链接: {jump_url}")
 
@@ -91,8 +91,8 @@ class Voting(commands.Cog):
 
             # 如果不是匿名投票，则构建并添加投票者名单
             if not result.is_anonymous and result.voters:
-                approve_voter_ids = [v.userId for v in result.voters if v.choice == 1]
-                reject_voter_ids = [v.userId for v in result.voters if v.choice == 0]
+                approve_voter_ids = [v.user_id for v in result.voters if v.choice == 1]
+                reject_voter_ids = [v.user_id for v in result.voters if v.choice == 0]
 
                 if approve_voter_ids:
                     approve_embeds = VoteEmbedBuilder.build_voter_list_embeds(
@@ -185,6 +185,39 @@ class Voting(commands.Cog):
     # 异议-正式投票 监听器
     # -------------------------
 
+    async def _update_private_management_panel(
+        self,
+        interaction: discord.Interaction,
+        thread_id: int,
+        original_message_id: int,
+        base_title: str = "投票管理",
+        approve_text: str = "✅ 赞成",
+        reject_text: str = "❌ 反对",
+    ):
+        """
+        辅助方法，用于更新私有的投票管理面板
+        """
+        if not interaction.message:
+            return
+
+        try:
+            panel_data = await self.logic.prepare_voting_choice_data(
+                user_id=interaction.user.id,
+                thread_id=thread_id,
+                message_id=original_message_id,
+            )
+            jump_url = f"https://discord.com/channels/{panel_data.guild_id}/{panel_data.thread_id}/{panel_data.message_id}"
+            embed = VoteEmbedBuilder.create_management_panel_embed(
+                jump_url=jump_url,
+                panel_data=panel_data,
+                base_title=base_title,
+                approve_text=approve_text,
+                reject_text=reject_text,
+            )
+            await self.bot.api_scheduler.submit(interaction.edit_original_response(embed=embed), 1)
+        except Exception as e:
+            logger.warning(f"更新私有管理面板时出错: {e}")
+
     async def _update_formal_vote_panels(
         self,
         interaction: discord.Interaction,
@@ -197,34 +230,18 @@ class Voting(commands.Cog):
         """
         try:
             # 更新私有面板
-            if interaction.message and interaction.message.embeds:
-                new_embed = interaction.message.embeds[0]
-                new_embed.set_field_at(3, name="当前投票", value=choice_text, inline=False)
-                await self.bot.api_scheduler.submit(
-                    interaction.edit_original_response(embed=new_embed), 1
+            if vote_details.context_message_id:
+                await self._update_private_management_panel(
+                    interaction,
+                    thread_id,
+                    vote_details.context_message_id,
+                    base_title="异议投票管理",
+                    approve_text="✅ 同意异议",
+                    reject_text="❌ 反对异议",
                 )
 
-            # 更新公开面板
-            thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
-            if not isinstance(thread, (discord.TextChannel, discord.Thread)):
-                logger.warning(f"无法为投票 {vote_details.context_message_id} 找到有效的帖子。")
-                return
-
-            if vote_details.context_message_id is None:
-                logger.warning("vote_details.context_message_id 为 None，无法获取公共消息。")
-                return
-            public_message = await thread.fetch_message(vote_details.context_message_id)
-            if not public_message.embeds:
-                return
-
-            original_embed = public_message.embeds[0]
-            new_embed = ObjectionVoteEmbedBuilder.update_formal_embed(original_embed, vote_details)
-            await self.bot.api_scheduler.submit(public_message.edit(embed=new_embed), 2)
-        except (discord.NotFound, discord.Forbidden):
-            logger.warning(
-                f"无法获取或编辑帖子 {thread_id} 中的原始投票消息 "
-                f"{vote_details.context_message_id}"
-            )
+            # 派发事件让中央监听器统一处理
+            self.bot.dispatch("vote_details_updated", vote_details)
         except Exception as e:
             logger.error(f"更新投票面板时出错: {e}", exc_info=True)
 
@@ -276,8 +293,9 @@ class Voting(commands.Cog):
                 message_id=original_message_id,
             )
 
+            jump_url = f"https://discord.com/channels/{panel_data.guild_id}/{panel_data.thread_id}/{panel_data.message_id}"
             embed = VoteEmbedBuilder.create_management_panel_embed(
-                jump_url=interaction.message.jump_url,
+                jump_url=jump_url,
                 panel_data=panel_data,
                 base_title="异议投票管理",
                 approve_text="✅ 同意异议",
@@ -351,13 +369,15 @@ class Voting(commands.Cog):
                 )
             )
 
-            # 更新私有面板 (这部分需要保留，因为它提供即时反馈)
-            if interaction.message and interaction.message.embeds:
-                choice_text = "✅ 同意异议" if choice == 1 else "❌ 反对异议"
-                new_embed = interaction.message.embeds[0]
-                new_embed.set_field_at(3, name="当前投票", value=choice_text, inline=False)
-                await self.bot.api_scheduler.submit(
-                    interaction.edit_original_response(embed=new_embed), 1
+            # 更新私有面板
+            if vote_details:
+                await self._update_private_management_panel(
+                    interaction,
+                    thread_id,
+                    original_message_id,
+                    base_title="异议投票管理",
+                    approve_text="✅ 同意异议",
+                    reject_text="❌ 反对异议",
                 )
 
             # 派发通用事件，让中央监听器处理所有公开面板的更新
@@ -386,11 +406,14 @@ class Voting(commands.Cog):
             )
 
             # 更新私有面板
-            if interaction.message and interaction.message.embeds:
-                new_embed = interaction.message.embeds[0]
-                new_embed.set_field_at(3, name="当前投票", value="未投票", inline=False)
-                await self.bot.api_scheduler.submit(
-                    interaction.edit_original_response(embed=new_embed), 1
+            if vote_details:
+                await self._update_private_management_panel(
+                    interaction,
+                    thread_id,
+                    original_message_id,
+                    base_title="异议投票管理",
+                    approve_text="✅ 同意异议",
+                    reject_text="❌ 反对异议",
                 )
 
             # 派发通用事件
@@ -422,14 +445,14 @@ class Voting(commands.Cog):
                     interaction.message.id
                 )
 
-                if not session or not session.contextMessageId or not session.contextThreadId:
+                if not session or not session.context_message_id or not session.context_thread_id:
                     await self.bot.api_scheduler.submit(
                         interaction.followup.send("找不到关联的原始投票信息", ephemeral=True), 1
                     )
                     return
 
-                context_thread_id = session.contextThreadId
-                context_message_id = session.contextMessageId
+                context_thread_id = session.context_thread_id
+                context_message_id = session.context_message_id
                 guild_id = interaction.guild.id
 
             # 准备投票管理面板数据
@@ -457,8 +480,7 @@ class Voting(commands.Cog):
                 logic=self.logic,
                 original_message_id=context_message_id,
                 thread_id=context_thread_id,
-                is_eligible=panel_data.is_eligible,
-                is_vote_active=panel_data.is_vote_active,
+                panel_data=panel_data,
                 can_manage=can_manage,
             )
 
@@ -511,14 +533,14 @@ class Voting(commands.Cog):
                     interaction.message.id
                 )
 
-                if not session or not session.contextThreadId:
+                if not session or not session.context_thread_id:
                     await interaction.response.send_message(
                         "找不到关联的原始投票信息。", ephemeral=True
                     )
                     return
 
                 # 在 with 块内部安全地访问 session 对象的属性，并存入局部变量
-                context_thread_id = session.contextThreadId
+                context_thread_id = session.context_thread_id
                 guild_id = interaction.guild.id
 
             # 构建提案链接
@@ -535,6 +557,86 @@ class Voting(commands.Cog):
                 interaction.response.send_message("处理请求时出错", ephemeral=True), 1
             )
 
+    async def _update_thread_panel(self, thread: discord.Thread, vote_details: VoteDetailDto):
+        """辅助方法：更新帖子内的投票面板。"""
+        if not vote_details.context_message_id:
+            return
+
+        try:
+            message = await thread.fetch_message(vote_details.context_message_id)
+            new_embed = None
+
+            if vote_details.objection_id:
+                async with UnitOfWork(self.bot.db_handler) as uow:
+                    objection_details = await uow.moderation.get_objection_details_by_id(
+                        vote_details.objection_id
+                    )
+                    if objection_details:
+                        new_embed = ObjectionVoteEmbedBuilder.create_formal_embed(
+                            objection_dto=objection_details, vote_details=vote_details
+                        )
+            else:
+                clean_topic = StringUtils.clean_title(thread.name)
+                new_embed = VoteEmbedBuilder.create_vote_panel_embed(
+                    topic=clean_topic,
+                    anonymous_flag=vote_details.is_anonymous,
+                    realtime_flag=vote_details.realtime_flag,
+                    notify_flag=vote_details.notify_flag,
+                    end_time=vote_details.end_time,
+                    vote_details=vote_details,
+                )
+
+            if new_embed:
+                await self.bot.api_scheduler.submit(message.edit(embed=new_embed), priority=2)
+        except discord.NotFound:
+            logger.warning(f"找不到帖子内投票消息 {vote_details.context_message_id}，跳过更新。")
+        except Exception as e:
+            logger.error(f"更新帖子投票面板时出错: {e}", exc_info=True)
+
+    async def _update_voting_channel_panel(
+        self,
+        channel: discord.TextChannel,
+        thread: discord.Thread | None,
+        vote_details: VoteDetailDto,
+    ):
+        """辅助方法：更新投票频道内的面板。"""
+        if not vote_details.voting_channel_message_id:
+            return
+
+        try:
+            message = await channel.fetch_message(vote_details.voting_channel_message_id)
+            new_embed = None
+
+            if vote_details.objection_id:
+                async with UnitOfWork(self.bot.db_handler) as uow:
+                    objection_details = await uow.moderation.get_objection_details_by_id(
+                        vote_details.objection_id
+                    )
+                    if objection_details and thread:
+                        new_embed = VoteEmbedBuilder.build_objection_voting_channel_embed(
+                            objection=objection_details,
+                            vote_details=vote_details,
+                            thread_jump_url=thread.jump_url,
+                        )
+            else:
+                async with UnitOfWork(self.bot.db_handler) as uow:
+                    proposal = await uow.moderation.get_proposal_by_thread_id(
+                        vote_details.context_thread_id
+                    )
+                    if proposal and thread:
+                        new_embed = VoteEmbedBuilder.build_voting_channel_embed(
+                            proposal, vote_details, thread.jump_url
+                        )
+
+            if new_embed:
+                await self.bot.api_scheduler.submit(message.edit(embed=new_embed), priority=2)
+        except discord.NotFound:
+            logger.warning(
+                f"找不到投票频道内消息 {vote_details.voting_channel_message_id}，跳过更新。"
+            )
+        except Exception as e:
+            logger.error(f"更新投票频道面板时出错: {e}", exc_info=True)
+
     @commands.Cog.listener("on_vote_details_updated")
     async def on_vote_details_updated(self, vote_details: VoteDetailDto):
         """当投票详情更新时，同步所有相关的投票面板。"""
@@ -542,90 +644,25 @@ class Voting(commands.Cog):
             if vote_details.context_message_id is None:
                 return
 
-            # 更新帖子内的面板
             thread = await DiscordUtils.fetch_thread(self.bot, vote_details.context_thread_id)
-            if thread and vote_details.context_message_id:
-                try:
-                    message = await thread.fetch_message(vote_details.context_message_id)
-                    new_embed = None
+            if not thread:
+                logger.warning(
+                    f"找不到投票 {vote_details.context_message_id} 所在的帖子，跳过更新。"
+                )
+                return
 
-                    # 根据 DTO 中的 objection_id 判断使用哪个 EmbedBuilder
-                    if vote_details.objection_id:
-                        # 这是异议投票
-                        if message.embeds:
-                            original_embed = message.embeds[0]
-                            new_embed = ObjectionVoteEmbedBuilder.update_formal_embed(
-                                original_embed, vote_details
-                            )
-                    else:
-                        # 这是普通投票
-                        clean_topic = StringUtils.clean_title(thread.name)
-                        new_embed = VoteEmbedBuilder.create_vote_panel_embed(
-                            topic=clean_topic,
-                            anonymous_flag=vote_details.is_anonymous,
-                            realtime_flag=vote_details.realtime_flag,
-                            notify_flag=vote_details.notify_flag,
-                            end_time=vote_details.end_time,
-                            vote_details=vote_details,
-                        )
+            await self._update_thread_panel(thread, vote_details)
 
-                    if new_embed:
-                        await self.bot.api_scheduler.submit(
-                            message.edit(embed=new_embed), priority=2
-                        )
-                except discord.NotFound:
-                    logger.warning(
-                        f"找不到帖子内投票消息 {vote_details.context_message_id}，跳过更新。"
-                    )
-
-            # 更新投票频道内的面板
             voting_channel_id_str = self.bot.config.get("channels", {}).get("voting_channel")
-            if voting_channel_id_str and vote_details.voting_channel_message_id:
-                channel = await DiscordUtils.fetch_channel(self.bot, int(voting_channel_id_str))
-                if isinstance(channel, discord.TextChannel):
-                    try:
-                        message = await channel.fetch_message(
-                            vote_details.voting_channel_message_id
-                        )
-                        new_embed = None
+            if not voting_channel_id_str:
+                return
 
-                        # 同样需要判断
-                        if vote_details.objection_id:
-                            # 需要从数据库获取异议详情来构建 embed
-                            async with UnitOfWork(self.bot.db_handler) as uow:
-                                objection_details = (
-                                    await uow.moderation.get_objection_details_by_id(
-                                        vote_details.objection_id
-                                    )
-                                )
-                                if objection_details and thread:
-                                    new_embed = (
-                                        VoteEmbedBuilder.build_objection_voting_channel_embed(
-                                            objection=objection_details,
-                                            vote_details=vote_details,
-                                            thread_jump_url=thread.jump_url,
-                                        )
-                                    )
-                        else:
-                            # 普通提案需要提案信息
-                            async with UnitOfWork(self.bot.db_handler) as uow:
-                                proposal = await uow.moderation.get_proposal_by_thread_id(
-                                    vote_details.context_thread_id
-                                )
-                                if proposal and thread:
-                                    new_embed = VoteEmbedBuilder.build_voting_channel_embed(
-                                        proposal, vote_details, thread.jump_url
-                                    )
+            channel = await DiscordUtils.fetch_channel(self.bot, int(voting_channel_id_str))
+            if not isinstance(channel, discord.TextChannel):
+                logger.warning(f"投票频道 {voting_channel_id_str} 不是文本频道。")
+                return
 
-                        if new_embed:
-                            await self.bot.api_scheduler.submit(
-                                message.edit(embed=new_embed), priority=2
-                            )
-                    except discord.NotFound:
-                        logger.warning(
-                            f"找不到投票频道内消息 {vote_details.voting_channel_message_id}，"
-                            "跳过更新。"
-                        )
+            await self._update_voting_channel_panel(channel, thread, vote_details)
 
         except Exception as e:
             logger.error(f"同步投票面板时出错: {e}", exc_info=True)

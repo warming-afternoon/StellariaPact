@@ -26,7 +26,8 @@ class NotificationEventListener(commands.Cog):
         监听由 Notification cog 分派的公示结束事件。
         """
         logger.info(
-            f"接收到公示结束事件，帖子ID: {announcement.discussionThreadId}，分派到 logic 层处理。"
+            f"接收到公示结束事件，帖子ID: {announcement.discussion_thread_id}，"
+            "分派到 logic 层处理。"
         )
         await self.logic.handle_announcement_finished(announcement)
 

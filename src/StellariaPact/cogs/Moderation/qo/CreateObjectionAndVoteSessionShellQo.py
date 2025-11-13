@@ -7,9 +7,10 @@ from ....share.enums.ObjectionStatus import ObjectionStatus
 
 class CreateObjectionAndVoteSessionShellQo(BaseDto):
     """
-    创建异议和投票会话“空壳”的查询对象。
+    创建异议和投票会话"空壳"的查询对象。
     """
 
+    guild_id: int
     proposal_id: int
     objector_id: int
     reason: str

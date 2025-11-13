@@ -2,8 +2,6 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
-from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
@@ -23,25 +21,6 @@ class ObjectionFormalVoteView(discord.ui.View):
     # -----------------
     # 回调和辅助函数
     # -----------------
-    async def _update_public_panel(
-        self,
-        channel: discord.TextChannel | discord.Thread | discord.VoiceChannel,
-        message_id: int,
-        vote_details: VoteDetailDto,
-    ):
-        """根据提供的投票详情更新主投票面板。"""
-        try:
-            public_message = await channel.fetch_message(message_id)
-            if not public_message.embeds:
-                return
-
-            original_embed = public_message.embeds[0]
-            new_embed = ObjectionVoteEmbedBuilder.update_formal_embed(original_embed, vote_details)
-            await self.bot.api_scheduler.submit(public_message.edit(embed=new_embed), 2)
-        except (discord.NotFound, discord.Forbidden):
-            logger.warning(f"无法获取或编辑原始投票消息 {message_id}")
-        except Exception as e:
-            logger.error(f"更新主投票面板时出错: {e}", exc_info=True)
 
     async def _on_vote_callback(
         self,

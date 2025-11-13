@@ -27,12 +27,12 @@ class AnnouncementService:
             新创建的公示的数据传输对象。
         """
         new_announcement = Announcement(
-            discussionThreadId=qo.discussionThreadId,
-            announcerId=qo.announcerId,
+            discussion_thread_id=qo.discussion_thread_id,
+            announcer_id=qo.announcer_id,
             title=qo.title,
             content=qo.content,
-            endTime=qo.endTime,
-            autoExecute=qo.autoExecute,
+            end_time=qo.end_time,
+            auto_execute=qo.auto_execute,
             status=1,  # 进行中
         )
 
@@ -52,7 +52,7 @@ class AnnouncementService:
             如果找到，则返回公示的数据传输对象，否则返回 None。
         """
         result = await self.session.exec(
-            select(Announcement).where(Announcement.discussionThreadId == thread_id)
+            select(Announcement).where(Announcement.discussion_thread_id == thread_id)
         )
         announcement = result.one_or_none()
         return AnnouncementDto.model_validate(announcement) if announcement else None
@@ -66,7 +66,7 @@ class AnnouncementService:
         """
         now = datetime.utcnow()
         result = await self.session.exec(
-            select(Announcement).where(Announcement.endTime <= now, Announcement.status == 1)
+            select(Announcement).where(Announcement.end_time <= now, Announcement.status == 1)
         )
         expired = result.all()
         return [AnnouncementDto.model_validate(ann) for ann in expired]
@@ -81,7 +81,7 @@ class AnnouncementService:
         """
         announcement = await self.session.get(Announcement, announcement_id)
         if announcement:
-            announcement.endTime = new_end_time
+            announcement.end_time = new_end_time
             self.session.add(announcement)
 
     async def mark_announcement_as_finished(self, announcement_id: int):

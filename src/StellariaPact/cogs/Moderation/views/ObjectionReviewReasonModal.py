@@ -53,10 +53,13 @@ class ObjectionReviewReasonModal(discord.ui.Modal):
 
         try:
             if self.is_approve:
+                if not interaction.guild:
+                    raise RuntimeError("交互不包含服务器信息。")
                 result_dto = await self.logic.handle_approve_objection(
                     objection_id=self.objection_id,
                     moderator_id=interaction.user.id,
                     reason=reason,
+                    guild_id=interaction.guild.id,
                 )
             else:
                 result_dto = await self.logic.handle_reject_objection(
@@ -90,16 +93,16 @@ class ObjectionReviewReasonModal(discord.ui.Modal):
 
                 # 构建公开的 embed
                 assert channel.guild is not None, "频道必须在服务器中"
-                if result_dto.proposal.discussionThreadId is None:
-                    logger.error(f"提案 {result_dto.proposal.id} 缺少 discussionThreadId。")
+                if result_dto.proposal.discussion_thread_id is None:
+                    logger.error(f"提案 {result_dto.proposal.id} 缺少 discussion_thread_id。")
                     await interaction.followup.send("处理结果时发生内部错误。", ephemeral=True)
                     return
 
                 qo = BuildObjectionReviewResultEmbedQo(
                     guild_id=channel.guild.id,
                     proposal_title=result_dto.proposal.title,
-                    proposal_thread_id=result_dto.proposal.discussionThreadId,
-                    objector_id=result_dto.objection.objectorId,
+                    proposal_thread_id=result_dto.proposal.discussion_thread_id,
+                    objector_id=result_dto.objection.objector_id,
                     objection_reason=result_dto.objection.reason,
                     moderator_id=result_dto.moderator_id,
                     review_reason=result_dto.reason,
@@ -108,7 +111,7 @@ class ObjectionReviewReasonModal(discord.ui.Modal):
                 review_embed = ModerationEmbedBuilder.build_objection_review_result_embed(qo)
 
                 # 在审核帖中发送公开消息，并 @ 发起人
-                content = f"异议审核完成，<@{result_dto.objection.objectorId}>"
+                content = f"异议审核完成，<@{result_dto.objection.objector_id}>"
                 await self.bot.api_scheduler.submit(
                     channel.send(content=content, embed=review_embed), 2
                 )

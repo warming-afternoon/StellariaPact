@@ -1163,6 +1163,14 @@ dev = [
     { name = "ruff" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "alembic" },
+    { name = "pre-commit" },
+    { name = "ruff" },
+    { name = "stellariapact" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiohttp" },
@@ -1180,6 +1188,14 @@ requires-dist = [
     { name = "uvloop", marker = "sys_platform != 'win32'" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "alembic", specifier = ">=1.17.1" },
+    { name = "pre-commit", specifier = ">=4.2.0" },
+    { name = "ruff", specifier = ">=0.12.7" },
+    { name = "stellariapact", editable = "." },
+]
 
 [[package]]
 name = "typing-extensions"

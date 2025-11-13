@@ -62,16 +62,16 @@ class ModerationListener(commands.Cog):
         now = datetime.now(timezone.utc)
         async with UnitOfWork(self.bot.db_handler) as uow:
             statement = select(UserActivity).where(
-                UserActivity.muteEndTime != None,  # type: ignore # noqa: E711
-                UserActivity.muteEndTime > now,  # type: ignore
+                UserActivity.mute_end_time != None,  # type: ignore # noqa: E711
+                UserActivity.mute_end_time > now,  # type: ignore
             )
             results = await uow.session.exec(statement)  # type: ignore
             for activity in results.all():
-                if activity.contextThreadId not in self.active_mutes:
-                    self.active_mutes[activity.contextThreadId] = {}
-                if activity.muteEndTime:
-                    self.active_mutes[activity.contextThreadId][activity.userId] = (
-                        activity.muteEndTime
+                if activity.context_thread_id not in self.active_mutes:
+                    self.active_mutes[activity.context_thread_id] = {}
+                if activity.mute_end_time:
+                    self.active_mutes[activity.context_thread_id][activity.user_id] = (
+                        activity.mute_end_time
                     )
         logger.info(
             f"成功加载 {sum(len(users) for users in self.active_mutes.values())} 条有效禁言记录。"
@@ -100,10 +100,10 @@ class ModerationListener(commands.Cog):
                     stmt = (
                         update(UserActivity)
                         .where(
-                            UserActivity.userId == user_id,
-                            UserActivity.contextThreadId == thread_id,
+                            UserActivity.user_id == user_id,
+                            UserActivity.context_thread_id == thread_id,
                         )
-                        .values(muteEndTime=None)
+                        .values(mute_end_time=None)
                     )
                     await uow.session.execute(stmt)
                 await uow.commit()
@@ -268,10 +268,13 @@ class ModerationListener(commands.Cog):
             target_thread_id = self._determine_target_thread_id(interaction, proposal_link)
 
             # 调用 Logic 层，它现在根据情况返回不同类型的 DTO
+            if not interaction.guild:
+                raise RuntimeError("交互不包含服务器信息。")
             result_dto = await self.logic.handle_raise_objection(
                 user_id=interaction.user.id,
                 target_thread_id=target_thread_id,
                 reason=reason,
+                guild_id=interaction.guild.id,
             )
 
             # --- 阶段二: 根据结果处理UI ---
@@ -478,8 +481,8 @@ class ModerationListener(commands.Cog):
         try:
             # 准备QO并调用Logic层
             qo = ObjectionSupportQo(
-                userId=interaction.user.id,
-                messageId=interaction.message.id,
+                user_id=interaction.user.id,
+                message_id=interaction.message.id,
                 action=choice,
             )
 
@@ -515,7 +518,7 @@ class ModerationListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_confirmation_completed(self, session: ConfirmationSessionDto):
-        logger.debug(f"接收到确认完成事件，上下文: {session.context}，目标ID: {session.targetId}")
+        logger.debug(f"接收到确认完成事件，上下文: {session.context}，目标ID: {session.target_id}")
 
         try:
             proposal_dto: ProposalDto | None = None
@@ -524,28 +527,28 @@ class ModerationListener(commands.Cog):
             match session.context:
                 case "proposal_execution":
                     proposal_dto = await self.logic.handle_proposal_execution_confirmed(
-                        session.targetId
+                        session.target_id
                     )
                     target_status = ProposalStatus.EXECUTING
                 case "proposal_completion":
                     proposal_dto = await self.logic.handle_proposal_completion_confirmed(
-                        session.targetId
+                        session.target_id
                     )
                     target_status = ProposalStatus.FINISHED
                 case _:
                     logger.warning(f"未知的确认上下文: {session.context}")
                     return
 
-            if proposal_dto and target_status and proposal_dto.discussionThreadId:
+            if proposal_dto and target_status and proposal_dto.discussion_thread_id:
                 await self._update_thread_status_after_confirmation(
-                    proposal_dto.discussionThreadId,
+                    proposal_dto.discussion_thread_id,
                     proposal_dto.title,
                     target_status,
                 )
             else:
                 logger.warning(
                     "从 logic 层返回的 proposal_dto 为空，无法更新帖子状态。"
-                    f"Proposal ID: {session.targetId}"
+                    f"Proposal ID: {session.target_id}"
                 )
 
         except Exception as e:

@@ -1,6 +1,3 @@
-from datetime import datetime
-from typing import Optional
-
 import discord
 
 from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import (
@@ -40,14 +37,10 @@ class ObjectionVoteEmbedBuilder:
 
     @staticmethod
     def create_formal_embed(
-        objection_dto: ObjectionDetailsDto, end_time: Optional[datetime] = None
+        objection_dto: ObjectionDetailsDto, vote_details: VoteDetailDto
     ) -> discord.Embed:
         """
-        创建正式异议投票的初始 Embed。
-
-        :param objection_dto: 包含异议和提案信息的DTO。
-        :param end_time: 投票的结束时间。
-        :return: 一个 discord.Embed 对象。
+        为异议的正式裁决阶段创建或刷新投票面板的Embed。
         """
         embed = discord.Embed(
             title="裁决投票：是否同意此异议？",
@@ -61,13 +54,38 @@ class ObjectionVoteEmbedBuilder:
             value="请议事成员进行投票。\n如果“赞成异议”票数超过“反对异议”票数，则原提案将被推翻",
             inline=False,
         )
-        embed.add_field(name="✅ 同意异议", value="**0**", inline=True)
-        embed.add_field(name="❌ 反对异议", value="**0**", inline=True)
 
-        if end_time:
+        if vote_details.realtime_flag:
+            if vote_details.options:
+                option = vote_details.options[0]
+                embed.add_field(
+                    name="✅ 同意异议", value=f"**{option.approve_votes}**", inline=True
+                )
+                embed.add_field(
+                    name="❌ 反对异议", value=f"**{option.reject_votes}**", inline=True
+                )
+            else:
+                # 如果没有 options 但启用了实时票数，显示总票数统计
+                embed.add_field(
+                    name="✅ 同意异议",
+                    value=f"**{vote_details.total_approve_votes}**",
+                    inline=True,
+                )
+                embed.add_field(
+                    name="❌ 反对异议",
+                    value=f"**{vote_details.total_reject_votes}**",
+                    inline=True,
+                )
+        else:
+            # 非实时模式下只显示基础信息
+            embed.add_field(name="✅ 同意异议", value="--", inline=True)
+            embed.add_field(name="❌ 反对异议", value="--", inline=True)
+
+        if vote_details.end_time:
+            end_time_ts = int(vote_details.end_time.timestamp())
             embed.add_field(
                 name="截止时间",
-                value=f"<t:{int(end_time.timestamp())}:f> (<t:{int(end_time.timestamp())}:R>)",
+                value=f"<t:{end_time_ts}:f> (<t:{end_time_ts}:R>)",
                 inline=False,
             )
 
@@ -75,7 +93,6 @@ class ObjectionVoteEmbedBuilder:
             text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
             f"有效发言 : 去除表情后, 长度 ≥ 5"
         )
-
         return embed
 
     @staticmethod
@@ -156,45 +173,5 @@ class ObjectionVoteEmbedBuilder:
                     i, name=field.name, value=fields_to_update[field.name], inline=field.inline
                 )
                 found_fields[field.name] = True
-
-        return new_embed
-
-    @staticmethod
-    def update_formal_embed(
-        original_embed: discord.Embed, vote_details: VoteDetailDto
-    ) -> discord.Embed:
-        """
-        更新正式异议投票面板上的票数。
-
-        :param original_embed: 原始的Embed对象。
-        :param vote_details: 包含最新票数信息的DTO。
-        :return: 更新后的Embed对象。
-        """
-        new_embed = original_embed.copy()
-
-        # 定义字段
-        fields_to_update = {
-            "✅ 同意异议": f"**{vote_details.approve_votes}**",
-            "❌ 反对异议": f"**{vote_details.reject_votes}**",
-        }
-
-        # 创建一个列表来跟踪哪些字段已经找到
-        found_fields = {name: False for name in fields_to_update}
-
-        # 遍历现有字段进行更新
-        for i, field in enumerate(new_embed.fields):
-            if field.name in fields_to_update:
-                new_embed.set_field_at(
-                    i,
-                    name=field.name,
-                    value=fields_to_update[field.name],
-                    inline=True,
-                )
-                found_fields[field.name] = True
-
-        # 添加尚未找到的字段
-        for name, value in fields_to_update.items():
-            if not found_fields[name]:
-                new_embed.add_field(name=name, value=value, inline=True)
 
         return new_embed

@@ -9,10 +9,10 @@ class AnnouncementDto(BaseDto):
     """
 
     id: int
-    discussionThreadId: int
-    announcerId: int
+    discussion_thread_id: int
+    announcer_id: int
     title: str
     content: str
     status: int
-    endTime: datetime
-    autoExecute: bool
+    end_time: datetime
+    auto_execute: bool

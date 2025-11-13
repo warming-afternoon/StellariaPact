@@ -11,6 +11,11 @@ RUN pip install uv
 COPY pyproject.toml uv.lock ./
 COPY README.md LICENSE ./
 
+# 复制 alembic 配置文件和迁移脚本
+COPY alembic.ini ./
+COPY migrate.py ./
+COPY alembic/ ./alembic/
+
 # 将项目源代码复制到工作目录中
 # 我们只复制 src 目录，因为这是应用代码所在的位置
 COPY src/ ./src/

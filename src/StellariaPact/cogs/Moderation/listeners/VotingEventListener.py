@@ -36,7 +36,7 @@ class VotingEventListener(commands.Cog):
         监听由 VoteCloser 分派的异议投票结束事件
         """
         logger.info(
-            f"接收到异议投票结束事件，异议ID: {session_dto.objectionId}，分派到 logic 层处理。"
+            f"接收到异议投票结束事件，异议ID: {session_dto.objection_id}，分派到 logic 层处理。"
         )
         try:
             # 调用 Logic 层处理数据库事务
@@ -44,7 +44,7 @@ class VotingEventListener(commands.Cog):
 
             if not final_result:
                 logger.warning(
-                    f"处理异议投票结束事件 (异议ID: {session_dto.objectionId}) 未返回有效结果。"
+                    f"处理异议投票结束事件 (异议ID: {session_dto.objection_id}) 未返回有效结果。"
                 )
                 return
 
@@ -65,7 +65,8 @@ class VotingEventListener(commands.Cog):
         监听由 VoteCloser 分派的异议支持票收集到期事件。
         """
         logger.info(
-            f"接收到异议支持票收集到期事件，异议ID: {session_dto.objectionId}，分派到 logic 层处理"
+            f"接收到异议支持票收集到期事件，异议ID: {session_dto.objection_id}，"
+            "分派到 logic 层处理"
         )
         try:
             final_result = await self.logic.handle_objection_collection_expired(
@@ -74,7 +75,7 @@ class VotingEventListener(commands.Cog):
 
             if not final_result:
                 logger.warning(
-                    f"处理异议支持票收集到期事件 (ID: {session_dto.objectionId}) 未返回有效结果"
+                    f"处理异议支持票收集到期事件 (ID: {session_dto.objection_id}) 未返回有效结果"
                 )
                 return
 

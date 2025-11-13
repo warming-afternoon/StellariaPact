@@ -26,19 +26,19 @@ class AnnouncementMonitorService:
         from sqlalchemy import func
 
         current_timestamp = func.strftime("%s", now_utc)
-        last_repost_timestamp = func.strftime("%s", AnnouncementChannelMonitor.lastRepostAt)
-        required_seconds_interval = AnnouncementChannelMonitor.timeIntervalMinutes * 60
+        last_repost_timestamp = func.strftime("%s", AnnouncementChannelMonitor.last_repost_at)
+        required_seconds_interval = AnnouncementChannelMonitor.time_interval_minutes * 60
 
         time_check_clause = current_timestamp - last_repost_timestamp >= required_seconds_interval
 
         stmt = (
             select(AnnouncementChannelMonitor)
-            .join(Announcement, Announcement.id == AnnouncementChannelMonitor.announcementId)  # type: ignore
+            .join(Announcement, Announcement.id == AnnouncementChannelMonitor.announcement_id)  # type: ignore
             .where(
                 and_(
                     Announcement.status == 1,  # type: ignore
-                    AnnouncementChannelMonitor.messageCountSinceLast
-                    >= AnnouncementChannelMonitor.messageThreshold,  # type: ignore
+                    AnnouncementChannelMonitor.message_count_since_last
+                    >= AnnouncementChannelMonitor.message_threshold,  # type: ignore
                     time_check_clause,  # type: ignore
                 )
             )
@@ -58,10 +58,10 @@ class AnnouncementMonitorService:
         """
         for channel_id in channel_ids:
             monitor = AnnouncementChannelMonitor(
-                announcementId=announcement_id,
-                channelId=channel_id,
-                messageThreshold=message_threshold,
-                timeIntervalMinutes=time_interval_minutes,
+                announcement_id=announcement_id,
+                channel_id=channel_id,
+                message_threshold=message_threshold,
+                time_interval_minutes=time_interval_minutes,
             )
             self.session.add(monitor)
 
@@ -70,6 +70,6 @@ class AnnouncementMonitorService:
         批量删除与特定公示相关的所有监控器记录。
         """
         stmt = delete(AnnouncementChannelMonitor).where(
-            AnnouncementChannelMonitor.announcementId == announcement_id  # type: ignore
+            AnnouncementChannelMonitor.announcement_id == announcement_id  # type: ignore
         )
         await self.session.execute(stmt)

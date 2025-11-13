@@ -14,10 +14,10 @@ from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationVie
 from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalModal
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
+from StellariaPact.cogs.Moderation.views.VoteOptionsModal import VoteOptionsModal
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums.VoteDuration import VoteDuration
-from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -170,7 +170,7 @@ class Moderation(commands.Cog):
         realtime="实时票数",
         notify="结束时通知提案委员",
         create_in_voting_channel="创建镜像投票",
-        notify_creation_role="通知投票创建身份组"
+        notify_creation_role="通知投票创建身份组",
     )
     @app_commands.describe(
         duration_hours="投票持续时间（小时），默认为 72 小时",
@@ -202,53 +202,80 @@ class Moderation(commands.Cog):
             create_in_voting_channel (bool, optional): 是否在投票频道创建镜像投票。默认为 True
             notify_creation_role (bool, optional): 是否通知创建身份组。默认为 False
         """
-        await safeDefer(interaction, ephemeral=True)
 
         if not isinstance(interaction.channel, discord.Thread):
-            await interaction.followup.send("此命令只能在提案帖子内使用。", ephemeral=True)
+            await interaction.response.send_message("此命令只能在提案帖子内使用。", ephemeral=True)
+            return
+
+        # 收集命令参数以便传递给 Modal
+        command_args = {
+            "duration_hours": duration_hours,
+            "anonymous": anonymous,
+            "realtime": realtime,
+            "notify": notify,
+            "create_in_voting_channel": create_in_voting_channel,
+            "notify_creation_role": notify_creation_role,
+        }
+
+        # 弹出 Modal 以收集选项
+        modal = VoteOptionsModal(
+            bot=self.bot,
+            moderation_cog=self,
+            original_interaction=interaction,
+            **command_args,
+        )
+        await interaction.response.send_modal(modal)
+
+    async def process_proposal_and_vote_creation(
+        self,
+        interaction: discord.Interaction,
+        options: list[str],
+        duration_hours: int,
+        anonymous: bool,
+        realtime: bool,
+        notify: bool,
+        create_in_voting_channel: bool,
+        notify_creation_role: bool,
+    ):
+        """由 VoteOptionsModal 提交后调用的核心逻辑"""
+        if not isinstance(interaction.channel, discord.Thread):
             return
 
         # 权限检查
         can_create = await PermissionGuard.can_manage_vote(interaction)
         if not can_create:
-            await interaction.followup.send("您没有权限在此帖子中创建投票。", ephemeral=True)
+            await interaction.edit_original_response(content="您没有权限在此帖子中创建投票。")
             return
 
         thread = interaction.channel
 
         try:
-            # 1. 获取发起人信息和首楼内容
             content = await StringUtils.extract_starter_content(thread)
             if not content:
-                await interaction.followup.send(
-                    "无法获取帖子的首楼内容，操作失败。", ephemeral=True
+                await interaction.edit_original_response(
+                    content="无法获取帖子的首楼内容，操作失败。"
                 )
                 return
 
-            proposer_id = StringUtils.extract_proposer_id_from_content(content)
-
-            # 如果正则没有匹配到，则回退到使用帖子创建者ID作为备用方案
-            if not proposer_id:
-                proposer_id = thread.owner_id
-
+            proposer_id = StringUtils.extract_proposer_id_from_content(content) or thread.owner_id
             clean_title = StringUtils.clean_title(thread.name)
 
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 2. 尝试创建提案
+                # 尝试创建提案
                 proposal_dto = await uow.moderation.create_proposal(
                     thread.id, proposer_id, clean_title, content
                 )
                 # 如果提案已存在，则获取它
                 if not proposal_dto:
                     proposal_dto = await uow.moderation.get_proposal_by_thread_id(thread.id)
-
                 await uow.commit()
 
-            # 3. 派发事件以创建投票
+            # 派发事件以创建投票
             if proposal_dto:
                 self.bot.dispatch(
                     "proposal_created",
                     proposal_dto,
+                    options,
                     duration_hours,
                     anonymous,
                     realtime,
@@ -256,12 +283,11 @@ class Moderation(commands.Cog):
                     create_in_voting_channel,
                     notify_creation_role,
                 )
-                await interaction.followup.send("✅ 成功为本帖创建了新的投票！", ephemeral=True)
             else:
-                await interaction.followup.send("处理提案信息失败，无法创建投票。", ephemeral=True)
+                await interaction.followup.send(content="处理提案信息失败，无法创建投票。")
         except Exception as e:
             logger.error(f"手动创建提案投票时出错: {e}", exc_info=True)
-            await interaction.followup.send(f"发生错误: {e}", ephemeral=True)
+            await interaction.followup.send(content=f"发生错误: {e}")
 
     # --- 私有方法 ---
 

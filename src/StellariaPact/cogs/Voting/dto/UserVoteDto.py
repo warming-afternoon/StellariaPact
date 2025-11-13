@@ -9,10 +9,10 @@ class UserVoteDto(BaseModel):
     """
 
     id: int
-    sessionId: int
-    userId: int
+    session_id: int
+    user_id: int
     choice: int
-    votedAt: datetime
+    voted_at: datetime
 
     class Config:
         from_attributes = True

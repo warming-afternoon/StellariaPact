@@ -8,8 +8,8 @@ class ProposalDto(BaseDto):
     """
 
     id: int
-    proposerId: int
+    proposer_id: int
     title: str
     content: str
     status: ProposalStatus
-    discussionThreadId: int | None
+    discussion_thread_id: int | None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -13,43 +14,64 @@ from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 
+logger = logging.getLogger(__name__)
+
 
 class VoteEmbedBuilder:
     """
-    一个构建器类，负责创建和更新与投票相关的 discord.Embed 对象。
-    这确保了视图渲染逻辑与业务逻辑的分离。
+    一个构建器类，负责创建和更新与投票相关的 discord.Embed 对象
     """
 
     @staticmethod
-    def create_initial_vote_embed(
-        topic: str,
-        author: Optional[discord.User | discord.Member],
-        realtime: bool,
-        anonymous: bool,
-        notify_flag: bool,
-        end_time: Optional[datetime] = None,
-    ) -> discord.Embed:
+    def _add_vote_options_fields(
+        embed: discord.Embed,
+        vote_details: VoteDetailDto,
+        approve_text: str = "赞成",
+        reject_text: str = "反对",
+    ):
         """
-        创建投票初始状态的 Embed 面板。
+        向 Embed 添加投票选项和结果字段。
         """
-        description = "点击下方按钮，对本提案进行投票。"
-        # if author:
-        #     description = f"由 {author.mention} 发起的投票已开始！\n请点击下方按钮参与。"
-
-        embed = discord.Embed(
-            title=f"议题：{topic}",
-            description=description,
-            color=discord.Color.blue(),
-        )
-        embed.add_field(name="是否匿名", value="✅ 是" if anonymous else "❌ 否", inline=True)
-        embed.add_field(name="实时票数", value="✅ 是" if realtime else "❌ 否", inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
-
-        if realtime:
-            embed.add_field(name="赞成", value="0", inline=True)
-            embed.add_field(name="反对", value="0", inline=True)
+        if vote_details.options:
+            for i, option in enumerate(vote_details.options, 1):
+                # 显示选项标题和文本
+                embed.add_field(
+                    name=f"**选项 {i} : {option.choice_text}**",
+                    value="",
+                    inline=False,
+                )
+                if vote_details.realtime_flag:
+                    # 显示票数统计
+                    embed.add_field(
+                        name=approve_text,
+                        value=str(option.approve_votes),
+                        inline=True,
+                    )
+                    embed.add_field(
+                        name=reject_text,
+                        value=str(option.reject_votes),
+                        inline=True,
+                    )
+                    embed.add_field(
+                        name="\u200b",
+                        value="\u200b",
+                        inline=True,
+                    )
+        elif vote_details.realtime_flag:
+            # 如果没有 options 但启用了实时票数，显示总票数统计
+            embed.add_field(
+                name=approve_text, value=str(vote_details.total_approve_votes), inline=True
+            )
+            embed.add_field(
+                name=reject_text, value=str(vote_details.total_reject_votes), inline=True
+            )
             embed.add_field(name="\u200b", value="\u200b", inline=True)
 
+    @staticmethod
+    def _add_end_time_field(embed: discord.Embed, end_time: Optional[datetime]):
+        """
+        向 Embed 添加截止时间字段。
+        """
         if end_time:
             end_time_ts = int(end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
             embed.add_field(
@@ -58,12 +80,6 @@ class VoteEmbedBuilder:
                 inline=False,
             )
 
-        embed.set_footer(
-            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
-            f"有效发言 : 去除表情后, 长度 ≥ 5"
-        )
-        return embed
-
     @staticmethod
     def create_vote_panel_embed(
         topic: str,
@@ -71,10 +87,10 @@ class VoteEmbedBuilder:
         realtime_flag: bool,
         notify_flag: bool,
         end_time: Optional[datetime],
-        vote_details: Optional[VoteDetailDto] = None,
+        vote_details: VoteDetailDto,
     ) -> discord.Embed:
         """
-        根据明确的数据构建主投票面板 Embed，实现视图和数据的解耦。
+        构建主投票面板 Embed
         """
         description = "点击下方按钮，对本提案进行投票。"
         embed = discord.Embed(
@@ -86,50 +102,13 @@ class VoteEmbedBuilder:
         embed.add_field(name="实时票数", value="✅ 是" if realtime_flag else "❌ 否", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=True)
 
-        if realtime_flag:
-            approve_votes = vote_details.approve_votes if vote_details else 0
-            reject_votes = vote_details.reject_votes if vote_details else 0
-            embed.add_field(name="赞成", value=str(approve_votes), inline=True)
-            embed.add_field(name="反对", value=str(reject_votes), inline=True)
-            embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
-
-        if end_time:
-            end_time_ts = int(end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
-            embed.add_field(
-                name="截止时间",
-                value=f"<t:{end_time_ts}:F> (<t:{end_time_ts}:R>)",
-                inline=False,
-            )
+        VoteEmbedBuilder._add_vote_options_fields(embed, vote_details)
+        VoteEmbedBuilder._add_end_time_field(embed, end_time)
 
         embed.set_footer(
             text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
             f"有效发言 : 去除表情后, 长度 ≥ 5"
         )
-        return embed
-
-    @staticmethod
-    def update_vote_counts_embed(
-        original_embed: discord.Embed, vote_details: VoteDetailDto
-    ) -> discord.Embed:
-        """
-        根据最新的投票数据更新现有的 Embed 对象。
-
-        :param original_embed: 要更新的原始 Embed 对象。
-        :param vote_details: 包含最新投票计数和状态的 DTO。
-        :return: 更新后的 Embed 对象。
-        """
-        # 克隆原始 embed 以避免直接修改
-        embed = original_embed.copy()
-
-        if vote_details.realtime_flag and len(embed.fields) >= 5:
-            embed.set_field_at(
-                3,
-                name="赞成",
-                value=str(vote_details.approve_votes),
-                inline=True,
-            )
-            embed.set_field_at(4, name="反对", value=str(vote_details.reject_votes), inline=True)
-
         return embed
 
     @staticmethod
@@ -263,13 +242,34 @@ class VoteEmbedBuilder:
             inline=True,
         )
 
-        if panel_data.current_vote_choice is None:
-            current_vote_status = "未投票"
-        elif panel_data.current_vote_choice == 1:
-            current_vote_status = approve_text
+        if panel_data.options:
+            # 为每个选项显示选项文本和用户的选择
+            for i, option in enumerate(panel_data.options, 1):
+                # 用户的选择
+                user_choice = panel_data.current_votes.get(option.choice_index)
+                if user_choice is None:
+                    status = "未投票"
+                elif user_choice == 1:
+                    status = approve_text
+                else:
+                    status = reject_text
+
+                # 显示选项文本
+                embed.add_field(
+                    name=f"选项 {i} : ( {status} )",
+                    value=option.choice_text,
+                    inline=False,
+                )
         else:
-            current_vote_status = reject_text
-        embed.add_field(name="当前投票", value=current_vote_status, inline=False)
+            # 如果没有选项，显示用户的投票状态
+            user_choice = panel_data.current_votes.get(1)  # 默认检查选项1
+            if user_choice is None:
+                status = "未投票"
+            elif user_choice == 1:
+                status = approve_text
+            else:
+                status = reject_text
+            embed.add_field(name="当前投票", value=status, inline=False)
 
         if panel_data.is_validation_revoked:
             embed.description = "注意：您的投票资格已被撤销。"
@@ -301,18 +301,11 @@ class VoteEmbedBuilder:
             color=discord.Color.orange(),  # 使用橙色以区分普通投票
         )
 
-        if vote_details.end_time:
-            end_time_ts = int(vote_details.end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
-            embed.add_field(
-                name="截止时间",
-                value=f"<t:{end_time_ts}:F> (<t:{end_time_ts}:R>)",
-                inline=False,
-            )
+        VoteEmbedBuilder._add_end_time_field(embed, vote_details.end_time)
 
-        if vote_details.realtime_flag:
-            embed.add_field(name="同意异议", value=str(vote_details.approve_votes), inline=True)
-            embed.add_field(name="反对异议", value=str(vote_details.reject_votes), inline=True)
-            embed.add_field(name="总票数", value=str(vote_details.total_votes), inline=True)
+        VoteEmbedBuilder._add_vote_options_fields(
+            embed, vote_details, approve_text="同意异议", reject_text="反对异议"
+        )
 
         embed.set_footer(
             text=f"投票资格 : 在异议讨论帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
@@ -340,18 +333,9 @@ class VoteEmbedBuilder:
             color=discord.Color.blue(),
         )
 
-        if vote_details.end_time:
-            end_time_ts = int(vote_details.end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
-            embed.add_field(
-                name="截止时间",
-                value=f"<t:{end_time_ts}:F> (<t:{end_time_ts}:R>)",
-                inline=False,
-            )
+        VoteEmbedBuilder._add_end_time_field(embed, vote_details.end_time)
 
-        if vote_details.realtime_flag:
-            embed.add_field(name="赞成", value=str(vote_details.approve_votes), inline=True)
-            embed.add_field(name="反对", value=str(vote_details.reject_votes), inline=True)
-            embed.add_field(name="总票数", value=str(vote_details.total_votes), inline=True)
+        VoteEmbedBuilder._add_vote_options_fields(embed, vote_details)
 
         embed.set_footer(
             text=f"投票资格 : 点击标题，在跳转到的讨论帖内有效发言数 ≥"

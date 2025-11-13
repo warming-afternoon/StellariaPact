@@ -142,17 +142,17 @@ class BackgroundTasks(commands.Cog):
         """为单个已完成的公示发送通知并更新标签"""
         try:
             thread = self.bot.get_channel(
-                announcement_dto.discussionThreadId
-            ) or await self.bot.fetch_channel(announcement_dto.discussionThreadId)
+                announcement_dto.discussion_thread_id
+            ) or await self.bot.fetch_channel(announcement_dto.discussion_thread_id)
 
             if not isinstance(thread, discord.Thread):
                 logger.error(
                     f"无法为公示 {announcement_dto.id} 找到有效的讨论帖 "
-                    f"(ID: {announcement_dto.discussionThreadId})。"
+                    f"(ID: {announcement_dto.discussion_thread_id})。"
                 )
                 return
 
-            if announcement_dto.autoExecute:
+            if announcement_dto.auto_execute:
                 # 自动执行
                 embed_title = f"公示结束: {announcement_dto.title}"
                 embed_description = "本次公示已到期，现已自动进入执行阶段。"
@@ -191,7 +191,7 @@ class BackgroundTasks(commands.Cog):
                 description=embed_description,
                 color=color,
             )
-            utc_end_time = announcement_dto.endTime.replace(tzinfo=ZoneInfo("UTC"))
+            utc_end_time = announcement_dto.end_time.replace(tzinfo=ZoneInfo("UTC"))
             discord_timestamp = (
                 f"<t:{int(utc_end_time.timestamp())}:F>(<t:{int(utc_end_time.timestamp())}:R>)"
             )
@@ -204,12 +204,12 @@ class BackgroundTasks(commands.Cog):
                 priority=8,
             )
 
-            if announcement_dto.autoExecute:
+            if announcement_dto.auto_execute:
                 self.bot.dispatch("announcement_finished", announcement_dto)
         except discord.NotFound:
             logger.error(
                 (
-                    f"讨论帖 (ID: {announcement_dto.discussionThreadId}) 未找到，"
+                    f"讨论帖 (ID: {announcement_dto.discussion_thread_id}) 未找到，"
                     "可能已被删除。跳过API通知"
                 )
             )

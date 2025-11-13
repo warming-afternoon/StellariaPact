@@ -7,6 +7,7 @@ from . import (
     Proposal,
     UserActivity,
     UserVote,
+    VoteOption,
     VoteSession,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "Proposal",
     "UserActivity",
     "UserVote",
+    "VoteOption",
     "VoteSession",
 ]
