@@ -164,12 +164,21 @@ class Moderation(commands.Cog):
         name="创建提案投票",
         description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票",
     )
+    @app_commands.rename(
+        duration_hours="投票持续时间",
+        anonymous="是否匿名",
+        realtime="实时票数",
+        notify="结束时通知提案委员",
+        create_in_voting_channel="创建镜像投票",
+        notify_creation_role="通知投票创建身份组"
+    )
     @app_commands.describe(
         duration_hours="投票持续时间（小时），默认为 72 小时",
         anonymous="是否匿名投票，默认为 是",
         realtime="是否实时显示票数，默认为 是",
         notify="投票结束时是否通知提案委员，默认为 是",
         create_in_voting_channel="是否在投票频道创建镜像投票，默认为 是",
+        notify_creation_role="是否通知“投票创建”身份组,默认否",
     )
     async def create_proposal_vote(
         self,
@@ -179,6 +188,7 @@ class Moderation(commands.Cog):
         realtime: bool = True,
         notify: bool = True,
         create_in_voting_channel: bool = True,
+        notify_creation_role: bool = False,
     ):
         """为当前帖子手动创建一个提案投票。
 
@@ -188,7 +198,9 @@ class Moderation(commands.Cog):
                 默认为 72。
             anonymous (bool, optional): 是否匿名投票。默认为 True
             realtime (bool, optional): 是否实时显示票数。默认为 True
+            notify (bool, optional): 投票结束时是否通知提案委员。默认为 True
             create_in_voting_channel (bool, optional): 是否在投票频道创建镜像投票。默认为 True
+            notify_creation_role (bool, optional): 是否通知创建身份组。默认为 False
         """
         await safeDefer(interaction, ephemeral=True)
 
@@ -242,6 +254,7 @@ class Moderation(commands.Cog):
                     realtime,
                     notify,
                     create_in_voting_channel,
+                    notify_creation_role,
                 )
                 await interaction.followup.send("✅ 成功为本帖创建了新的投票！", ephemeral=True)
             else:

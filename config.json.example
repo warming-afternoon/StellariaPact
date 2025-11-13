@@ -28,7 +28,8 @@
   "roles": {
     "councilModerator": null,
     "executionAuditor": null,
-    "stewards": null
+    "stewards": null,
+    "voteCreationNotifier": null
   },
   "proxy": null,
   "timezone": "Asia/Shanghai"

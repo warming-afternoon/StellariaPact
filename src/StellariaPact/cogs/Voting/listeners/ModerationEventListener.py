@@ -43,6 +43,7 @@ class ModerationEventListener(commands.Cog):
         realtime: bool = True,
         notify: bool = True,
         create_in_voting_channel: bool = True,
+        notify_creation_role: bool = True,
     ):
         """
         监听到提案成功创建的事件，为其创建投票面板，并尝试同步到投票频道
@@ -161,8 +162,15 @@ class ModerationEventListener(commands.Cog):
                         thread_jump_url=thread.jump_url,
                     )
 
+                    # 准备 @ 投票创建 身份组
+                    content_to_send = None
+                    if notify_creation_role:
+                        role_id = self.bot.config.get("roles", {}).get("voteCreationNotifier")
+                        if role_id:
+                            content_to_send = f"<@&{role_id}>"
+
                     voting_channel_message = await self.bot.api_scheduler.submit(
-                        voting_channel.send(embed=channel_embed, view=channel_view), priority=4
+                        voting_channel.send(content=content_to_send, embed=channel_embed, view=channel_view), priority=4
                     )
 
                     # 更新数据库

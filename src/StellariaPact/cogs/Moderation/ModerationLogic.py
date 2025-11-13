@@ -751,6 +751,7 @@ class ModerationLogic:
                     True,  # realtime
                     True,  # notify
                     True,  # create_in_voting_channel
+                    True,  # notify_creation_role
                 )
 
         except Exception as e:
