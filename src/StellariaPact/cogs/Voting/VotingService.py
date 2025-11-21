@@ -365,9 +365,34 @@ class VotingService:
 
         # 从已加载的关系中获取投票
         all_votes = vote_session.userVotes
+        option_results: List[OptionResult] = []
+        total_approve_votes = 0
+        total_reject_votes = 0
 
-        approve_votes = sum(1 for vote in all_votes if vote.choice == 1)
-        reject_votes = sum(1 for vote in all_votes if vote.choice == 0)
+        # 单独查询投票选项
+        options = await self.get_vote_options(vote_session_id)
+        if options:
+            for option in options:
+                approve = sum(
+                    1 for v in all_votes if v.choice_index == option.choice_index and v.choice == 1
+                )
+                reject = sum(
+                    1 for v in all_votes if v.choice_index == option.choice_index and v.choice == 0
+                )
+                option_results.append(
+                    OptionResult(
+                        choice_index=option.choice_index,
+                        choice_text=option.choice_text,
+                        approve_votes=approve,
+                        reject_votes=reject,
+                        total_votes=approve + reject,
+                    )
+                )
+                total_approve_votes += approve
+                total_reject_votes += reject
+        else:
+            total_approve_votes = sum(1 for v in all_votes if v.choice == 1)
+            total_reject_votes = sum(1 for v in all_votes if v.choice == 0)
 
         # 更新会话状态
         vote_session.status = 0  # 已结束
@@ -386,8 +411,9 @@ class VotingService:
             end_time=vote_session.end_time,
             status=vote_session.status,
             totalVotes=len(all_votes),
-            approveVotes=approve_votes,
-            rejectVotes=reject_votes,
+            approveVotes=total_approve_votes,
+            rejectVotes=total_reject_votes,
+            options=option_results,
             voters=voters_dto_list,
         )
 

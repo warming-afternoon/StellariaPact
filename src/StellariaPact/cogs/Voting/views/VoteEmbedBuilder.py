@@ -183,9 +183,32 @@ class VoteEmbedBuilder:
             color=discord.Color.dark_grey(),
         )
 
-        embed.add_field(name="赞成", value=f"{result.approveVotes}", inline=True)
-        embed.add_field(name="反对", value=f"{result.rejectVotes}", inline=True)
-        embed.add_field(name="总票数", value=f"{result.totalVotes}", inline=True)
+        if result.options:
+            for i, option in enumerate(result.options, 1):
+                embed.add_field(
+                    name=f"**选项 {i} : {option.choice_text}**",
+                    value="",
+                    inline=False,
+                )
+                embed.add_field(
+                    name="赞成",
+                    value=str(option.approve_votes),
+                    inline=True,
+                )
+                embed.add_field(
+                    name="反对",
+                    value=str(option.reject_votes),
+                    inline=True,
+                )
+                embed.add_field(
+                    name="总票数",
+                    value=str(option.total_votes),
+                    inline=True,
+                )
+        else:
+            embed.add_field(name="赞成", value=f"{result.approveVotes}", inline=True)
+            embed.add_field(name="反对", value=f"{result.rejectVotes}", inline=True)
+            embed.add_field(name="总票数", value=f"{result.totalVotes}", inline=True)
 
         return embed
 
@@ -320,16 +343,19 @@ class VoteEmbedBuilder:
         """
         为投票频道构建镜像投票面板的Embed。
         """
-        content_preview = (
-            (proposal.content[:600] + "\n\n...\n\n")
-            if len(proposal.content) > 600
-            else proposal.content
-        )
+        description = ""
+        if not vote_details.options:
+            # 如果没有选项，使用提案内容预览
+            description = (
+                (proposal.content[:600] + "\n\n...\n\n")
+                if len(proposal.content) > 600
+                else proposal.content
+            )
 
         embed = discord.Embed(
             title=f"{proposal.title}",
             url=f"{thread_jump_url}",
-            description=f"{content_preview}",
+            description=description,
             color=discord.Color.blue(),
         )
 
