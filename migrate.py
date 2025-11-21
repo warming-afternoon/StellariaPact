@@ -64,7 +64,7 @@ def main():
 
     try:
         # 使用 subprocess.run 来执行命令，check=True 会在命令失败时抛出异常
-        command = ["uv", "run", "alembic", "upgrade", "head"]
+        command = ["alembic", "upgrade", "head"]
         result = subprocess.run(
             command, check=True, capture_output=True, text=True, encoding="utf-8"
         )
