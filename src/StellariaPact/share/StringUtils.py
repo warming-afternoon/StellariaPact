@@ -58,7 +58,7 @@ class StringUtils:
                 starter_message = await thread.fetch_message(thread.id)
 
             if starter_message:
-                return StringUtils.clean_proposal_content(starter_message.content)
+                return starter_message.content
             return None
         except Exception:
             return None

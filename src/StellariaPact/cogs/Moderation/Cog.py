@@ -250,20 +250,24 @@ class Moderation(commands.Cog):
         thread = interaction.channel
 
         try:
-            content = await StringUtils.extract_starter_content(thread)
-            if not content:
+            raw_content = await StringUtils.extract_starter_content(thread)
+            if not raw_content:
                 await interaction.edit_original_response(
                     content="无法获取帖子的首楼内容，操作失败。"
                 )
                 return
 
-            proposer_id = StringUtils.extract_proposer_id_from_content(content) or thread.owner_id
+            proposer_id = (
+                StringUtils.extract_proposer_id_from_content(raw_content) or thread.owner_id
+            )
+
+            clean_content = StringUtils.clean_proposal_content(raw_content)
             clean_title = StringUtils.clean_title(thread.name)
 
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 尝试创建提案
                 proposal_dto = await uow.moderation.create_proposal(
-                    thread.id, proposer_id, clean_title, content
+                    thread.id, proposer_id, clean_title, clean_content
                 )
                 # 如果提案已存在，则获取它
                 if not proposal_dto:

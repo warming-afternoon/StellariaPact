@@ -721,21 +721,23 @@ class ModerationLogic:
             logger.info(f"发现新的提案帖: {thread.name} ({thread.id})。正在处理...")
 
             # 获取首楼内容和提案人信息
-            content = await StringUtils.extract_starter_content(thread)
-            if not content:
+            raw_content = await StringUtils.extract_starter_content(thread)
+            if not raw_content:
                 logger.warning(f"无法获取帖子 {thread.id} 的首楼内容，中止提案创建。")
                 return
 
-            proposer_id = StringUtils.extract_proposer_id_from_content(content)
+            proposer_id = StringUtils.extract_proposer_id_from_content(raw_content)
             if not proposer_id:
                 proposer_id = thread.owner_id
+
+            clean_content = StringUtils.clean_proposal_content(raw_content)
             clean_title = StringUtils.clean_title(thread.name)
 
             # 在数据库中创建提案
             proposal_dto = None
             async with UnitOfWork(self.bot.db_handler) as uow:
                 proposal_dto = await uow.moderation.create_proposal(
-                    thread.id, proposer_id, clean_title, content
+                    thread.id, proposer_id, clean_title, clean_content
                 )
                 await uow.commit()
 
