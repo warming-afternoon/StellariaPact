@@ -180,7 +180,7 @@ class ModerationLogic:
             guild_id=guild_id,
             user_id=user_id,
             user_role_ids=user_role_ids,
-            expected_status=ProposalStatus.DISCUSSION,
+            expected_status=[ProposalStatus.DISCUSSION],
             context="proposal_execution",
             error_message="提案当前状态不是“讨论中”，无法执行此操作。",
             integrity_error_message="操作失败：此提案的确认流程刚刚已被另一位管理员发起。",
@@ -201,9 +201,9 @@ class ModerationLogic:
             guild_id=guild_id,
             user_id=user_id,
             user_role_ids=user_role_ids,
-            expected_status=ProposalStatus.EXECUTING,
+            expected_status=[ProposalStatus.DISCUSSION, ProposalStatus.EXECUTING],
             context="proposal_completion",
-            error_message="提案当前状态不是“执行中”，无法完成。",
+            error_message="提案当前状态不是“讨论中”或“执行中”，无法完成。",
             integrity_error_message="操作失败：此提案的完成流程刚刚已被另一位管理员发起。",
         )
 
@@ -213,7 +213,7 @@ class ModerationLogic:
         guild_id: int,
         user_id: int,
         user_role_ids: set[int],
-        expected_status: ProposalStatus,
+        expected_status: list[ProposalStatus],
         context: str,
         error_message: str,
         integrity_error_message: str,
@@ -229,7 +229,9 @@ class ModerationLogic:
                 proposal = await uow.moderation.get_proposal_by_thread_id(channel_id)
                 if not proposal:
                     raise ValueError("未找到关连的提案。")
-                if proposal.status != expected_status:
+
+                # 帖子状态验证
+                if proposal.status not in expected_status:
                     raise ValueError(error_message)
 
                 assert proposal.id is not None

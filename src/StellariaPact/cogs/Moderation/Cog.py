@@ -5,16 +5,23 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import ExecuteProposalResultDto
+from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import \
+    ExecuteProposalResultDto
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
-from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import \
+    BuildConfirmationEmbedQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
-from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
-from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalModal
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.AbandonReasonModal import \
+    AbandonReasonModal
+from StellariaPact.cogs.Moderation.views.ConfirmationView import \
+    ConfirmationView
+from StellariaPact.cogs.Moderation.views.KickProposalModal import \
+    KickProposalModal
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
+    ModerationEmbedBuilder
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
-from StellariaPact.cogs.Moderation.views.VoteOptionsModal import VoteOptionsModal
+from StellariaPact.cogs.Moderation.views.VoteOptionsModal import \
+    VoteOptionsModal
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums.VoteDuration import VoteDuration
@@ -119,14 +126,14 @@ class Moderation(commands.Cog):
         )
 
     @app_commands.command(
-        name="提案完成", description="[议事督导+执行监理] 将执行中的提案变更为已结束"
+        name="提案完成", description="[议事督导+执行监理] 将讨论中或执行中的提案变更为已结束"
     )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     @app_commands.rename(notify_roles="通知相关方")
     @app_commands.describe(notify_roles="是否在发起确认时通知督导和监理组 (默认为是)")
     async def complete_proposal(self, interaction: discord.Interaction, notify_roles: bool = True):
         """
-        将执行中的提案变更为已结束。
+        将讨论中或执行中的提案变更为已结束。
 
         Args:
             interaction (discord.Interaction): 命令交互对象。
