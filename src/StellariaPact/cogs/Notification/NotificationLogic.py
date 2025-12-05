@@ -9,13 +9,13 @@ from StellariaPact.models.Announcement import Announcement
 from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
-from .AnnouncementMonitorService import AnnouncementMonitorService
+from ...services.AnnouncementMonitorService import AnnouncementMonitorService
 from .views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
 
 logger = logging.getLogger(__name__)
 
 
-class RepostService:
+class NotificationLogic:
     """
     处理与重复播报相关的业务逻辑。
     """

@@ -1,5 +1,5 @@
-from ....share.BaseDto import BaseDto
-from ....share.enums.ObjectionStatus import ObjectionStatus
+from ..share.BaseDto import BaseDto
+from ..share.enums.ObjectionStatus import ObjectionStatus
 
 
 class ObjectionDto(BaseDto):

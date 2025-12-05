@@ -9,7 +9,6 @@ from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import (
 )
 from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
 from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
 from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import ObjectionCreationVoteView
 from StellariaPact.cogs.Voting.dto.OptionResult import OptionResult
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
@@ -21,6 +20,7 @@ from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VoteView import VoteView
 from StellariaPact.cogs.Voting.views.VotingChannelView import VotingChannelView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
+from StellariaPact.dto.ProposalDto import ProposalDto
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.enums.VoteDuration import VoteDuration
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -153,12 +153,12 @@ class ModerationEventListener(commands.Cog):
                     end_time=end_time,
                     total_choices=total_choices,
                 )
-                session_dto = await uow.voting.create_vote_session(qo)
+                session_dto = await uow.vote_session.create_vote_session(qo)
                 if not session_dto.id:
                     raise ValueError("创建投票会话后未能获取ID")
 
                 if options:
-                    await uow.voting.create_vote_options(session_dto.id, options)
+                    await uow.vote_option.create_vote_options(session_dto.id, options)
 
                 await uow.commit()
 
@@ -236,7 +236,7 @@ class ModerationEventListener(commands.Cog):
 
                     # 更新数据库
                     async with UnitOfWork(self.bot.db_handler) as uow:
-                        await uow.voting.update_voting_channel_message_id(
+                        await uow.vote_session.update_voting_channel_message_id(
                             session_dto.id, voting_channel_message.id
                         )
                         await uow.commit()
@@ -307,12 +307,12 @@ class ModerationEventListener(commands.Cog):
                     anonymous=True,
                     end_time=end_time,
                 )
-                session_dto = await uow.voting.create_vote_session(qo)
+                session_dto = await uow.vote_session.create_vote_session(qo)
                 if not session_dto.id:
                     raise ValueError("创建异议投票会话后未能获取ID")
 
                 # 为异议票创建默认的单选项
-                await uow.voting.create_vote_options(session_dto.id, ["同意异议"])
+                await uow.vote_option.create_vote_options(session_dto.id, ["同意异议"])
                 await uow.commit()
 
             logger.debug(
@@ -361,7 +361,7 @@ class ModerationEventListener(commands.Cog):
 
                     # 更新数据库
                     async with UnitOfWork(self.bot.db_handler) as uow:
-                        await uow.voting.update_voting_channel_message_id(
+                        await uow.vote_session.update_voting_channel_message_id(
                             session_dto.id, voting_channel_message.id
                         )
                         await uow.commit()

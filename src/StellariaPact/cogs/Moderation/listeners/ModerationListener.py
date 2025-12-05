@@ -8,18 +8,18 @@ from discord.ext import commands, tasks
 from sqlalchemy import select, update
 
 from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
+from StellariaPact.dto.ConfirmationSessionDto import ConfirmationSessionDto
 from StellariaPact.models.UserActivity import UserActivity
 
-from ....cogs.Moderation.dto.ConfirmationCompletedDto import ConfirmationSessionDto
 from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
 from ....cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from ....cogs.Moderation.dto.ProposalDto import ProposalDto
 from ....cogs.Moderation.dto.SubsequentObjectionDto import SubsequentObjectionDto
 from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
 from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
 from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
 from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from ....cogs.Moderation.views.ObjectionManageView import ObjectionManageView
+from ....dto.ProposalDto import ProposalDto
 from ....share.DiscordUtils import DiscordUtils
 from ....share.enums.ProposalStatus import ProposalStatus
 from ....share.SafeDefer import safeDefer
@@ -143,7 +143,7 @@ class ModerationListener(commands.Cog):
             except discord.NotFound:
                 pass  # 消息可能已被用户自己删除
 
-    @commands.Cog.listener("on_thread_mute_updated")
+    @commands.Cog.listener()
     async def on_thread_mute_updated(
         self, thread_id: int, user_id: int, mute_end_time: Optional[datetime]
     ):
@@ -255,12 +255,11 @@ class ModerationListener(commands.Cog):
         except Exception as e:
             logger.error(f"处理 on_objection_goal_reached 事件时发生意外错误: {e}", exc_info=True)
 
-    @commands.Cog.listener("on_objection_modal_submitted")
+    @commands.Cog.listener()
     async def on_objection_modal_submitted(
         self, interaction: discord.Interaction, proposal_link: str, reason: str
     ):
         """监听并处理从 ObjectionModal 提交的异议"""
-        # 立即响应，防止超时
         await safeDefer(interaction, ephemeral=True)
 
         try:
@@ -313,7 +312,7 @@ class ModerationListener(commands.Cog):
                 interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
             )
 
-    @commands.Cog.listener("on_edit_objection_reason_submitted")
+    @commands.Cog.listener()
     async def on_edit_objection_reason_submitted(self, qo: EditObjectionReasonQo):
         """
         监听来自 EditObjectionReasonModal 的事件，处理理由更新的完整流程。
@@ -417,7 +416,7 @@ class ModerationListener(commands.Cog):
 
         # 更新数据库中的审核帖子ID
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.moderation.update_objection_review_thread_id(dto.objection_id, thread.id)
+            await uow.objection.update_objection_review_thread_id(dto.objection_id, thread.id)
             await uow.commit()
 
     async def _update_review_embed(self, dto):
@@ -459,7 +458,7 @@ class ModerationListener(commands.Cog):
                 f"更新审核帖子 {dto.review_thread_id} 的 Embed 时出错: {e}", exc_info=True
             )
 
-    @commands.Cog.listener("on_objection_creation_vote_cast")
+    @commands.Cog.listener()
     async def on_objection_creation_vote_cast(
         self, interaction: discord.Interaction, choice: Literal["support", "withdraw"]
     ):

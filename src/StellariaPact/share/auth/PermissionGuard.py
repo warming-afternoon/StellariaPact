@@ -24,7 +24,7 @@ class PermissionGuard:
 
         bot: StellariaPactBot = interaction.client  # type: ignore
         async with UnitOfWork(bot.db_handler) as uow:
-            proposal = await uow.moderation.get_proposal_by_thread_id(interaction.channel.id)
+            proposal = await uow.proposal.get_proposal_by_thread_id(interaction.channel.id)
             if proposal and proposal.proposer_id == interaction.user.id:
                 return True
 

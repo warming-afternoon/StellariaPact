@@ -54,7 +54,7 @@ class ObjectionManageView(discord.ui.View):
 
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 通过审核帖子ID获取异议
-            objection = await uow.moderation.get_objection_by_review_thread_id(
+            objection = await uow.objection.get_objection_by_review_thread_id(
                 interaction.channel.id
             )
 

@@ -1,5 +1,5 @@
-from ....share.BaseDto import BaseDto
-from ....share.enums.ProposalStatus import ProposalStatus
+from ..share.BaseDto import BaseDto
+from ..share.enums.ProposalStatus import ProposalStatus
 
 
 class ProposalDto(BaseDto):

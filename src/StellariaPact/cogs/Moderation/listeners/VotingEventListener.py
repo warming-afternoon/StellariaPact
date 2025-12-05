@@ -6,8 +6,8 @@ from discord.ext import commands
 
 from ....cogs.Moderation.dto.CollectionExpiredResultDto import CollectionExpiredResultDto
 from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
-from ....cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
+from ....dto.VoteSessionDto import VoteSessionDto
 from ....share.DiscordUtils import DiscordUtils
 from ..ModerationLogic import ModerationLogic
 from ..thread_manager import ProposalThreadManager
@@ -57,7 +57,7 @@ class VotingEventListener(commands.Cog):
         except Exception as e:
             logger.error(f"在 on_objection_vote_finished 中发生意外错误: {e}", exc_info=True)
 
-    @commands.Cog.listener("on_objection_collection_expired")
+    @commands.Cog.listener()
     async def on_objection_collection_expired(
         self, session_dto: VoteSessionDto, result_dto: VoteStatusDto
     ):

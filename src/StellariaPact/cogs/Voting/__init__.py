@@ -3,6 +3,7 @@ import logging
 
 from StellariaPact.cogs.Voting.Cog import Voting
 from StellariaPact.cogs.Voting.listeners.ModerationEventListener import ModerationEventListener
+from StellariaPact.cogs.Voting.listeners.ViewEventListener import ViewEventListener
 from StellariaPact.cogs.Voting.listeners.VotingMessageListener import VotingMessageListener
 from StellariaPact.cogs.Voting.tasks.VoteCloser import VoteCloser
 from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import ObjectionFormalVoteView
@@ -31,6 +32,7 @@ async def setup(bot: StellariaPactBot):
         VoteCloser(bot),
         ModerationEventListener(bot),
         VotingMessageListener(bot, voting_cog),
+        ViewEventListener(bot),
     ]
 
     await asyncio.gather(*[bot.add_cog(cog) for cog in cogs_to_load])

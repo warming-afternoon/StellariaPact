@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from StellariaPact.cogs.Notification.dto.AdjustTimeDto import AdjustTimeDto
 from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
 from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
 from StellariaPact.cogs.Notification.views.AnnouncementModal import AnnouncementModal
@@ -21,7 +22,7 @@ from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.TimeUtils import TimeUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
-logger = logging.getLogger("stellaria_pact.notification")
+logger = logging.getLogger(__name__)
 
 
 class Notification(commands.Cog):
@@ -181,11 +182,13 @@ class Notification(commands.Cog):
                     end_time=end_time,
                     auto_execute=auto_execute,
                 )
-                announcement_dto = await uow.announcements.create_announcement(qo)
+                announcement = await uow.announcements.create_announcement(qo)
 
                 if enable_reposting:
+                    if not announcement.id:
+                        raise ValueError("Announcement ID is missing after creation.")
                     await uow.announcement_monitors.create_monitors_for_announcement(
-                        announcement_id=announcement_dto.id,
+                        announcement_id=announcement.id,
                         channel_ids=self.broadcast_channel_ids,
                         message_threshold=message_threshold,
                         time_interval_minutes=time_interval_minutes,
@@ -262,88 +265,22 @@ class Notification(commands.Cog):
             return
 
         try:
-            # --- 数据库操作 ---
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                announcement = await uow.announcements.get_by_thread_id(interaction.channel.id)
-                if not announcement:
-                    await self.bot.api_scheduler.submit(
-                        coro=interaction.followup.send(
-                            "这里不是一个有效的公示讨论帖。", ephemeral=True
-                        ),
-                        priority=1,
-                    )
-                    return
-                if announcement.status != 1:
-                    await self.bot.api_scheduler.submit(
-                        coro=interaction.followup.send(
-                            "该公示已结束，无法修改时间。", ephemeral=True
-                        ),
-                        priority=1,
-                    )
-                    return
+            time_change_hours = hours if operation == "延长" else -hours
+            if not isinstance(interaction.channel, discord.Thread):
+                return
 
-                old_end_time_utc = announcement.end_time.replace(tzinfo=ZoneInfo("UTC"))
-                time_change_hours = hours if operation == "延长" else -hours
-                new_end_time = TimeUtils.get_utc_end_time(
-                    time_change_hours,
-                    self.bot.config.get("timezone", "UTC"),
-                    start_time=old_end_time_utc,
-                )
+            result = await self._update_announcement_time_in_db(
+                interaction, interaction.channel, time_change_hours
+            )
+            if not result:
+                return
 
-                await uow.announcements.update_end_time(announcement.id, new_end_time)
-
-            new_ts_timestamp = int(new_end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
+            new_ts_timestamp = int(result.new_end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
             new_ts_string = f"<t:{new_ts_timestamp}:F> (<t:{new_ts_timestamp}:R>)"
 
-            try:
-                starter_message = await self.bot.api_scheduler.submit(
-                    coro=interaction.channel.fetch_message(interaction.channel.id),
-                    priority=3,
-                )
+            await self._update_starter_message_timestamp(interaction.channel, new_ts_string)
 
-                if not self.bot.user:
-                    logger.error("机器人尚未完全登录，无法获取自身用户对象。")
-                    return
-
-                # 所有权检查: 仅当消息是机器人自己发的时候才继续
-                if starter_message.author.id == self.bot.user.id:
-                    original_content = starter_message.content
-
-                    # 精确内容匹配: 只查找机器人自己添加的、格式固定的截止时间字符串
-                    deadline_pattern = re.compile(
-                        r"(\*\*公示截止时间:\s*\*\*\s*)<t:\d+:[fF]>\s*\(<t:\d+:[rR]>\)"
-                    )
-
-                    if deadline_pattern.search(original_content):
-                        # 如果两个条件都满足，则执行替换
-                        new_deadline_full_string = f"**公示截止时间:** {new_ts_string}"
-                        new_content = deadline_pattern.sub(
-                            new_deadline_full_string, original_content, count=1
-                        )
-
-                        await self.bot.api_scheduler.submit(
-                            coro=starter_message.edit(content=new_content), priority=5
-                        )
-                        logger.info(f"已成功更新帖子 {interaction.channel.id} 首楼的时间戳。")
-                    else:
-                        logger.info(
-                            f"帖子 {interaction.channel.id} 首楼由机器人发布，"
-                            "但未找到标准截止时间格式，故跳过编辑。"
-                        )
-                else:
-                    logger.info(
-                        f"帖子 {interaction.channel.id} 首楼由用户 "
-                        f"{starter_message.author.id} 发布，机器人无权编辑，跳过。"
-                    )
-
-            except (discord.NotFound, discord.Forbidden) as e:
-                logger.warning(f"无法获取或编辑帖子 {interaction.channel.id} 的首楼消息: {e}")
-
-            # --- 发送通知Embed ---
-            old_ts = (
-                f"<t:{int(old_end_time_utc.timestamp())}:F> "
-                f"(<t:{int(old_end_time_utc.timestamp())}:R>)"
-            )
+            old_ts = f"<t:{int(result.old_end_time.timestamp())}:F> (<t:{int(result.old_end_time.timestamp())}:R>)"
             embed = AnnouncementEmbedBuilder.create_time_modification_embed(
                 interaction_user=interaction.user,
                 operation=operation,
@@ -351,7 +288,6 @@ class Notification(commands.Cog):
                 old_timestamp=old_ts,
                 new_timestamp=new_ts_string,
             )
-
             await self.bot.api_scheduler.submit(
                 coro=interaction.channel.send(embed=embed), priority=5
             )
@@ -368,3 +304,100 @@ class Notification(commands.Cog):
                 ),
                 priority=1,
             )
+
+    async def _update_announcement_time_in_db(
+        self,
+        interaction: discord.Interaction,
+        thread: discord.Thread,
+        time_change_hours: int,
+    ) -> Optional[AdjustTimeDto]:
+        """
+        在数据库中更新公示的结束时间。
+
+        Args:
+            interaction: 触发命令的 Discord 交互对象。
+            thread: 公示讨论帖的 Discord 线程对象。
+            time_change_hours: 要调整的小时数（正数表示延长，负数表示缩短）。
+
+        Returns:
+            如果成功，返回包含新旧结束时间的 AdjustTimeDto；如果失败（例如帖子无效、公示已结束等），
+            则向用户发送错误消息并返回 None。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            announcement = await uow.announcements.get_by_thread_id(thread.id)
+            if not announcement:
+                await self.bot.api_scheduler.submit(
+                    coro=interaction.followup.send(
+                        "这里不是一个有效的公示讨论帖。", ephemeral=True
+                    ),
+                    priority=1,
+                )
+                return None
+
+            if announcement.status != 1:
+                await self.bot.api_scheduler.submit(
+                    coro=interaction.followup.send("该公示已结束，无法修改时间。", ephemeral=True),
+                    priority=1,
+                )
+                return None
+
+            if announcement.id is None:
+                logger.error(f"Announcement {announcement} has no ID")
+                await self.bot.api_scheduler.submit(
+                    coro=interaction.followup.send("公示数据异常，请联系技术员。", ephemeral=True),
+                    priority=1,
+                )
+                return None
+
+            old_end_time_utc = announcement.end_time.replace(tzinfo=ZoneInfo("UTC"))
+            new_end_time = TimeUtils.get_utc_end_time(
+                time_change_hours,
+                self.bot.config.get("timezone", "UTC"),
+                start_time=old_end_time_utc,
+            )
+            new_end_time_utc = new_end_time.replace(tzinfo=ZoneInfo("UTC"))
+
+            await uow.announcements.update_end_time(announcement.id, new_end_time_utc)
+            await uow.commit()
+
+            return AdjustTimeDto(
+                announcement_id=announcement.id,
+                old_end_time=old_end_time_utc,
+                new_end_time=new_end_time_utc,
+            )
+
+    async def _update_starter_message_timestamp(self, thread: discord.Thread, new_ts_string: str):
+        """
+        更新公示讨论帖首楼消息中的截止时间戳。
+
+        仅当首楼消息由机器人自己发布，并且包含标准格式的截止时间字符串时，才会进行替换。
+
+        Args:
+            thread: 公示讨论帖的 Discord 线程对象。
+            new_ts_string: 新的 Discord 时间戳字符串，格式为 "<t:...:F> (<t:...:R>)"。
+        """
+        try:
+            starter_message = await self.bot.api_scheduler.submit(
+                coro=thread.fetch_message(thread.id),
+                priority=3,
+            )
+
+            if not self.bot.user or starter_message.author.id != self.bot.user.id:
+                logger.info(f"帖子 {thread.id} 首楼不是由机器人发布的，跳过编辑。")
+                return
+
+            deadline_pattern = re.compile(
+                r"(\*\*公示截止时间:\s*\*\*\s*)<t:\d+:[fF]>\s*\(<t:\d+:[rR]>\)"
+            )
+            if deadline_pattern.search(starter_message.content):
+                new_deadline = f"**公示截止时间:** {new_ts_string}"
+                new_content = deadline_pattern.sub(new_deadline, starter_message.content, count=1)
+                await self.bot.api_scheduler.submit(
+                    coro=starter_message.edit(content=new_content), priority=5
+                )
+                logger.info(f"成功更新帖子 {thread.id} 首楼的时间戳。")
+            else:
+                logger.info(f"帖子 {thread.id} 首楼未找到标准截止时间格式，跳过编辑。")
+
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.warning(f"无法获取或编辑帖子 {thread.id} 的首楼消息: {e}")

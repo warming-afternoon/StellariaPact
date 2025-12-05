@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-logger = logging.getLogger("stellaria_pact.time_utils")
+logger = logging.getLogger(__name__)
 
 
 class TimeUtils:

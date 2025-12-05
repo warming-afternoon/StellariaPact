@@ -9,7 +9,7 @@ from StellariaPact.share.StellariaPactBot import StellariaPactBot
 if TYPE_CHECKING:
     from StellariaPact.cogs.Notification.Cog import Notification
 
-logger = logging.getLogger("stellaria_pact.notification")
+logger = logging.getLogger(__name__)
 
 
 class AnnouncementModal(ui.Modal, title="发布新公示"):

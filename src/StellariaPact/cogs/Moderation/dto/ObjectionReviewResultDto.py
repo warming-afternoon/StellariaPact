@@ -1,8 +1,8 @@
 from typing import Optional
 
+from ....dto.ObjectionDto import ObjectionDto
+from ....dto.ProposalDto import ProposalDto
 from ....share.BaseDto import BaseDto
-from .ObjectionDto import ObjectionDto
-from .ProposalDto import ProposalDto
 
 
 class ObjectionReviewResultDto(BaseDto):

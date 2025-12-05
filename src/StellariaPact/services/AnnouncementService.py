@@ -3,7 +3,6 @@ from datetime import datetime
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Notification.dto.AnnouncementDto import AnnouncementDto
 from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
 from StellariaPact.models.Announcement import Announcement
 
@@ -16,7 +15,7 @@ class AnnouncementService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create_announcement(self, qo: CreateAnnouncementQo) -> AnnouncementDto:
+    async def create_announcement(self, qo: CreateAnnouncementQo) -> Announcement:
         """
         创建一条新的公示。
 
@@ -24,7 +23,7 @@ class AnnouncementService:
             qo: 创建公示的查询对象。
 
         Returns:
-            新创建的公示的数据传输对象。
+            新创建的公示的ORM对象。
         """
         new_announcement = Announcement(
             discussion_thread_id=qo.discussion_thread_id,
@@ -38,10 +37,11 @@ class AnnouncementService:
 
         self.session.add(new_announcement)
         await self.session.flush()
+        await self.session.refresh(new_announcement)
 
-        return AnnouncementDto.model_validate(new_announcement)
+        return new_announcement
 
-    async def get_by_thread_id(self, thread_id: int) -> AnnouncementDto | None:
+    async def get_by_thread_id(self, thread_id: int) -> Announcement | None:
         """
         通过讨论帖 ID 获取公示。
 
@@ -49,27 +49,25 @@ class AnnouncementService:
             thread_id: 讨论帖的 ID。
 
         Returns:
-            如果找到，则返回公示的数据传输对象，否则返回 None。
+            如果找到，则返回公示的 ORM 对象，否则返回 None。
         """
         result = await self.session.exec(
             select(Announcement).where(Announcement.discussion_thread_id == thread_id)
         )
-        announcement = result.one_or_none()
-        return AnnouncementDto.model_validate(announcement) if announcement else None
+        return result.one_or_none()
 
-    async def get_expired_announcements(self) -> list[AnnouncementDto]:
+    async def get_expired_announcements(self) -> list[Announcement]:
         """
         获取所有已到期的公示。
 
         Returns:
-            已到期的公示列表。
+            已到期的公示ORM对象列表。
         """
         now = datetime.utcnow()
         result = await self.session.exec(
             select(Announcement).where(Announcement.end_time <= now, Announcement.status == 1)
         )
-        expired = result.all()
-        return [AnnouncementDto.model_validate(ann) for ann in expired]
+        return list(result.all())
 
     async def update_end_time(self, announcement_id: int, new_end_time: datetime):
         """

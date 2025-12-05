@@ -2,12 +2,12 @@ import logging
 
 import discord
 
+from StellariaPact.dto.ConfirmationSessionDto import ConfirmationSessionDto
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
-from ..dto.ConfirmationCompletedDto import ConfirmationSessionDto
 from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
 from .ModerationEmbedBuilder import ModerationEmbedBuilder
 
@@ -43,7 +43,7 @@ class ConfirmationView(discord.ui.View):
         updated_status: int = 0
 
         async with UnitOfWork(self.bot.db_handler) as uow:
-            session = await uow.moderation.get_confirmation_session_by_message_id(
+            session = await uow.confirmation_session.get_confirmation_session_by_message_id(
                 interaction.message.id
             )
 
@@ -74,7 +74,7 @@ class ConfirmationView(discord.ui.View):
                     1,
                 )
 
-            updated_session = await uow.moderation.add_confirmation(
+            updated_session = await uow.confirmation_session.add_confirmation(
                 session, role_to_confirm, interaction.user.id
             )
             updated_status = updated_session.status
@@ -132,7 +132,7 @@ class ConfirmationView(discord.ui.View):
         await safeDefer(interaction, ephemeral=True)
 
         async with UnitOfWork(self.bot.db_handler) as uow:
-            session = await uow.moderation.get_confirmation_session_by_message_id(
+            session = await uow.confirmation_session.get_confirmation_session_by_message_id(
                 interaction.message.id
             )
 
@@ -147,7 +147,7 @@ class ConfirmationView(discord.ui.View):
                     interaction.followup.send("您没有权限取消此操作。", ephemeral=True), 1
                 )
 
-            updated_session = await uow.moderation.cancel_confirmation_session(
+            updated_session = await uow.confirmation_session.cancel_confirmation_session(
                 session, interaction.user.id
             )
 

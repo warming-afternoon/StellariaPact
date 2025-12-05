@@ -5,7 +5,7 @@ from StellariaPact.share.BaseDto import BaseDto
 
 class AnnouncementDto(BaseDto):
     """
-    公示的数据传输对象 (Data Transfer Object)
+    公示的数据传输对象
     """
 
     id: int

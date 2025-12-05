@@ -4,15 +4,19 @@ from typing import List, Optional
 
 import discord
 
+from StellariaPact.cogs.Voting.dto.OptionResult import OptionResult
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
+from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
-from StellariaPact.cogs.Voting.VotingService import VotingService
+from StellariaPact.dto.UserActivityDto import UserActivityDto
+from StellariaPact.dto.UserVoteDto import UserVoteDto
 from StellariaPact.models.VoteSession import VoteSession
+from StellariaPact.services.VoteSessionService import VoteSessionService
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -33,7 +37,7 @@ class VotingLogic:
         更新投票会话的消息ID
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.voting.update_vote_session_message_id(session_id, message_id)
+            await uow.vote_session.update_vote_session_message_id(session_id, message_id)
             await uow.commit()
 
     async def record_vote_and_get_details(self, qo: RecordVoteQo) -> VoteDetailDto:
@@ -42,7 +46,9 @@ class VotingLogic:
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 先获取会话，以便知道是否需要检查父帖子
-            vote_session = await uow.voting.get_vote_session_by_context_message_id(qo.message_id)
+            vote_session = await uow.vote_session.get_vote_session_by_context_message_id(
+                qo.message_id
+            )
             if not vote_session:
                 raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
 
@@ -55,31 +61,31 @@ class VotingLogic:
                 raise PermissionError("投票资格已失效（有效发言数不足或已被撤销资格）。")
 
             # 记录投票
-            updated_session = await uow.voting.record_vote(qo)
+            updated_session = await uow.user_vote.record_vote(qo, vote_session)
 
             vote_options = None
             if updated_session.id:
-                vote_options = await uow.voting.get_vote_options(updated_session.id)
-            return VotingService.get_vote_details_dto(updated_session, vote_options)
+                vote_options = await uow.vote_option.get_vote_options(updated_session.id)
+            return VoteSessionService.get_vote_details_dto(updated_session, vote_options)
 
     async def get_vote_details(self, message_id: int) -> VoteDetailDto:
         """
         获取指定投票的当前状态和详细信息。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            vote_session = await uow.voting.get_vote_session_with_details(message_id)
+            vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not vote_session:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
 
             vote_options = None
             if vote_session.id:
-                vote_options = await uow.voting.get_vote_options(vote_session.id)
-            return VotingService.get_vote_details_dto(vote_session, vote_options)
+                vote_options = await uow.vote_option.get_vote_options(vote_session.id)
+            return VoteSessionService.get_vote_details_dto(vote_session, vote_options)
 
     async def get_vote_flags(self, message_id: int) -> tuple[bool, bool, bool]:
         """以轻量级方式仅获取投票会话的匿名、实时和通知标志。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            flags = await uow.voting.get_vote_flags(message_id)
+            flags = await uow.vote_session.get_vote_flags(message_id)
             if not flags:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
             return flags  # (is_anonymous, is_realtime, is_notify)
@@ -106,34 +112,44 @@ class VotingLogic:
         tasks = []
 
         # 获取当前帖子活动
-        tasks.append(uow.voting.check_user_eligibility(user_id, thread_id))
+        tasks.append(uow.user_activity.get_user_activity(user_id, thread_id))
 
         # (可选): 获取继承帖子活动
         parent_thread_id = None
         if vote_session and vote_session.objection_id:
-            parent_thread_id = await uow.voting.get_proposal_thread_id_by_objection_id(
+            parent_thread_id = await uow.vote_session.get_proposal_thread_id_by_objection_id(
                 vote_session.objection_id
             )
             if parent_thread_id:
-                tasks.append(uow.voting.check_user_eligibility(user_id, parent_thread_id))
+                tasks.append(uow.user_activity.get_user_activity(user_id, parent_thread_id))
 
         # 并行执行查询
         results = await asyncio.gather(*tasks)
 
-        current_activity = results[0]
-        inherited_activity = results[1] if parent_thread_id and len(results) > 1 else None
+        current_activity_orm = results[0]
+        inherited_activity_orm = results[1] if parent_thread_id and len(results) > 1 else None
+
+        # 在会话内转换为 DTO
+        current_activity_dto = (
+            UserActivityDto.model_validate(current_activity_orm) if current_activity_orm else None
+        )
+        inherited_activity_dto = (
+            UserActivityDto.model_validate(inherited_activity_orm)
+            if inherited_activity_orm
+            else None
+        )
 
         # 计算资格
-        is_eligible = EligibilityService.is_eligible(current_activity, inherited_activity)
+        is_eligible = EligibilityService.is_eligible(current_activity_dto, inherited_activity_dto)
 
         # 计算显示用的总发言数
-        total_message_count = (current_activity.message_count if current_activity else 0) + (
-            inherited_activity.message_count if inherited_activity else 0
-        )
+        total_message_count = (
+            current_activity_dto.message_count if current_activity_dto else 0
+        ) + (inherited_activity_dto.message_count if inherited_activity_dto else 0)
 
         # 获取当前验证状态 (如果当前没记录，默认为有效，除非已被禁言会产生记录)
         is_validation_revoked = False
-        if current_activity and not current_activity.validation:
+        if current_activity_dto and not current_activity_dto.validation:
             is_validation_revoked = True
 
         return is_eligible, total_message_count, is_validation_revoked
@@ -141,56 +157,62 @@ class VotingLogic:
     async def toggle_anonymous(self, message_id: int) -> VoteDetailDto:
         """切换指定投票的匿名状态。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            updated_session = await uow.voting.toggle_anonymous(message_id)
+            updated_session = await uow.vote_session.toggle_anonymous(message_id)
             if not updated_session:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
             await uow.commit()
             # 重新获取以加载 userVotes
-            final_session = await uow.voting.get_vote_session_with_details(message_id)
+            final_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not final_session:
                 raise ValueError(f"在切换匿名状态后无法重新获取会话 {message_id}。")
-            return VotingService.get_vote_details_dto(final_session)
+            return VoteSessionService.get_vote_details_dto(final_session)
 
     async def toggle_realtime(self, message_id: int) -> VoteDetailDto:
         """切换指定投票的实时票数状态。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            updated_session = await uow.voting.toggle_realtime(message_id)
+            updated_session = await uow.vote_session.toggle_realtime(message_id)
             if not updated_session:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
             await uow.commit()
             # 重新获取以加载 userVotes
-            final_session = await uow.voting.get_vote_session_with_details(message_id)
+            final_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not final_session:
                 raise ValueError(f"在切换实时状态后无法重新获取会话 {message_id}。")
-            return VotingService.get_vote_details_dto(final_session)
+            return VoteSessionService.get_vote_details_dto(final_session)
 
     async def toggle_notify(self, message_id: int) -> VoteDetailDto:
         """切换指定投票的结束通知状态。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            updated_session = await uow.voting.toggle_notify(message_id)
+            updated_session = await uow.vote_session.toggle_notify(message_id)
             if not updated_session:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
             await uow.commit()
             # 重新获取以加载 userVotes
-            final_session = await uow.voting.get_vote_session_with_details(message_id)
+            final_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not final_session:
                 raise ValueError(f"在切换通知状态后无法重新获取会话 {message_id}。")
-            return VotingService.get_vote_details_dto(final_session)
+            return VoteSessionService.get_vote_details_dto(final_session)
 
     async def delete_vote_and_get_details(self, qo: DeleteVoteQo) -> VoteDetailDto:
         """
         处理用户的弃权动作，并返回更新后的投票详情。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            updated_session = await uow.voting.delete_vote(
-                user_id=qo.user_id, message_id=qo.message_id, choice_index=qo.choice_index
+            vote_session = await uow.vote_session.get_vote_session_with_details(qo.message_id)
+            if not vote_session:
+                raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
+
+            updated_session = await uow.user_vote.delete_vote(
+                user_id=qo.user_id,
+                choice_index=qo.choice_index,
+                vote_session=vote_session,
             )
             if not updated_session:
-                raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
+                raise ValueError(f"在消息 ID {qo.message_id} 的会话中找不到要删除的投票。")
             vote_options = None
             if updated_session.id:
-                vote_options = await uow.voting.get_vote_options(updated_session.id)
-            return VotingService.get_vote_details_dto(updated_session, vote_options)
+                vote_options = await uow.vote_option.get_vote_options(updated_session.id)
+            return VoteSessionService.get_vote_details_dto(updated_session, vote_options)
 
     async def prepare_voting_choice_data(
         self, user_id: int, thread_id: int, message_id: int
@@ -200,7 +222,7 @@ class VotingLogic:
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 获取投票会话详情
-            vote_session = await uow.voting.get_vote_session_with_details(message_id)
+            vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
 
             if not vote_session or not vote_session.context_message_id:
                 raise ValueError("Vote session not found, cannot prepare panel data.")
@@ -217,8 +239,8 @@ class VotingLogic:
             current_votes = {}
 
             if vote_session.id:
-                vote_options = await uow.voting.get_vote_options(vote_session.id)
-                vote_details = VotingService.get_vote_details_dto(vote_session, vote_options)
+                vote_options = await uow.vote_option.get_vote_options(vote_session.id)
+                vote_details = VoteSessionService.get_vote_details_dto(vote_session, vote_options)
                 vote_options_dto = vote_details.options
 
                 # 获取用户对每个选项的投票
@@ -243,7 +265,7 @@ class VotingLogic:
     async def handle_message_creation(self, qo: UpdateUserActivityQo) -> None:
         """处理消息创建事件，增加用户活跃度。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.voting.update_user_activity(qo)
+            await uow.user_activity.update_user_activity(qo)
 
     async def handle_message_deletion(
         self, qo: UpdateUserActivityQo
@@ -255,31 +277,36 @@ class VotingLogic:
         - 如果有投票被撤销，则返回所有需要更新的投票面板的详情。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            user_activity = await uow.voting.update_user_activity(qo)
+            user_activity_orm = await uow.user_activity.update_user_activity(qo)
 
-            if EligibilityService.is_eligible(user_activity):
+            user_activity_dto = UserActivityDto.model_validate(user_activity_orm)
+            if EligibilityService.is_eligible(user_activity_dto):
                 return None
 
-            # 尝试删除用户在该帖子中的所有投票
-            deleted_count = await uow.voting.delete_all_user_votes_in_thread(
-                user_id=qo.user_id, thread_id=qo.thread_id
+            # 找到该帖子下的所有投票会话 ID
+            all_sessions_in_thread = (
+                await uow.vote_session.get_all_sessions_in_thread_with_details(qo.thread_id)
+            )
+            session_ids = [s.id for s in all_sessions_in_thread if s.id is not None]
+
+            # 尝试删除用户在这些会话中的所有投票
+            deleted_count = await uow.user_vote.delete_all_user_votes_in_thread(
+                user_id=qo.user_id, session_ids=session_ids
             )
 
             if deleted_count == 0:
                 return None
 
-            # 获取所有会话及其关联的、更新后的投票
-            all_sessions_in_thread = await uow.voting.get_all_sessions_in_thread_with_details(
-                qo.thread_id
+            # 重新获取会话以确保数据最新
+            all_sessions_in_thread = (
+                await uow.vote_session.get_all_sessions_in_thread_with_details(qo.thread_id)
             )
-
-            # 获取所有会话及其关联的、更新后的投票
             details_to_update: List[VoteDetailDto] = []
             for session in all_sessions_in_thread:
                 if session.id:
-                    vote_options = await uow.voting.get_vote_options(session.id)
+                    vote_options = await uow.vote_option.get_vote_options(session.id)
                     details_to_update.append(
-                        VotingService.get_vote_details_dto(session, vote_options)
+                        VoteSessionService.get_vote_details_dto(session, vote_options)
                     )
             return details_to_update
 
@@ -295,7 +322,9 @@ class VotingLogic:
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 获取当前会话以记录旧的结束时间
-            current_session = await uow.voting.get_vote_session_by_context_message_id(message_id)
+            current_session = await uow.vote_session.get_vote_session_by_context_message_id(
+                message_id
+            )
             if not current_session or not current_session.end_time:
                 raise RuntimeError(f"无法为消息 {message_id} 找到投票会话或其结束时间。")
             old_end_time = current_session.end_time
@@ -305,20 +334,20 @@ class VotingLogic:
                 duration_hours=hours_to_add, target_tz=target_tz
             )
 
-            reopened_session = await uow.voting.reopen_vote_session(message_id, new_end_time)
+            reopened_session = await uow.vote_session.reopen_vote_session(message_id, new_end_time)
             if not reopened_session:
                 raise RuntimeError("更新数据库失败。")
 
             await uow.commit()
 
-            final_session = await uow.voting.get_vote_session_with_details(message_id)
+            final_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not final_session:
                 raise RuntimeError("重新获取会话失败。")
 
             vote_options = None
             if final_session.id:
-                vote_options = await uow.voting.get_vote_options(final_session.id)
-            vote_details = VotingService.get_vote_details_dto(final_session, vote_options)
+                vote_options = await uow.vote_option.get_vote_options(final_session.id)
+            vote_details = VoteSessionService.get_vote_details_dto(final_session, vote_options)
             self.bot.dispatch(
                 "vote_settings_changed",
                 thread_id,
@@ -342,19 +371,19 @@ class VotingLogic:
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             qo = AdjustVoteTimeQo(message_id=message_id, hours_to_adjust=hours_to_adjust)
-            result_dto = await uow.voting.adjust_vote_time(qo)
+            result_dto = await uow.vote_session.adjust_vote_time(qo)
             await uow.commit()
 
             if not result_dto.vote_session.context_message_id:
                 raise ValueError("找不到关联的消息ID。")
 
-            final_session = await uow.voting.get_vote_session_with_details(message_id)
+            final_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not final_session:
                 raise RuntimeError("重新获取会话失败。")
             vote_options = None
             if final_session.id:
-                vote_options = await uow.voting.get_vote_options(final_session.id)
-            vote_details = VotingService.get_vote_details_dto(final_session, vote_options)
+                vote_options = await uow.vote_option.get_vote_options(final_session.id)
+            vote_details = VoteSessionService.get_vote_details_dto(final_session, vote_options)
             change_text = (
                 f"延长了 **{hours_to_adjust}** 小时"
                 if hours_to_adjust > 0
@@ -369,4 +398,72 @@ class VotingLogic:
                 f"调整了投票时间，{change_text}。",
                 result_dto.vote_session.end_time,
                 result_dto.old_end_time,
+            )
+
+    async def tally_and_close_session(self, vote_session_id: int) -> VoteStatusDto:
+        """
+        计票并关闭一个投票会话。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            vote_session = await uow.vote_session.get_vote_session_with_details(vote_session_id)
+
+            if not vote_session:
+                raise ValueError(f"找不到ID为 {vote_session_id} 的投票会话")
+
+            # 从已加载的关系中获取投票
+            all_votes = vote_session.userVotes
+            option_results: List[OptionResult] = []
+            total_approve_votes = 0
+            total_reject_votes = 0
+
+            # 单独查询投票选项
+            options = await uow.vote_option.get_vote_options(vote_session_id)
+            if options:
+                for option in options:
+                    approve = sum(
+                        1
+                        for v in all_votes
+                        if v.choice_index == option.choice_index and v.choice == 1
+                    )
+                    reject = sum(
+                        1
+                        for v in all_votes
+                        if v.choice_index == option.choice_index and v.choice == 0
+                    )
+                    option_results.append(
+                        OptionResult(
+                            choice_index=option.choice_index,
+                            choice_text=option.choice_text,
+                            approve_votes=approve,
+                            reject_votes=reject,
+                            total_votes=approve + reject,
+                        )
+                    )
+                    total_approve_votes += approve
+                    total_reject_votes += reject
+            else:
+                total_approve_votes = sum(1 for v in all_votes if v.choice == 1)
+                total_reject_votes = sum(1 for v in all_votes if v.choice == 0)
+
+            # 更新会话状态
+            vote_session.status = 0  # 已结束
+            await uow.flush()
+
+            voters_dto_list = (
+                [UserVoteDto.model_validate(vote) for vote in all_votes]
+                if not vote_session.anonymous_flag
+                else []
+            )
+
+            return VoteStatusDto(
+                is_anonymous=vote_session.anonymous_flag,
+                realtime_flag=vote_session.realtime_flag,
+                notify_flag=vote_session.notify_flag,
+                end_time=vote_session.end_time,
+                status=vote_session.status,
+                totalVotes=len(all_votes),
+                approveVotes=total_approve_votes,
+                rejectVotes=total_reject_votes,
+                options=option_results,
+                voters=voters_dto_list,
             )

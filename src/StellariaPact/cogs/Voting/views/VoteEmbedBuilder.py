@@ -8,11 +8,11 @@ from zoneinfo import ZoneInfo
 import discord
 
 from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
-from StellariaPact.cogs.Moderation.dto.ProposalDto import ProposalDto
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
+from StellariaPact.dto.ProposalDto import ProposalDto
 
 logger = logging.getLogger(__name__)
 

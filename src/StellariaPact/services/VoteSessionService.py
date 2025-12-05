@@ -2,25 +2,19 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Sequence
 
-from sqlalchemy import func, update
+from sqlalchemy import update
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from StellariaPact.cogs.Voting.dto.AdjustVoteTimeDto import AdjustVoteTimeDto
 from StellariaPact.cogs.Voting.dto.OptionResult import OptionResult
-from StellariaPact.cogs.Voting.dto.UserActivityDto import UserActivityDto
-from StellariaPact.cogs.Voting.dto.UserVoteDto import UserVoteDto
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
-from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
-from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
-from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
+from StellariaPact.dto.VoteSessionDto import VoteSessionDto
 from StellariaPact.models.Objection import Objection
 from StellariaPact.models.Proposal import Proposal
-from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteOption import VoteOption
 from StellariaPact.models.VoteSession import VoteSession
@@ -28,15 +22,15 @@ from StellariaPact.models.VoteSession import VoteSession
 logger = logging.getLogger(__name__)
 
 
-class VotingService:
+class VoteSessionService:
     """
-    提供处理投票相关业务逻辑的服务。
+    提供处理投票会话 (`VoteSession`) 相关数据库操作的服务。
     """
 
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_vote_session_by_thread_id(self, thread_id: int) -> Optional[VoteSessionDto]:
+    async def get_by_thread_id(self, thread_id: int) -> Optional[VoteSessionDto]:
         """
         根据帖子ID获取投票会话。
         """
@@ -47,7 +41,7 @@ class VotingService:
             return None
         return VoteSessionDto.model_validate(session)
 
-    async def get_all_vote_sessions_by_thread_id(self, thread_id: int) -> Sequence[VoteSessionDto]:
+    async def get_all_by_thread_id(self, thread_id: int) -> Sequence[VoteSessionDto]:
         """根据帖子ID获取所有投票会话。"""
         statement = select(VoteSession).where(VoteSession.context_thread_id == thread_id)
         result = await self.session.exec(statement)
@@ -150,13 +144,6 @@ class VotingService:
         await self.session.refresh(new_session)
         return VoteSessionDto.model_validate(new_session)
 
-    async def create_vote_options(self, session_id: int, options: List[str]):
-        """为指定的会话创建投票选项"""
-        for i, text in enumerate(options):
-            new_option = VoteOption(session_id=session_id, choice_index=i + 1, choice_text=text)
-            self.session.add(new_option)
-        await self.session.flush()
-
     async def update_vote_session_total_choices(self, session_id: int, total_choices: int):
         """更新投票会话的选项总数"""
         statement = (
@@ -166,173 +153,6 @@ class VotingService:
             .returning(VoteSession.id)  # type: ignore
         )
         await self.session.exec(statement)
-
-    async def get_vote_options(self, session_id: int) -> Sequence[VoteOption]:
-        """获取指定会话的所有投票选项"""
-        statement = (
-            select(VoteOption)
-            .where(VoteOption.session_id == session_id)  # type: ignore
-            .order_by(VoteOption.choice_index)  # type: ignore
-        )
-        result = await self.session.exec(statement)
-        return result.all()
-
-    async def record_vote(self, qo: RecordVoteQo) -> VoteSession:
-        """
-        记录或更新用户的投票。
-        """
-        vote_session = await self.get_vote_session_with_details(qo.message_id)
-        if not vote_session:
-            raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
-
-        existing_vote = next(
-            (
-                vote
-                for vote in vote_session.userVotes
-                if vote.user_id == qo.user_id and vote.choice_index == qo.choice_index
-            ),
-            None,
-        )
-
-        if existing_vote:
-            existing_vote.choice = qo.choice
-            self.session.add(existing_vote)
-        else:
-            if vote_session.id is None:
-                raise ValueError("无法为没有 ID 的会话记录投票。")
-            new_vote = UserVote(
-                session_id=vote_session.id,
-                user_id=qo.user_id,
-                choice=qo.choice,
-                choice_index=qo.choice_index,
-            )
-            self.session.add(new_vote)
-            vote_session.userVotes.append(new_vote)
-
-        return vote_session
-
-    async def delete_vote(
-        self, user_id: int, message_id: int, choice_index: int
-    ) -> Optional[VoteSession]:
-        """
-        删除用户的投票。
-        """
-        vote_session = await self.get_vote_session_with_details(message_id)
-        if not vote_session:
-            return None
-
-        user_vote_to_delete = next(
-            (
-                vote
-                for vote in vote_session.userVotes
-                if vote.user_id == user_id and vote.choice_index == choice_index
-            ),
-            None,
-        )
-
-        if user_vote_to_delete:
-            await self.session.delete(user_vote_to_delete)
-            vote_session.userVotes.remove(user_vote_to_delete)
-
-        return vote_session
-
-    async def check_user_eligibility(
-        self, user_id: int, thread_id: int
-    ) -> Optional[UserActivityDto]:
-        """
-        获取用户在特定帖子中的活动记录，用于判断投票资格。
-        """
-        statement = select(UserActivity).where(
-            UserActivity.user_id == user_id,
-            UserActivity.context_thread_id == thread_id,
-        )
-        result = await self.session.exec(statement)
-        activity = result.one_or_none()
-        if not activity:
-            return None
-        return UserActivityDto.model_validate(activity)
-
-    async def get_user_vote_by_session_id(
-        self, user_id: int, session_id: int
-    ) -> Optional[UserVoteDto]:
-        """
-        根据会话ID获取用户的投票记录
-        """
-        statement = select(UserVote).where(
-            UserVote.user_id == user_id, UserVote.session_id == session_id
-        )
-        result = await self.session.exec(statement)
-        vote = result.one_or_none()
-        if not vote:
-            return None
-        return UserVoteDto.model_validate(vote)
-
-    async def delete_user_vote_by_message_id(self, user_id: int, message_id: int) -> bool:
-        """
-        根据消息ID删除用户的投票记录
-        """
-        vote_session = await self.get_vote_session_by_context_message_id(message_id)
-        if not vote_session or not vote_session.id:
-            return False
-
-        statement = select(UserVote).where(
-            UserVote.user_id == user_id, UserVote.session_id == vote_session.id
-        )
-        result = await self.session.exec(statement)
-        existing_vote = result.one_or_none()
-
-        if existing_vote:
-            await self.session.delete(existing_vote)
-            return True
-        return False
-
-    async def delete_all_user_votes_in_thread(self, user_id: int, thread_id: int) -> int:
-        """
-        删除一个用户在特定帖子内所有投票会话中的所有投票。
-
-        Args:
-            user_id: 用户的ID。
-            thread_id: 帖子的ID。
-
-        Returns:
-            被成功删除的投票记录数量。
-        """
-        # 找到该帖子下的所有投票会话 ID
-        session_ids_statement = select(VoteSession.id).where(
-            VoteSession.context_thread_id == thread_id
-        )
-        session_ids_result = await self.session.exec(session_ids_statement)
-        session_ids = session_ids_result.all()
-
-        if not session_ids:
-            return 0
-
-        # 找到用户在这些会话中的所有投票
-        votes_statement = select(UserVote).where(
-            UserVote.user_id == user_id,
-            UserVote.session_id.in_(session_ids),  # type: ignore
-        )
-        votes_result = await self.session.exec(votes_statement)
-        votes_to_delete = votes_result.all()
-
-        if not votes_to_delete:
-            return 0
-
-        # 删除所有找到的投票
-        for vote in votes_to_delete:
-            await self.session.delete(vote)
-
-        return len(votes_to_delete)
-
-    async def get_vote_count_by_session_id(self, session_id: int) -> int:
-        """
-        获取特定投票会话的总票数
-        """
-        result = await self.session.exec(
-            select(func.count(UserVote.id)).where(UserVote.session_id == session_id)  # type: ignore
-        )
-        count = result.one_or_none()
-        return count if count is not None else 0
 
     async def get_expired_sessions(self) -> Sequence[VoteSessionDto]:
         """
@@ -348,114 +168,6 @@ class VotingService:
         result = await self.session.exec(statement)
         sessions = result.all()
         return [VoteSessionDto.model_validate(s) for s in sessions]
-
-    async def tally_and_close_session(self, vote_session_id: int) -> VoteStatusDto:
-        """
-        计票并关闭一个投票会话。
-        """
-        # 使用 selectinload 一次性加载投票会话及其所有关联的投票记录
-        statement = (
-            select(VoteSession)
-            .where(VoteSession.id == vote_session_id)
-            .options(selectinload(VoteSession.userVotes))  # type: ignore
-        )
-        result = await self.session.exec(statement)
-        vote_session = result.one_or_none()
-
-        if not vote_session:
-            raise ValueError(f"找不到ID为 {vote_session_id} 的投票会话")
-
-        # 从已加载的关系中获取投票
-        all_votes = vote_session.userVotes
-        option_results: List[OptionResult] = []
-        total_approve_votes = 0
-        total_reject_votes = 0
-
-        # 单独查询投票选项
-        options = await self.get_vote_options(vote_session_id)
-        if options:
-            for option in options:
-                approve = sum(
-                    1 for v in all_votes if v.choice_index == option.choice_index and v.choice == 1
-                )
-                reject = sum(
-                    1 for v in all_votes if v.choice_index == option.choice_index and v.choice == 0
-                )
-                option_results.append(
-                    OptionResult(
-                        choice_index=option.choice_index,
-                        choice_text=option.choice_text,
-                        approve_votes=approve,
-                        reject_votes=reject,
-                        total_votes=approve + reject,
-                    )
-                )
-                total_approve_votes += approve
-                total_reject_votes += reject
-        else:
-            total_approve_votes = sum(1 for v in all_votes if v.choice == 1)
-            total_reject_votes = sum(1 for v in all_votes if v.choice == 0)
-
-        # 更新会话状态
-        vote_session.status = 0  # 已结束
-        await self.session.flush()
-
-        voters_dto_list = (
-            [UserVoteDto.model_validate(vote) for vote in all_votes]
-            if not vote_session.anonymous_flag
-            else []
-        )
-
-        return VoteStatusDto(
-            is_anonymous=vote_session.anonymous_flag,
-            realtime_flag=vote_session.realtime_flag,
-            notify_flag=vote_session.notify_flag,
-            end_time=vote_session.end_time,
-            status=vote_session.status,
-            totalVotes=len(all_votes),
-            approveVotes=total_approve_votes,
-            rejectVotes=total_reject_votes,
-            options=option_results,
-            voters=voters_dto_list,
-        )
-
-    async def update_user_activity(self, qo: UpdateUserActivityQo) -> UserActivityDto:
-        """
-        更新用户在特定帖子中的有效发言计数。
-        如果用户活动记录不存在，则会创建一个。
-        """
-        statement = select(UserActivity).where(
-            UserActivity.user_id == qo.user_id,
-            UserActivity.context_thread_id == qo.thread_id,
-        )
-        result = await self.session.exec(statement)
-        user_activity = result.one_or_none()
-
-        if user_activity:
-            # 确保计数不会变为负数
-            new_count = user_activity.message_count + qo.change
-            user_activity.message_count = max(0, new_count)
-        else:
-            # 如果是减少操作，但记录不存在，则无需创建
-            if qo.change < 0:
-                # 返回一个临时的、未保存的实例，表示没有变化
-                return UserActivityDto(
-                    id=-1,  # Placeholder ID
-                    user_id=qo.user_id,
-                    context_thread_id=qo.thread_id,
-                    message_count=0,
-                    validation=True,
-                )
-            # 仅在增加时创建新记录
-            user_activity = UserActivity(
-                user_id=qo.user_id,
-                context_thread_id=qo.thread_id,
-                message_count=1,
-            )
-
-        self.session.add(user_activity)
-        await self.session.flush()
-        return UserActivityDto.model_validate(user_activity)
 
     async def adjust_vote_time(self, qo: AdjustVoteTimeQo) -> AdjustVoteTimeDto:
         """
@@ -494,7 +206,8 @@ class VotingService:
         await self.session.flush()
 
         return AdjustVoteTimeDto(
-            vote_session=VoteSessionDto.model_validate(vote_session), old_end_time=old_end_time
+            vote_session=VoteSessionDto.model_validate(vote_session),
+            old_end_time=old_end_time,
         )
 
     async def toggle_anonymous(self, message_id: int) -> Optional[VoteSession]:
@@ -529,7 +242,9 @@ class VotingService:
     async def get_vote_flags(self, message_id: int) -> Optional[tuple[bool, bool, bool]]:
         """以轻量级方式仅获取投票会话的匿名、实时和通知标志。"""
         statement = select(
-            VoteSession.anonymous_flag, VoteSession.realtime_flag, VoteSession.notify_flag
+            VoteSession.anonymous_flag,
+            VoteSession.realtime_flag,
+            VoteSession.notify_flag,
         ).where(VoteSession.context_message_id == message_id)
         result = await self.session.exec(statement)
         flags = result.one_or_none()

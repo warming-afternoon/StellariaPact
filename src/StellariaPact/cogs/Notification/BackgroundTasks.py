@@ -6,15 +6,14 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import commands, tasks
 
-from StellariaPact.cogs.Notification.AnnouncementMonitorService import AnnouncementMonitorService
-from StellariaPact.cogs.Notification.dto.AnnouncementDto import AnnouncementDto
-from StellariaPact.cogs.Notification.RepostService import RepostService
+from StellariaPact.cogs.Notification.NotificationLogic import NotificationLogic
+from StellariaPact.dto.AnnouncementDto import AnnouncementDto
 from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
-logger = logging.getLogger("stellaria_pact.notification.tasks")
+logger = logging.getLogger(__name__)
 
 
 class BackgroundTasks(commands.Cog):
@@ -52,8 +51,7 @@ class BackgroundTasks(commands.Cog):
         try:
             # 在一个简短的事务中安全地获取所有待处理的监控ID
             async with UnitOfWork(self.bot.db_handler) as uow:
-                monitor_service = AnnouncementMonitorService(uow.session)
-                pending_monitors = await monitor_service.get_pending_reposts()
+                pending_monitors = await uow.announcement_monitors.get_pending_reposts()
                 pending_monitor_ids = [m.id for m in pending_monitors if m.id is not None]
 
             if not pending_monitor_ids:
@@ -73,7 +71,7 @@ class BackgroundTasks(commands.Cog):
             try:
                 logger.debug(f"正在处理监控器 ID: {monitor_id}...")
                 async with UnitOfWork(self.bot.db_handler) as uow_atomic:
-                    repost_service = RepostService(self.bot, uow_atomic.session)
+                    notification_logic = NotificationLogic(self.bot, uow_atomic.session)
                     # 在新的事务中重新获取monitor对象
                     monitor_to_process = await uow_atomic.session.get(
                         AnnouncementChannelMonitor, monitor_id
@@ -82,7 +80,7 @@ class BackgroundTasks(commands.Cog):
                         logger.warning(f"在处理前无法找到监控器 ID: {monitor_id}，可能已被处理。")
                         continue
 
-                    await repost_service.process_single_repost(monitor_to_process)
+                    await notification_logic.process_single_repost(monitor_to_process)
                     await uow_atomic.commit()
                 logger.debug(f"成功处理并提交了监控器 ID: {monitor_id}")
 
@@ -98,9 +96,12 @@ class BackgroundTasks(commands.Cog):
         logger.debug("正在执行定时任务: 检查到期公示...")
         expired_announcement_dtos = []
         try:
-            # 步骤 1: 在一个事务中安全地获取所有过期的公示 DTO
+            # 获取所有过期的公示
             async with UnitOfWork(self.bot.db_handler) as uow:
-                expired_announcement_dtos = await uow.announcements.get_expired_announcements()
+                expired_announcements = await uow.announcements.get_expired_announcements()
+                expired_announcement_dtos = [
+                    AnnouncementDto.model_validate(ann) for ann in expired_announcements
+                ]
 
             if not expired_announcement_dtos:
                 logger.debug("没有找到需要处理的到期公示。")
@@ -120,8 +121,9 @@ class BackgroundTasks(commands.Cog):
                     await uow_atomic.announcements.mark_announcement_as_finished(
                         announcement_dto.id
                     )
-                    monitor_service = AnnouncementMonitorService(uow_atomic.session)
-                    await monitor_service.delete_monitors_for_announcement(announcement_dto.id)
+                    await uow_atomic.announcement_monitors.delete_monitors_for_announcement(
+                        announcement_dto.id
+                    )
                     await uow_atomic.commit()
 
                 logger.debug(f"成功在数据库中将公示 {announcement_dto.id} 标记为已完成。")

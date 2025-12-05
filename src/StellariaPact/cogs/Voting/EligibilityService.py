@@ -1,6 +1,6 @@
 from typing import Optional
 
-from StellariaPact.cogs.Voting.dto.UserActivityDto import UserActivityDto
+from StellariaPact.dto.UserActivityDto import UserActivityDto
 
 
 class EligibilityService:

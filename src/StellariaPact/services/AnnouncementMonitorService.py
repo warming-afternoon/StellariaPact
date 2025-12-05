@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, delete, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from StellariaPact.models.Announcement import Announcement
@@ -23,7 +23,6 @@ class AnnouncementMonitorService:
 
         # 使用特定于数据库的函数将时间转换为 Unix 时间戳（整数秒）进行比较，
         # 以绕过 SQLAlchemy 对 timedelta 和列进行复杂运算时的翻译问题
-        from sqlalchemy import func
 
         current_timestamp = func.strftime("%s", now_utc)
         last_repost_timestamp = func.strftime("%s", AnnouncementChannelMonitor.last_repost_at)

@@ -94,7 +94,7 @@ class KickProposalModal(discord.ui.Modal, title="踢出提案"):
 
             # --- 数据库操作 ---
             async with UnitOfWork(self.bot.db_handler) as uow:
-                await uow.moderation.update_user_validation_status(
+                await uow.user_activity.update_user_validation_status(
                     user_id=self.kicked_user.id,
                     thread_id=thread.id,
                     is_valid=is_voting_allowed,

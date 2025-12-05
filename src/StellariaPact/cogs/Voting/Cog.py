@@ -8,7 +8,6 @@ from discord.ext import commands
 
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
-from StellariaPact.cogs.Voting.dto.VoteSessionDto import VoteSessionDto
 from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
 from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
@@ -19,6 +18,8 @@ from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import ObjectionV
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.cogs.Voting.views.VotingChoiceView import VotingChoiceView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
+from StellariaPact.dto.ProposalDto import ProposalDto
+from StellariaPact.dto.VoteSessionDto import VoteSessionDto
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
 from StellariaPact.share.DiscordUtils import DiscordUtils
@@ -252,6 +253,7 @@ class Voting(commands.Cog):
         thread_id: int,
         event_name: str,
         choice: int | None = None,
+        choice_index: int | None = None,
     ):
         """
         异步辅助方法，用于分发正式投票事件。
@@ -260,7 +262,9 @@ class Voting(commands.Cog):
         # self.bot.dispatch 是同步的，但我们在一个 async 方法中调用它，
         # 以便返回一个协程，满足 View 的回调类型要求。
         if event_name == "objection_formal_vote_abstain":
-            self.bot.dispatch(event_name, interaction, original_message_id, thread_id)
+            self.bot.dispatch(
+                event_name, interaction, original_message_id, thread_id, choice_index
+            )
         else:
             self.bot.dispatch(event_name, interaction, original_message_id, choice, thread_id)
 
@@ -322,6 +326,7 @@ class Voting(commands.Cog):
                 original_message_id=original_message_id,
                 thread_id=thread_id,
                 event_name="objection_formal_vote_abstain",
+                choice_index=1,
             )
 
             choice_view = ObjectionFormalVoteChoiceView(
@@ -390,7 +395,11 @@ class Voting(commands.Cog):
 
     @commands.Cog.listener()
     async def on_objection_formal_vote_abstain(
-        self, interaction: discord.Interaction, original_message_id: int, thread_id: int
+        self,
+        interaction: discord.Interaction,
+        original_message_id: int,
+        thread_id: int,
+        choice_index: int,
     ):
         """
         处理用户从私有面板发起的弃权
@@ -402,6 +411,7 @@ class Voting(commands.Cog):
                 DeleteVoteQo(
                     user_id=interaction.user.id,
                     message_id=original_message_id,
+                    choice_index=choice_index,
                 )
             )
 
@@ -441,7 +451,7 @@ class Voting(commands.Cog):
                 return
 
             async with UnitOfWork(self.bot.db_handler) as uow:
-                session = await uow.voting.get_vote_session_by_voting_channel_message_id(
+                session = await uow.vote_session.get_vote_session_by_voting_channel_message_id(
                     interaction.message.id
                 )
 
@@ -477,7 +487,6 @@ class Voting(commands.Cog):
             # 创建投票选择视图
             choice_view = VotingChoiceView(
                 bot=self.bot,
-                logic=self.logic,
                 original_message_id=context_message_id,
                 thread_id=context_thread_id,
                 panel_data=panel_data,
@@ -529,7 +538,7 @@ class Voting(commands.Cog):
                 return
 
             async with UnitOfWork(self.bot.db_handler) as uow:
-                session = await uow.voting.get_vote_session_by_voting_channel_message_id(
+                session = await uow.vote_session.get_vote_session_by_voting_channel_message_id(
                     interaction.message.id
                 )
 
@@ -568,7 +577,7 @@ class Voting(commands.Cog):
 
             if vote_details.objection_id:
                 async with UnitOfWork(self.bot.db_handler) as uow:
-                    objection_details = await uow.moderation.get_objection_details_by_id(
+                    objection_details = await uow.objection.get_objection_details_by_id(
                         vote_details.objection_id
                     )
                     if objection_details:
@@ -609,7 +618,7 @@ class Voting(commands.Cog):
 
             if vote_details.objection_id:
                 async with UnitOfWork(self.bot.db_handler) as uow:
-                    objection_details = await uow.moderation.get_objection_details_by_id(
+                    objection_details = await uow.objection.get_objection_details_by_id(
                         vote_details.objection_id
                     )
                     if objection_details and thread:
@@ -620,12 +629,13 @@ class Voting(commands.Cog):
                         )
             else:
                 async with UnitOfWork(self.bot.db_handler) as uow:
-                    proposal = await uow.moderation.get_proposal_by_thread_id(
+                    proposal = await uow.proposal.get_proposal_by_thread_id(
                         vote_details.context_thread_id
                     )
                     if proposal and thread:
+                        proposal_dto = ProposalDto.model_validate(proposal)
                         new_embed = VoteEmbedBuilder.build_voting_channel_embed(
-                            proposal, vote_details, thread.jump_url
+                            proposal_dto, vote_details, thread.jump_url
                         )
 
             if new_embed:
@@ -637,7 +647,7 @@ class Voting(commands.Cog):
         except Exception as e:
             logger.error(f"更新投票频道面板时出错: {e}", exc_info=True)
 
-    @commands.Cog.listener("on_vote_details_updated")
+    @commands.Cog.listener()
     async def on_vote_details_updated(self, vote_details: VoteDetailDto):
         """当投票详情更新时，同步所有相关的投票面板。"""
         try:

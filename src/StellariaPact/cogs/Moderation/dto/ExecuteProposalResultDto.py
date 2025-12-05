@@ -1,7 +1,7 @@
 from typing import Dict
 
+from ....dto.ConfirmationSessionDto import ConfirmationSessionDto
 from ....share.BaseDto import BaseDto
-from .ConfirmationSessionDto import ConfirmationSessionDto
 
 
 class ExecuteProposalResultDto(BaseDto):

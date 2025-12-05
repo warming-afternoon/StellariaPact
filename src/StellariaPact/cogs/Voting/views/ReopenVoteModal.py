@@ -2,7 +2,6 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.share.SafeDefer import safeDefer
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
@@ -20,10 +19,9 @@ class ReopenVoteModal(discord.ui.Modal, title="重新开启投票"):
         required=True,
     )
 
-    def __init__(self, bot: StellariaPactBot, logic: VotingLogic, thread_id: int, message_id: int):
+    def __init__(self, bot: StellariaPactBot, thread_id: int, message_id: int):
         super().__init__(timeout=1800)
         self.bot = bot
-        self.logic = logic
         self.thread_id = thread_id
         self.message_id = message_id
 
@@ -41,20 +39,10 @@ class ReopenVoteModal(discord.ui.Modal, title="重新开启投票"):
             )
             return
 
-        try:
-            await self.logic.reopen_vote(
-                thread_id=self.thread_id,
-                message_id=self.message_id,
-                hours_to_add=hours_to_add,
-                operator=interaction.user,
-            )
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("投票已重新开启。", ephemeral=True), priority=1
-            )
-
-        except Exception as e:
-            logger.error(f"重新开启投票时出错: {e}", exc_info=True)
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send(f"操作失败，请重试/联系技术员：{e}", ephemeral=True),
-                priority=1,
-            )
+        self.bot.dispatch(
+            "vote_reopened",
+            interaction=interaction,
+            thread_id=self.thread_id,
+            message_id=self.message_id,
+            hours_to_add=hours_to_add,
+        )

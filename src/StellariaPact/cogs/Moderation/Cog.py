@@ -15,6 +15,7 @@ from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalMo
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.cogs.Moderation.views.VoteOptionsModal import VoteOptionsModal
+from StellariaPact.dto.ProposalDto import ProposalDto
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums.VoteDuration import VoteDuration
@@ -22,7 +23,7 @@ from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
-logger = logging.getLogger("stellaria_pact.moderation")
+logger = logging.getLogger(__name__)
 
 
 class Moderation(commands.Cog):
@@ -266,12 +267,14 @@ class Moderation(commands.Cog):
 
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 尝试创建提案
-                proposal_dto = await uow.moderation.create_proposal(
+                proposal = await uow.proposal.create_proposal(
                     thread.id, proposer_id, clean_title, clean_content
                 )
                 # 如果提案已存在，则获取它
-                if not proposal_dto:
-                    proposal_dto = await uow.moderation.get_proposal_by_thread_id(thread.id)
+                if not proposal:
+                    proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
+                # 转换为 DTO 以供事件使用
+                proposal_dto = ProposalDto.model_validate(proposal) if proposal else None
                 await uow.commit()
 
             # 派发事件以创建投票

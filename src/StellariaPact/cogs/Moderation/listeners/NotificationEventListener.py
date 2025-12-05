@@ -20,7 +20,7 @@ class NotificationEventListener(commands.Cog):
         self.bot = bot
         self.logic = ModerationLogic(bot)
 
-    @commands.Cog.listener("on_announcement_finished")
+    @commands.Cog.listener()
     async def on_announcement_finished(self, announcement):
         """
         监听由 Notification cog 分派的公示结束事件。

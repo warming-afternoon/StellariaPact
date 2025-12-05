@@ -9,7 +9,7 @@ from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 # 定义一个类型变量来帮助 mypy 理解被装饰的函数类型
 T = TypeVar("T")
-logger = logging.getLogger("stellaria_pact.auth")
+logger = logging.getLogger(__name__)
 
 
 class RoleGuard:

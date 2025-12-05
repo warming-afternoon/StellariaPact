@@ -5,6 +5,10 @@ from typing import Optional
 import discord
 from sqlalchemy.exc import IntegrityError
 
+from ...dto.ConfirmationSessionDto import ConfirmationSessionDto
+from ...dto.ObjectionDto import ObjectionDto
+from ...dto.ProposalDto import ProposalDto
+from ...dto.VoteSessionDto import VoteSessionDto
 from ...models.Announcement import Announcement
 from ...share.enums.ObjectionStatus import ObjectionStatus
 from ...share.enums.ProposalStatus import ProposalStatus
@@ -12,19 +16,15 @@ from ...share.enums.VoteDuration import VoteDuration
 from ...share.StellariaPactBot import StellariaPactBot
 from ...share.StringUtils import StringUtils
 from ...share.UnitOfWork import UnitOfWork
-from ..Voting.dto.VoteSessionDto import VoteSessionDto
 from ..Voting.dto.VoteStatusDto import VoteStatusDto
 from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from .dto.CollectionExpiredResultDto import CollectionExpiredResultDto
-from .dto.ConfirmationSessionDto import ConfirmationSessionDto
 from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
 from .dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
 from .dto.ObjectionDetailsDto import ObjectionDetailsDto
-from .dto.ObjectionDto import ObjectionDto
 from .dto.ObjectionReasonUpdateResultDto import ObjectionReasonUpdateResultDto
 from .dto.ObjectionReviewResultDto import ObjectionReviewResultDto
 from .dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from .dto.ProposalDto import ProposalDto
 from .dto.SubsequentObjectionDto import SubsequentObjectionDto
 from .dto.VoteFinishedResultDto import VoteFinishedResultDto
 from .qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
@@ -61,16 +61,16 @@ class ModerationLogic:
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 更新异议记录，关联新的帖子ID
-            await uow.moderation.update_objection_thread_id(objection_id, objection_thread_id)
+            await uow.objection.update_objection_thread_id(objection_id, objection_thread_id)
 
             # 更新原提案状态为“冻结中”
-            await uow.moderation.update_proposal_status_by_thread_id(
+            await uow.proposal.update_proposal_status_by_thread_id(
                 original_proposal_thread_id, ProposalStatus.FROZEN
             )
             await uow.commit()
 
             # 在事务提交后，重新获取 DTO 以确保数据一致性
-            return await uow.moderation.get_objection_by_thread_id(objection_thread_id)
+            return await uow.objection.get_objection_by_thread_id(objection_thread_id)
 
     async def handle_raise_objection(
         self,
@@ -86,7 +86,7 @@ class ModerationLogic:
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 验证提案
-            proposal = await uow.moderation.get_proposal_by_thread_id(target_thread_id)
+            proposal = await uow.proposal.get_proposal_by_thread_id(target_thread_id)
             if not proposal:
                 raise ValueError("未在指定帖子中找到关连的提案。")
 
@@ -102,7 +102,7 @@ class ModerationLogic:
             assert proposal_id is not None
 
             # 判断是否为首次异议
-            existing_objections = await uow.moderation.get_objections_by_proposal_id(proposal_id)
+            existing_objections = await uow.objection.get_objections_by_proposal_id(proposal_id)
             is_first_objection = not bool(existing_objections)
 
             # 准备数据并调用服务
@@ -131,7 +131,7 @@ class ModerationLogic:
                     is_realtime=True,
                     end_time=end_time,
                 )
-                creation_result_dto = await uow.moderation.create_objection_and_vote_session_shell(
+                creation_result_dto = await uow.objection.create_objection_and_vote_session_shell(
                     shell_qo
                 )
                 # 准备返回给 Cog 层的 DTO 用于创建投票面板
@@ -154,7 +154,7 @@ class ModerationLogic:
                     required_votes=required_votes,
                     status=initial_status,
                 )
-                objection_dto = await uow.moderation.create_objection(objection_qo)
+                objection_dto = await uow.objection.create_objection(objection_qo)
                 # 准备返回给 Cog 层的 DTO 用于创建审核UI
                 return SubsequentObjectionDto(
                     objection_id=objection_dto.id,
@@ -226,7 +226,7 @@ class ModerationLogic:
 
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                proposal = await uow.moderation.get_proposal_by_thread_id(channel_id)
+                proposal = await uow.proposal.get_proposal_by_thread_id(channel_id)
                 if not proposal:
                     raise ValueError("未找到关连的提案。")
 
@@ -249,7 +249,10 @@ class ModerationLogic:
                     initiator_id=user_id,
                     initiator_role_keys=initiator_role_keys,
                 )
-                session_dto = await uow.moderation.create_confirmation_session(create_session_qo)
+                session = await uow.confirmation_session.create_confirmation_session(
+                    create_session_qo
+                )
+                session_dto = ConfirmationSessionDto.model_validate(session)
 
                 roles_config = self.bot.config.get("roles", {})
                 role_display_names = {}
@@ -277,7 +280,9 @@ class ModerationLogic:
         在一个独立的事务中更新确认会话的消息ID。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.moderation.update_confirmation_session_message_id(session_id, message_id)
+            await uow.confirmation_session.update_confirmation_session_message_id(
+                session_id, message_id
+            )
             await uow.commit()
 
     async def handle_objection_vote_finished(
@@ -300,11 +305,11 @@ class ModerationLogic:
 
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 获取关联数据
-                objection = await uow.moderation.get_objection_by_id(objection_id)
+                objection = await uow.objection.get_objection_by_id(objection_id)
                 if not objection:
                     raise ValueError(f"找不到ID为 {objection_id} 的异议。")
 
-                proposal = await uow.moderation.get_proposal_by_id(objection.proposal_id)
+                proposal = await uow.proposal.get_proposal_by_id(objection.proposal_id)
                 if not proposal:
                     raise ValueError(f"找不到异议 {objection_id} 关联的提案。")
 
@@ -406,18 +411,16 @@ class ModerationLogic:
         try:
             extracted_data = {}
             async with UnitOfWork(self.bot.db_handler) as uow:
-                objection = await uow.moderation.get_objection_by_id(objection_id)
+                objection = await uow.objection.get_objection_by_id(objection_id)
                 if not objection:
                     raise ValueError(f"找不到ID为 {objection_id} 的异议。")
 
-                proposal = await uow.moderation.get_proposal_by_id(objection.proposal_id)
+                proposal = await uow.proposal.get_proposal_by_id(objection.proposal_id)
                 if not proposal:
                     raise ValueError(f"找不到异议 {objection_id} 关联的提案。")
 
                 # 将异议状态更新为“已否决”
-                await uow.moderation.update_objection_status(
-                    objection_id, ObjectionStatus.REJECTED
-                )
+                await uow.objection.update_objection_status(objection_id, ObjectionStatus.REJECTED)
 
                 # 预取数据
                 guild_id = self.bot.config.get("guild_id")
@@ -478,7 +481,7 @@ class ModerationLogic:
         )
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                await uow.moderation.update_proposal_status_by_thread_id(
+                await uow.proposal.update_proposal_status_by_thread_id(
                     thread_id=announcement.discussion_thread_id,
                     status=ProposalStatus.EXECUTING,
                 )
@@ -496,7 +499,7 @@ class ModerationLogic:
         处理对异议的支持操作。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            result_dto = await uow.moderation.objection_support(qo)
+            result_dto = await uow.objection.objection_support(qo)
 
             # 根据服务层的返回结果，处理业务逻辑（状态变更、事件分发）
             goal_reached_first_time = (
@@ -507,7 +510,7 @@ class ModerationLogic:
 
             if goal_reached_first_time:
                 # 状态变更：收集票数 -> 正式投票
-                await uow.moderation.update_objection_status(
+                await uow.objection.update_objection_status(
                     result_dto.objection_id, ObjectionStatus.VOTING
                 )
                 # 事件分发
@@ -527,7 +530,7 @@ class ModerationLogic:
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 调用服务层，获取DTO
-            result_dto = await uow.moderation.objection_support(qo)
+            result_dto = await uow.objection.objection_support(qo)
 
             # 根据服务层的返回结果，处理状态变更
             goal_lost = (
@@ -537,7 +540,7 @@ class ModerationLogic:
             )
             if goal_lost:
                 # 状态变更：正式投票 -> 收集票数
-                await uow.moderation.update_objection_status(
+                await uow.objection.update_objection_status(
                     result_dto.objection_id, ObjectionStatus.COLLECTING_VOTES
                 )
 
@@ -559,11 +562,11 @@ class ModerationLogic:
             proposal_dto_for_result: ProposalDto | None = None
 
             async with UnitOfWork(self.bot.db_handler) as uow:
-                objection = await uow.moderation.get_objection_by_id(objection_id)
+                objection = await uow.objection.get_objection_by_id(objection_id)
                 if not objection or objection.status != ObjectionStatus.PENDING_REVIEW:
                     raise ValueError("此异议未处于审核状态，无法被批准。")
 
-                proposal = await uow.moderation.get_proposal_by_id(objection.proposal_id)
+                proposal = await uow.proposal.get_proposal_by_id(objection.proposal_id)
                 if not proposal:
                     raise ValueError("找不到关联的提案，操作中止。")
 
@@ -581,10 +584,10 @@ class ModerationLogic:
                     context_message_id=0,  # 占位符，将在UI创建后更新
                     end_time=end_time,
                 )
-                vote_session_dto = await uow.voting.create_vote_session(vote_qo)
+                vote_session_dto = await uow.vote_session.create_vote_session(vote_qo)
 
                 # 更新异议状态
-                await uow.moderation.update_objection_status(
+                await uow.objection.update_objection_status(
                     objection_id, ObjectionStatus.COLLECTING_VOTES
                 )
 
@@ -628,18 +631,26 @@ class ModerationLogic:
         """
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 更新数据库
-                objection = await uow.moderation.update_objection_reason(
-                    qo.objection_id, qo.new_reason, qo.interaction.user.id
-                )
+                objection = await uow.objection.get_objection_by_id(qo.objection_id)
+                if not objection:
+                    raise ValueError(f"未找到ID为 {qo.objection_id} 的异议。")
 
-                # 从数据库中提取所需数据
-                proposal = await uow.moderation.get_proposal_by_id(objection.proposal_id)
+                if objection.objector_id != qo.interaction.user.id:
+                    raise PermissionError("只有异议发起人才能修改理由。")
+
+                # 修改 reason
+                objection.reason = qo.new_reason
+                uow.session.add(objection)
+
+                proposal = await uow.proposal.get_proposal_by_id(objection.proposal_id)
                 if not proposal:
                     raise ValueError(f"找不到异议 {qo.objection_id} 关联的提案。")
 
                 if not qo.interaction.guild:
                     raise RuntimeError("交互不包含服务器信息。")
+
+                # 提交事务以保存更改
+                await uow.commit()
 
                 # 将数据打包到 DTO
                 return ObjectionReasonUpdateResultDto(
@@ -673,17 +684,15 @@ class ModerationLogic:
             objection_dto: ObjectionDto | None = None
             proposal_dto: ProposalDto | None = None
             async with UnitOfWork(self.bot.db_handler) as uow:
-                objection = await uow.moderation.get_objection_by_id(objection_id)
+                objection = await uow.objection.get_objection_by_id(objection_id)
                 if not objection or objection.status != ObjectionStatus.PENDING_REVIEW:
                     raise ValueError("此异议未处于审核状态，无法被驳回。")
 
-                proposal = await uow.moderation.get_proposal_by_id(objection.proposal_id)
+                proposal = await uow.proposal.get_proposal_by_id(objection.proposal_id)
                 if not proposal:
                     raise ValueError("找不到关联的提案，操作中止。")
 
-                await uow.moderation.update_objection_status(
-                    objection_id, ObjectionStatus.REJECTED
-                )
+                await uow.objection.update_objection_status(objection_id, ObjectionStatus.REJECTED)
                 objection_dto = ObjectionDto.from_orm(objection)
                 proposal_dto = ProposalDto.from_orm(proposal)
                 await uow.commit()
@@ -708,13 +717,13 @@ class ModerationLogic:
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 检查它是否是一个已知的异议帖
-                objection = await uow.moderation.get_objection_by_thread_id(thread.id)
+                objection = await uow.objection.get_objection_by_thread_id(thread.id)
                 if objection:
                     # logger.debug(f"帖子 {thread.id} 是一个已知的异议帖，跳过处理")
                     return
 
                 # 检查它是否已经是一个已知的提案帖
-                proposal = await uow.moderation.get_proposal_by_thread_id(thread.id)
+                proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
                 if proposal:
                     # logger.debug(f"提案 (帖子 ID: {thread.id}) 已存在，跳过处理")
                     return
@@ -738,9 +747,11 @@ class ModerationLogic:
             # 在数据库中创建提案
             proposal_dto = None
             async with UnitOfWork(self.bot.db_handler) as uow:
-                proposal_dto = await uow.moderation.create_proposal(
+                proposal = await uow.proposal.create_proposal(
                     thread.id, proposer_id, clean_title, clean_content
                 )
+                if proposal:
+                    proposal_dto = ProposalDto.model_validate(proposal)
                 await uow.commit()
 
             # 如果创建了 *新* 的提案，则更新UI并派发事件
@@ -791,7 +802,7 @@ class ModerationLogic:
         通用方法：处理提案状态变更的确认事件。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            proposal = await uow.moderation.get_proposal_by_id(proposal_id)
+            proposal = await uow.proposal.get_proposal_by_id(proposal_id)
             if not proposal:
                 logger.warning(
                     f"无法找到ID为 {proposal_id} 的提案，无法更新状态为 {new_status.name}。"

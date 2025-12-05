@@ -4,6 +4,7 @@ import random
 
 from discord.ext import commands, tasks
 
+from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.share.enums.ObjectionStatus import ObjectionStatus
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 class VoteCloser(commands.Cog):
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
+        self.logic = VotingLogic(bot)
         self.close_expired_votes.start()
 
     def cog_unload(self):
@@ -29,7 +31,7 @@ class VoteCloser(commands.Cog):
         try:
             # 步骤 1: 在一个只读事务中安全地获取所有过期的会话
             async with UnitOfWork(self.bot.db_handler) as uow:
-                expired_sessions = await uow.voting.get_expired_sessions()
+                expired_sessions = await uow.vote_session.get_expired_sessions()
 
             if not expired_sessions:
                 logger.debug("没有发现已到期的投票。")
@@ -42,22 +44,18 @@ class VoteCloser(commands.Cog):
                     # 步骤 2a: 在独立的事务中计票和关闭
                     objection_id = None
                     objection_status = None
-                    result_dto = None
 
-                    async with UnitOfWork(self.bot.db_handler) as uow_atomic:
-                        # 在关闭会话前，先获取其关联的异议状态
-                        if session_dto.objection_id:
-                            objection = await uow_atomic.moderation.get_objection_by_id(
+                    # 在关闭会话前，先获取其关联的异议状态
+                    if session_dto.objection_id:
+                        async with UnitOfWork(self.bot.db_handler) as uow_read:
+                            objection = await uow_read.objection.get_objection_by_id(
                                 session_dto.objection_id
                             )
                             if objection:
                                 objection_id = objection.id
                                 objection_status = objection.status
 
-                        result_dto = await uow_atomic.voting.tally_and_close_session(
-                            session_dto.id
-                        )
-                        await uow_atomic.commit()
+                    result_dto = await self.logic.tally_and_close_session(session_dto.id)
 
                     # 步骤 2b: 检查是否为异议投票，并根据异议状态分派不同事件
                     if objection_id and objection_status and result_dto:

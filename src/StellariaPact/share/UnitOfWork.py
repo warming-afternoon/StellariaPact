@@ -6,12 +6,15 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Moderation.ModerationService import ModerationService
-    from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
-        AnnouncementMonitorService,
-    )
-    from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
-    from StellariaPact.cogs.Voting.VotingService import VotingService
+    from StellariaPact.services.AnnouncementMonitorService import AnnouncementMonitorService
+    from StellariaPact.services.AnnouncementService import AnnouncementService
+    from StellariaPact.services.ConfirmationSessionService import ConfirmationSessionService
+    from StellariaPact.services.ObjectionService import ObjectionService
+    from StellariaPact.services.ProposalService import ProposalService
+    from StellariaPact.services.UserActivityService import UserActivityService
+    from StellariaPact.services.UserVoteService import UserVoteService
+    from StellariaPact.services.VoteOptionService import VoteOptionService
+    from StellariaPact.services.VoteSessionService import VoteSessionService
     from StellariaPact.share.DatabaseHandler import DatabaseHandler
 
 
@@ -27,7 +30,6 @@ class UnitOfWork:
 
     用法:<br>
     async with UnitOfWork() as uow:<br>
-        await uow.voting.record_user_vote(...)<br>
         await uow.announcements.create_announcement(...)<br>
         await uow.commit()<br>
     """
@@ -101,20 +103,19 @@ class UnitOfWork:
     # --- 服务/仓库访问属性 ---
 
     @property
-    def voting(self) -> "VotingService":
-        """获取投票服务实例。"""
-        # 懒加载：只在第一次访问时创建服务实例
-        if not hasattr(self, "_voting_service"):
-            from StellariaPact.cogs.Voting.VotingService import VotingService
+    def vote_session(self) -> "VoteSessionService":
+        """获取投票会话服务实例。"""
+        if not hasattr(self, "_vote_session_service"):
+            from StellariaPact.services.VoteSessionService import VoteSessionService
 
-            self._voting_service = VotingService(self.session)
-        return self._voting_service
+            self._vote_session_service = VoteSessionService(self.session)
+        return self._vote_session_service
 
     @property
     def announcements(self) -> "AnnouncementService":
         """获取公示服务实例。"""
         if not hasattr(self, "_announcement_service"):
-            from StellariaPact.cogs.Notification.AnnouncementService import AnnouncementService
+            from StellariaPact.services.AnnouncementService import AnnouncementService
 
             self._announcement_service = AnnouncementService(self.session)
         return self._announcement_service
@@ -123,7 +124,7 @@ class UnitOfWork:
     def announcement_monitors(self) -> "AnnouncementMonitorService":
         """获取公示监控服务实例。"""
         if not hasattr(self, "_announcement_monitor_service"):
-            from StellariaPact.cogs.Notification.AnnouncementMonitorService import (
+            from StellariaPact.services.AnnouncementMonitorService import (
                 AnnouncementMonitorService,
             )
 
@@ -131,10 +132,57 @@ class UnitOfWork:
         return self._announcement_monitor_service
 
     @property
-    def moderation(self) -> "ModerationService":
-        """获取议事管理服务实例。"""
-        if not hasattr(self, "_moderation_service"):
-            from StellariaPact.cogs.Moderation.ModerationService import ModerationService
+    def objection(self) -> "ObjectionService":
+        """获取异议服务实例。"""
+        if not hasattr(self, "_objection_service"):
+            from StellariaPact.services.ObjectionService import ObjectionService
 
-            self._moderation_service = ModerationService(self.session)
-        return self._moderation_service
+            self._objection_service = ObjectionService(self.session)
+        return self._objection_service
+
+    @property
+    def user_activity(self) -> "UserActivityService":
+        """获取用户活动服务实例。"""
+        if not hasattr(self, "_user_activity_service"):
+            from StellariaPact.services.UserActivityService import UserActivityService
+
+            self._user_activity_service = UserActivityService(self.session)
+        return self._user_activity_service
+
+    @property
+    def user_vote(self) -> "UserVoteService":
+        """获取用户投票服务实例。"""
+        if not hasattr(self, "_user_vote_service"):
+            from StellariaPact.services.UserVoteService import UserVoteService
+
+            self._user_vote_service = UserVoteService(self.session)
+        return self._user_vote_service
+
+    @property
+    def vote_option(self) -> "VoteOptionService":
+        """获取投票选项服务实例。"""
+        if not hasattr(self, "_vote_option_service"):
+            from StellariaPact.services.VoteOptionService import VoteOptionService
+
+            self._vote_option_service = VoteOptionService(self.session)
+        return self._vote_option_service
+
+    @property
+    def confirmation_session(self) -> "ConfirmationSessionService":
+        """获取确认会话服务实例。"""
+        if not hasattr(self, "_confirmation_session_service"):
+            from StellariaPact.services.ConfirmationSessionService import (
+                ConfirmationSessionService,
+            )
+
+            self._confirmation_session_service = ConfirmationSessionService(self.session)
+        return self._confirmation_session_service
+
+    @property
+    def proposal(self) -> "ProposalService":
+        """获取提案服务实例。"""
+        if not hasattr(self, "_proposal_service"):
+            from StellariaPact.services.ProposalService import ProposalService
+
+            self._proposal_service = ProposalService(self.session)
+        return self._proposal_service

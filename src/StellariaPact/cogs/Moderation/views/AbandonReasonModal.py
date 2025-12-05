@@ -41,7 +41,7 @@ class AbandonReasonModal(discord.ui.Modal):
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
                 qo = AbandonProposalQo(thread_id=interaction.channel.id, reason=self.reason.value)
-                await uow.moderation.abandon_proposal(qo)
+                await uow.proposal.abandon_proposal(qo)
                 await uow.commit()
 
         except ValueError as e:
