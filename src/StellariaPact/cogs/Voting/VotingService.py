@@ -18,6 +18,8 @@ from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
+from StellariaPact.models.Objection import Objection
+from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteOption import VoteOption
@@ -632,3 +634,16 @@ class VotingService:
             options=option_results,
             voters=voters,
         )
+
+    async def get_proposal_thread_id_by_objection_id(self, objection_id: int) -> Optional[int]:
+        """
+        通过异议ID查找关联提案的讨论帖ID。
+        用于在异议投票中继承原提案的发言数。
+        """
+        statement = (
+            select(Proposal.discussion_thread_id)
+            .join(Objection, Objection.proposal_id == Proposal.id)  # type: ignore
+            .where(Objection.id == objection_id)
+        )
+        result = await self.session.exec(statement)
+        return result.one_or_none()

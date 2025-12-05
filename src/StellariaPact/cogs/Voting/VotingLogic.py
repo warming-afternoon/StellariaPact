@@ -12,6 +12,7 @@ from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
 from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
 from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
 from StellariaPact.cogs.Voting.VotingService import VotingService
+from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -40,15 +41,22 @@ class VotingLogic:
         处理用户的投票动作，并返回更新后的投票详情。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            # 检查用户在目标帖子里的当前资格
-            user_activity = await uow.voting.check_user_eligibility(
-                user_id=qo.user_id, thread_id=qo.thread_id
+            # 先获取会话，以便知道是否需要检查父帖子
+            vote_session = await uow.voting.get_vote_session_by_context_message_id(qo.message_id)
+            if not vote_session:
+                raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
+
+            # 检查资格
+            is_eligible, _, _ = await self._get_combined_eligibility_data(
+                uow, qo.user_id, qo.thread_id, vote_session
             )
 
-            if not EligibilityService.is_eligible(user_activity):
-                raise PermissionError("投票资格已失效，无法投票。可能是因为删除了之前的有效发言。")
+            if not is_eligible:
+                raise PermissionError("投票资格已失效（有效发言数不足或已被撤销资格）。")
 
+            # 记录投票
             updated_session = await uow.voting.record_vote(qo)
+
             vote_options = None
             if updated_session.id:
                 vote_options = await uow.voting.get_vote_options(updated_session.id)
@@ -75,6 +83,60 @@ class VotingLogic:
             if not flags:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
             return flags  # (is_anonymous, is_realtime, is_notify)
+
+    async def _get_combined_eligibility_data(
+        self, uow: UnitOfWork, user_id: int, thread_id: int, vote_session: VoteSession
+    ) -> tuple[bool, int, bool]:
+        """
+        内部辅助方法：获取当前上下文和可能的父上下文的用户活动，并返回 eligibility 状态。
+
+        Args:
+            uow: UnitOfWork 实例，用于数据库操作。
+            user_id: 需要检查资格的用户 ID。
+            thread_id: 当前帖子的 ID。
+            vote_session: 当前的投票会话对象，用于检查是否存在关联的父帖子。
+
+        Returns:
+            一个元组 (is_eligible, total_message_count, is_validation_revoked)，包含：
+            - is_eligible (bool): 用户是否拥有投票资格。
+            - total_message_count (int): 用户在当前帖子和父帖子中的总有效发言数。
+            - is_validation_revoked (bool): 用户的投票资格是否因管理员操作而被明确撤销。
+        """
+        # 准备任务列表
+        tasks = []
+
+        # 获取当前帖子活动
+        tasks.append(uow.voting.check_user_eligibility(user_id, thread_id))
+
+        # (可选): 获取继承帖子活动
+        parent_thread_id = None
+        if vote_session and vote_session.objection_id:
+            parent_thread_id = await uow.voting.get_proposal_thread_id_by_objection_id(
+                vote_session.objection_id
+            )
+            if parent_thread_id:
+                tasks.append(uow.voting.check_user_eligibility(user_id, parent_thread_id))
+
+        # 并行执行查询
+        results = await asyncio.gather(*tasks)
+
+        current_activity = results[0]
+        inherited_activity = results[1] if parent_thread_id and len(results) > 1 else None
+
+        # 计算资格
+        is_eligible = EligibilityService.is_eligible(current_activity, inherited_activity)
+
+        # 计算显示用的总发言数
+        total_message_count = (current_activity.message_count if current_activity else 0) + (
+            inherited_activity.message_count if inherited_activity else 0
+        )
+
+        # 获取当前验证状态 (如果当前没记录，默认为有效，除非已被禁言会产生记录)
+        is_validation_revoked = False
+        if current_activity and not current_activity.validation:
+            is_validation_revoked = True
+
+        return is_eligible, total_message_count, is_validation_revoked
 
     async def toggle_anonymous(self, message_id: int) -> VoteDetailDto:
         """切换指定投票的匿名状态。"""
@@ -137,17 +199,24 @@ class VotingLogic:
         准备投票选择视图所需的所有数据。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            # 并行获取所有需要的数据
-            user_activity_task = uow.voting.check_user_eligibility(user_id, thread_id)
-            vote_session_task = uow.voting.get_vote_session_with_details(message_id)
-            user_activity, vote_session = await asyncio.gather(
-                user_activity_task, vote_session_task
-            )
+            # 获取投票会话详情
+            vote_session = await uow.voting.get_vote_session_with_details(message_id)
 
+            if not vote_session or not vote_session.context_message_id:
+                raise ValueError("Vote session not found, cannot prepare panel data.")
+
+            # 获取资格数据 (并行获取当前和继承的活动)
+            (
+                is_eligible,
+                total_message_count,
+                is_validation_revoked,
+            ) = await self._get_combined_eligibility_data(uow, user_id, thread_id, vote_session)
+
+            # 处理选项和当前投票状态
             vote_options_dto = []
             current_votes = {}
 
-            if vote_session and vote_session.id:
+            if vote_session.id:
                 vote_options = await uow.voting.get_vote_options(vote_session.id)
                 vote_details = VotingService.get_vote_details_dto(vote_session, vote_options)
                 vote_options_dto = vote_details.options
@@ -157,15 +226,7 @@ class VotingLogic:
                 for v in user_votes:
                     current_votes[v.choice_index] = v.choice
 
-            message_count = user_activity.message_count if user_activity else 0
-            is_eligible = EligibilityService.is_eligible(user_activity)
-            is_validation_revoked = user_activity.validation is False if user_activity else False
-            is_vote_active = vote_session.status == 1 if vote_session else False
-
-            if not vote_session or not vote_session.context_message_id:
-                raise ValueError(
-                    "Vote session or context_message_id not found, cannot prepare panel data."
-                )
+            is_vote_active = vote_session.status == 1
 
             return VotingChoicePanelDto(
                 guild_id=vote_session.guild_id,
@@ -173,7 +234,7 @@ class VotingLogic:
                 message_id=vote_session.context_message_id,
                 is_eligible=is_eligible,
                 is_vote_active=is_vote_active,
-                message_count=message_count,
+                message_count=total_message_count,
                 is_validation_revoked=is_validation_revoked,
                 options=vote_options_dto,
                 current_votes=current_votes,

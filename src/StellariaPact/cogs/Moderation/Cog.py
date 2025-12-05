@@ -5,23 +5,16 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import \
-    ExecuteProposalResultDto
+from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import ExecuteProposalResultDto
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
-from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import \
-    BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
-from StellariaPact.cogs.Moderation.views.AbandonReasonModal import \
-    AbandonReasonModal
-from StellariaPact.cogs.Moderation.views.ConfirmationView import \
-    ConfirmationView
-from StellariaPact.cogs.Moderation.views.KickProposalModal import \
-    KickProposalModal
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import \
-    ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
+from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
+from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalModal
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
-from StellariaPact.cogs.Moderation.views.VoteOptionsModal import \
-    VoteOptionsModal
+from StellariaPact.cogs.Moderation.views.VoteOptionsModal import VoteOptionsModal
 from StellariaPact.share.auth.PermissionGuard import PermissionGuard
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums.VoteDuration import VoteDuration
