@@ -534,6 +534,11 @@ class ModerationListener(commands.Cog):
                         session.target_id
                     )
                     target_status = ProposalStatus.FINISHED
+                case "proposal_abandonment":
+                    proposal_dto = await self.logic.handle_proposal_abandonment_confirmed(
+                        session.target_id
+                    )
+                    target_status = ProposalStatus.ABANDONED
                 case _:
                     logger.warning(f"未知的确认上下文: {session.context}")
                     return
@@ -567,6 +572,7 @@ class ModerationListener(commands.Cog):
             status_key_map = {
                 ProposalStatus.EXECUTING: "executing",
                 ProposalStatus.FINISHED: "finished",
+                ProposalStatus.ABANDONED: "abandoned",
             }
             status_key = status_key_map.get(target_status)
 

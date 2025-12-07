@@ -14,3 +14,4 @@ class CreateConfirmationSessionQo(BaseDto):
     initiator_id: int
     initiator_role_keys: List[str]
     message_id: int | None = None
+    reason: str | None = None

@@ -31,6 +31,7 @@ class ConfirmationSession(BaseModel, table=True):
         default={}, sa_column=Column(JSON_TYPE), description="已确认的角色及用户ID"
     )
     canceler_id: int | None = Field(default=None, description="取消该会话的用户ID")
+    reason: str | None = Field(default=None, description="执行此操作的原因")
     created_at: datetime = Field(
         default_factory=datetime.utcnow,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},

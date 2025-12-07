@@ -207,6 +207,34 @@ class ModerationLogic:
             integrity_error_message="操作失败：此提案的完成流程刚刚已被另一位管理员发起。",
         )
 
+    async def handle_abandon_proposal(
+        self,
+        channel_id: int,
+        guild_id: int,
+        user_id: int,
+        user_role_ids: set[int],
+        reason: str,
+    ) -> Optional[ExecuteProposalResultDto]:
+        """
+        处理“废弃提案”命令的业务流程。
+        允许废弃 [讨论中/冻结中/执行中] 状态的帖子。
+        """
+        return await self._initiate_proposal_confirmation(
+            channel_id=channel_id,
+            guild_id=guild_id,
+            user_id=user_id,
+            user_role_ids=user_role_ids,
+            expected_status=[
+                ProposalStatus.DISCUSSION,
+                ProposalStatus.FROZEN,
+                ProposalStatus.EXECUTING,
+            ],
+            context="proposal_abandonment",
+            error_message="提案当前状态不是“讨论中”、“冻结中”或“执行中”，无法废弃。",
+            integrity_error_message="操作失败：此提案的废弃流程刚刚已被另一位管理员发起。",
+            reason=reason,
+        )
+
     async def _initiate_proposal_confirmation(
         self,
         channel_id: int,
@@ -217,6 +245,7 @@ class ModerationLogic:
         context: str,
         error_message: str,
         integrity_error_message: str,
+        reason: str | None = None,
     ) -> Optional[ExecuteProposalResultDto]:
         """
         发起提案确认流程的通用私有方法。
@@ -248,6 +277,7 @@ class ModerationLogic:
                     required_roles=["councilModerator", "executionAuditor"],
                     initiator_id=user_id,
                     initiator_role_keys=initiator_role_keys,
+                    reason=reason,
                 )
                 session = await uow.confirmation_session.create_confirmation_session(
                     create_session_qo
@@ -793,6 +823,14 @@ class ModerationLogic:
         """
         return await self._handle_proposal_status_change_confirmed(
             proposal_id, ProposalStatus.FINISHED
+        )
+
+    async def handle_proposal_abandonment_confirmed(self, proposal_id: int) -> ProposalDto | None:
+        """
+        处理提案废弃的确认事件。
+        """
+        return await self._handle_proposal_status_change_confirmed(
+            proposal_id, ProposalStatus.ABANDONED
         )
 
     async def _handle_proposal_status_change_confirmed(

@@ -42,6 +42,7 @@ class ConfirmationSessionService:
             message_id=qo.message_id,
             required_roles=qo.required_roles,
             confirmed_parties=confirmed_parties,
+            reason=qo.reason,
         )
         self.session.add(session)
         await self.session.flush()

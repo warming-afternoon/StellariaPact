@@ -36,6 +36,11 @@ class ModerationEmbedBuilder:
                 ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已进入完成阶段",
                 ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
             },
+            "proposal_abandonment": {
+                ConfirmationStatus.PENDING.value: "⏳ 流程确认中：废弃提案",
+                ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已废弃",
+                ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
+            },
         }
         color_map = {
             ConfirmationStatus.PENDING.value: discord.Color.yellow(),
@@ -77,6 +82,11 @@ class ModerationEmbedBuilder:
         if pending_lines:
             pending_field_value = "\n".join(pending_lines)
             embed.add_field(name="待确认方", value=pending_field_value, inline=False)
+
+        # 如果存在原因，则显示
+        if qo.reason:
+            embed.add_field(name="原因", value=qo.reason, inline=False)
+
         return embed
 
     @staticmethod

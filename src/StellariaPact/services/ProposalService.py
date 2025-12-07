@@ -6,7 +6,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Moderation.qo.AbandonProposalQo import AbandonProposalQo
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.share.enums.ProposalStatus import ProposalStatus
 
@@ -94,31 +93,3 @@ class ProposalService:
         根据提案ID获取提案 ORM 对象。
         """
         return await self.session.get(Proposal, proposal_id)
-
-    async def abandon_proposal(self, qo: AbandonProposalQo) -> Proposal:
-        """
-        废弃一个提案。
-
-        Args:
-            qo: 包含废弃操作所需数据的查询对象。
-
-        Returns:
-            被更新的 Proposal ORM 对象。
-
-        Raises:
-            ValueError: 如果找不到提案或提案状态不正确。
-        """
-        statement = select(Proposal).where(Proposal.discussion_thread_id == qo.thread_id)
-        result = await self.session.exec(statement)
-        proposal = result.one_or_none()
-
-        if not proposal:
-            raise ValueError("未找到关连的提案。")
-        if proposal.status != ProposalStatus.EXECUTING:
-            raise ValueError("只能废弃“执行中”的提案。")
-
-        proposal.status = ProposalStatus.ABANDONED
-        self.session.add(proposal)
-        await self.session.flush()
-        await self.session.refresh(proposal)
-        return proposal

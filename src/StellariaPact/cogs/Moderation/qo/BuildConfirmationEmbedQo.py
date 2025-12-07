@@ -14,3 +14,4 @@ class BuildConfirmationEmbedQo(BaseDto):
     confirmed_parties: Dict[str, int]
     required_roles: List[str]
     role_display_names: Dict[str, str] = {}
+    reason: str | None = None

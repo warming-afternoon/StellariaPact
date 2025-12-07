@@ -137,16 +137,21 @@ class Moderation(commands.Cog):
             interaction, self.logic.handle_complete_proposal, notify_roles
         )
 
-    @app_commands.command(name="废弃", description="[执行监理] 将执行中的提案废弃")
-    @RoleGuard.requireRoles("executionAuditor")
-    async def abandon_proposal(self, interaction: discord.Interaction):
+    @app_commands.command(
+        name="废弃", description="[议事督导+执行监理] 将讨论中、冻结中或执行中的提案废弃"
+    )
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
+    @app_commands.rename(notify_roles="通知相关方")
+    @app_commands.describe(notify_roles="是否在发起确认时通知督导和监理组 (默认为是)")
+    async def abandon_proposal(self, interaction: discord.Interaction, notify_roles: bool = True):
         """
         通过弹出一个模态框来废弃一个提案
 
         Args:
             interaction (discord.Interaction): 命令交互对象。
+            notify_roles (bool): 是否通知相关方，默认为是。
         """
-        modal = AbandonReasonModal(self.bot, self.thread_manager)
+        modal = AbandonReasonModal(self.bot, self.thread_manager, self, notify_roles)
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
     @app_commands.command(name="发起异议", description="对一个提案发起异议")
@@ -403,3 +408,27 @@ class Moderation(commands.Cog):
             await self.bot.api_scheduler.submit(
                 interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
             )
+
+    async def _initiate_abandon_confirmation(
+        self, interaction: discord.Interaction, reason: str, notify_roles: bool
+    ):
+        """发起废弃提案的双重确认流程。
+
+        Args:
+            interaction (discord.Interaction): 交互对象。
+            reason (str): 废弃原因。
+            notify_roles (bool): 是否通知相关方。
+        """
+
+        async def abandon_handler(
+            channel_id: int, guild_id: int, user_id: int, user_role_ids: set[int]
+        ) -> ExecuteProposalResultDto | None:
+            return await self.logic.handle_abandon_proposal(
+                channel_id=channel_id,
+                guild_id=guild_id,
+                user_id=user_id,
+                user_role_ids=user_role_ids,
+                reason=reason,
+            )
+
+        await self._handle_confirmation_command(interaction, abandon_handler, notify_roles)
