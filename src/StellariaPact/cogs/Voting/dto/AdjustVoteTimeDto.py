@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from StellariaPact.dto.VoteSessionDto import VoteSessionDto
+from StellariaPact.dto import VoteSessionDto
 
 
 class AdjustVoteTimeDto(BaseModel):

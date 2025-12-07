@@ -2,14 +2,11 @@ import logging
 
 import discord
 
-from StellariaPact.dto.ConfirmationSessionDto import ConfirmationSessionDto
-from StellariaPact.share.auth.RoleGuard import RoleGuard
-from StellariaPact.share.SafeDefer import safeDefer
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.UnitOfWork import UnitOfWork
-
-from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
-from .ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.qo import BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.views import ModerationEmbedBuilder
+from StellariaPact.dto import ConfirmationSessionDto
+from StellariaPact.share import StellariaPactBot, UnitOfWork, safeDefer
+from StellariaPact.share.auth import RoleGuard
 
 logger = logging.getLogger(__name__)
 

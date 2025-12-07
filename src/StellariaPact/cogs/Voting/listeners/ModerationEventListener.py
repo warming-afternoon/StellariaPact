@@ -4,28 +4,25 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import (
-    HandleSupportObjectionResultDto,
+from StellariaPact.cogs.Voting.dto import OptionResult, VoteDetailDto
+from StellariaPact.cogs.Voting.qo import BuildFirstObjectionEmbedQo, CreateVoteSessionQo
+from StellariaPact.cogs.Voting.views import (
+    ObjectionCreationVoteView,
+    ObjectionFormalVoteView,
+    ObjectionVoteEmbedBuilder,
+    VoteEmbedBuilder,
+    VoteView,
+    VotingChannelView,
 )
-from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
-from StellariaPact.cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from StellariaPact.cogs.Moderation.views.ObjectionCreationVoteView import ObjectionCreationVoteView
-from StellariaPact.cogs.Voting.dto.OptionResult import OptionResult
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
-from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
-from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import ObjectionFormalVoteView
-from StellariaPact.cogs.Voting.views.ObjectionVoteEmbedBuilder import ObjectionVoteEmbedBuilder
-from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
-from StellariaPact.cogs.Voting.views.VoteView import VoteView
-from StellariaPact.cogs.Voting.views.VotingChannelView import VotingChannelView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
-from StellariaPact.dto.ProposalDto import ProposalDto
-from StellariaPact.share.DiscordUtils import DiscordUtils
+from StellariaPact.dto import (
+    HandleSupportObjectionResultDto,
+    ObjectionDetailsDto,
+    ObjectionVotePanelDto,
+    ProposalDto,
+)
+from StellariaPact.share import DiscordUtils, StellariaPactBot, TimeUtils, UnitOfWork
 from StellariaPact.share.enums.VoteDuration import VoteDuration
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.TimeUtils import TimeUtils
-from StellariaPact.share.UnitOfWork import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -36,39 +33,31 @@ class ModerationEventListener(commands.Cog):
         self.logic: VotingLogic = VotingLogic(bot)
 
     @commands.Cog.listener()
-    async def on_proposal_created(
+    async def on_vote_session_created(
         self,
         proposal_dto: ProposalDto,
         options: list[str],
-        duration_hours: int = VoteDuration.PROPOSAL_DEFAULT,
-        anonymous: bool = True,
-        realtime: bool = True,
-        notify: bool = True,
-        create_in_voting_channel: bool = True,
-        notify_creation_role: bool = True,
+        duration_hours: int,
+        anonymous: bool,
+        realtime: bool,
+        notify: bool,
+        create_in_voting_channel: bool,
+        notify_creation_role: bool,
+        thread: discord.Thread,
     ):
         """
-        监听到提案成功创建的事件，为其创建投票面板，并尝试同步到投票频道
-        采用两阶段提交模
+        为提案讨论帖创建投票面板，并尝试同步到投票频道
+        采用两阶段提交模式
         """
-        logger.info(f"接收到 'proposal_created' 事件, 提案ID: {proposal_dto.id}")
+        logger.info(f"接收到 'vote_session_created' 事件, 提案ID: {proposal_dto.id}")
         session_dto = None
         message = None
-        thread = None
         end_time = None
         try:
             # --- 创建帖子内投票 ---
             if not proposal_dto.discussion_thread_id:
                 logger.warning(
                     f"提案 {proposal_dto.id} 没有关联的 discussion_thread_id，无法创建投票面板。"
-                )
-                return
-
-            thread = await DiscordUtils.fetch_thread(self.bot, proposal_dto.discussion_thread_id)
-            if not thread:
-                logger.warning(
-                    f"无法找到帖子 {proposal_dto.discussion_thread_id}，"
-                    f"无法为提案 {proposal_dto.id} 创建投票面板。"
                 )
                 return
 

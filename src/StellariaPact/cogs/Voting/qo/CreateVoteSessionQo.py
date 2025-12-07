@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from StellariaPact.share.BaseDto import BaseDto
+from StellariaPact.share import BaseDto
 
 
 class CreateVoteSessionQo(BaseDto):

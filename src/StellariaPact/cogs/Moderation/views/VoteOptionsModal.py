@@ -1,13 +1,12 @@
-# Moderation/views/VoteOptionsModal.py
 from typing import TYPE_CHECKING, Any, List
 
 import discord
 
-from StellariaPact.share.SafeDefer import safeDefer
+from StellariaPact.share import safeDefer
 
 if TYPE_CHECKING:
-    from ....cogs.Moderation.Cog import Moderation
-    from ....share.StellariaPactBot import StellariaPactBot
+    from StellariaPact.cogs.Moderation.Cog import Moderation
+    from StellariaPact.share import StellariaPactBot
 
 
 class VoteOptionsModal(discord.ui.Modal, title="设置投票选项"):
@@ -53,7 +52,7 @@ class VoteOptionsModal(discord.ui.Modal, title="设置投票选项"):
             if opt.value and opt.value.strip()
         ]
 
-        await self.moderation_cog.process_proposal_and_vote_creation(
+        await self.moderation_cog.process_vote_creation(
             interaction=interaction,
             options=options,
             duration_hours=self.command_args["duration_hours"],

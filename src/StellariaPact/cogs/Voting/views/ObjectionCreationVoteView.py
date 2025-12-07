@@ -3,10 +3,10 @@ from typing import TYPE_CHECKING, Literal
 
 import discord
 
-from ....share.SafeDefer import safeDefer
+from StellariaPact.share import safeDefer
 
 if TYPE_CHECKING:
-    from ....share.StellariaPactBot import StellariaPactBot
+    from StellariaPact.share import StellariaPactBot
 
 
 logger = logging.getLogger(__name__)

@@ -1,7 +1,7 @@
 from typing import Optional
 
-from ....cogs.Moderation.qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
-from ....share.BaseDto import BaseDto
+from StellariaPact.cogs.Moderation.qo import BuildCollectionExpiredEmbedQo
+from StellariaPact.share.BaseDto import BaseDto
 
 
 class CollectionExpiredResultDto(BaseDto):

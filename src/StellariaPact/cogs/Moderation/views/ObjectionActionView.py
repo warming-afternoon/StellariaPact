@@ -2,11 +2,9 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.views.EditObjectionReasonModal import EditObjectionReasonModal
-from StellariaPact.cogs.Moderation.views.ObjectionReviewReasonModal import (
-    ObjectionReviewReasonModal,
-)
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share import StellariaPactBot
+
+from . import EditObjectionReasonModal, ObjectionReviewReasonModal
 
 logger = logging.getLogger(__name__)
 

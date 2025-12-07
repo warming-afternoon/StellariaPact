@@ -1,7 +1,7 @@
 from typing import Dict
 
-from ....dto.ConfirmationSessionDto import ConfirmationSessionDto
-from ....share.BaseDto import BaseDto
+from StellariaPact.dto.ConfirmationSessionDto import ConfirmationSessionDto
+from StellariaPact.share.BaseDto import BaseDto
 
 
 class ExecuteProposalResultDto(BaseDto):

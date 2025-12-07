@@ -4,16 +4,16 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ext import commands
 
-from ....cogs.Moderation.dto.CollectionExpiredResultDto import CollectionExpiredResultDto
-from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
-from ....cogs.Voting.dto.VoteStatusDto import VoteStatusDto
-from ....dto.VoteSessionDto import VoteSessionDto
-from ....share.DiscordUtils import DiscordUtils
-from ..ModerationLogic import ModerationLogic
-from ..thread_manager import ProposalThreadManager
+from StellariaPact.cogs.Moderation import ModerationLogic
+from StellariaPact.cogs.Moderation.dto import CollectionExpiredResultDto
+from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
+from StellariaPact.cogs.Moderation.views import ModerationEmbedBuilder
+from StellariaPact.cogs.Voting.dto import VoteStatusDto
+from StellariaPact.dto import VoteSessionDto
+from StellariaPact.share import DiscordUtils
 
 if TYPE_CHECKING:
-    from StellariaPact.share.StellariaPactBot import StellariaPactBot
+    from StellariaPact.share import StellariaPactBot
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Optional
 
-from ....share.BaseDto import BaseDto
-from ....share.enums.ObjectionStatus import ObjectionStatus
+from StellariaPact.share import BaseDto
+from StellariaPact.share.enums import ObjectionStatus
 
 
 class CreateObjectionAndVoteSessionShellQo(BaseDto):

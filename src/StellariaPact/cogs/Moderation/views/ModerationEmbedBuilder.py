@@ -4,13 +4,15 @@ from zoneinfo import ZoneInfo
 
 import discord
 
-from ....share.enums.ConfirmationStatus import ConfirmationStatus
-from ..qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
-from ..qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
-from ..qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
-from ..qo.BuildObjectionReviewResultEmbedQo import BuildObjectionReviewResultEmbedQo
-from ..qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
-from ..qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
+from StellariaPact.cogs.Moderation.qo import (
+    BuildAdminReviewEmbedQo,
+    BuildCollectionExpiredEmbedQo,
+    BuildConfirmationEmbedQo,
+    BuildObjectionReviewResultEmbedQo,
+    BuildProposalFrozenEmbedQo,
+    BuildVoteResultEmbedQo,
+)
+from StellariaPact.share.enums import ConfirmationStatus
 
 
 class ModerationEmbedBuilder:

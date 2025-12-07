@@ -1,6 +1,6 @@
 from typing import Optional
 
-from StellariaPact.dto.UserActivityDto import UserActivityDto
+from StellariaPact.dto import UserActivityDto
 
 
 class EligibilityService:

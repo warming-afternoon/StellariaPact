@@ -5,23 +5,22 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation.dto.ExecuteProposalResultDto import ExecuteProposalResultDto
+from StellariaPact.cogs.Moderation.dto import ExecuteProposalResultDto
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
-from StellariaPact.cogs.Moderation.qo.BuildConfirmationEmbedQo import BuildConfirmationEmbedQo
+from StellariaPact.cogs.Moderation.qo import BuildConfirmationEmbedQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
-from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
-from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalModal
-from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
-from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
-from StellariaPact.cogs.Moderation.views.VoteOptionsModal import VoteOptionsModal
-from StellariaPact.dto.ProposalDto import ProposalDto
-from StellariaPact.share.auth.PermissionGuard import PermissionGuard
-from StellariaPact.share.auth.RoleGuard import RoleGuard
-from StellariaPact.share.enums.VoteDuration import VoteDuration
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.StringUtils import StringUtils
-from StellariaPact.share.UnitOfWork import UnitOfWork
+from StellariaPact.cogs.Moderation.views import (
+    AbandonReasonModal,
+    ConfirmationView,
+    KickProposalModal,
+    ModerationEmbedBuilder,
+    ObjectionModal,
+    VoteOptionsModal,
+)
+from StellariaPact.dto import ProposalDto
+from StellariaPact.share import StellariaPactBot, StringUtils, UnitOfWork, safeDefer
+from StellariaPact.share.auth import PermissionGuard, RoleGuard
+from StellariaPact.share.enums import VoteDuration
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +231,7 @@ class Moderation(commands.Cog):
         )
         await interaction.response.send_modal(modal)
 
-    async def process_proposal_and_vote_creation(
+    async def process_vote_creation(
         self,
         interaction: discord.Interaction,
         options: list[str],
@@ -244,13 +243,18 @@ class Moderation(commands.Cog):
         notify_creation_role: bool,
     ):
         """由 VoteOptionsModal 提交后调用的核心逻辑"""
+        await safeDefer(interaction)
+
         if not isinstance(interaction.channel, discord.Thread):
             return
 
         # 权限检查
         can_create = await PermissionGuard.can_manage_vote(interaction)
         if not can_create:
-            await interaction.edit_original_response(content="您没有权限在此帖子中创建投票。")
+            content = "您没有权限在此帖子中创建投票。"
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send(content, ephemeral=True), 1
+            )
             return
 
         thread = interaction.channel
@@ -258,8 +262,9 @@ class Moderation(commands.Cog):
         try:
             raw_content = await StringUtils.extract_starter_content(thread)
             if not raw_content:
-                await interaction.edit_original_response(
-                    content="无法获取帖子的首楼内容，操作失败。"
+                content = "无法获取帖子的首楼内容，操作失败。"
+                await self.bot.api_scheduler.submit(
+                    interaction.followup.send(content, ephemeral=True), 1
                 )
                 return
 
@@ -285,21 +290,29 @@ class Moderation(commands.Cog):
             # 派发事件以创建投票
             if proposal_dto:
                 self.bot.dispatch(
-                    "proposal_created",
-                    proposal_dto,
-                    options,
-                    duration_hours,
-                    anonymous,
-                    realtime,
-                    notify,
-                    create_in_voting_channel,
-                    notify_creation_role,
+                    "vote_session_created",
+                    proposal_dto=proposal_dto,
+                    options=options,
+                    duration_hours=duration_hours,
+                    anonymous=anonymous,
+                    realtime=realtime,
+                    notify=notify,
+                    create_in_voting_channel=create_in_voting_channel,
+                    notify_creation_role=notify_creation_role,
+                    thread=thread,
                 )
             else:
-                await interaction.followup.send(content="处理提案信息失败，无法创建投票。")
+                content = "处理提案信息失败，无法创建投票。"
+                await self.bot.api_scheduler.submit(
+                    interaction.followup.send(content, ephemeral=True), 1
+                )
+
         except Exception as e:
             logger.error(f"手动创建提案投票时出错: {e}", exc_info=True)
-            await interaction.followup.send(content=f"发生错误: {e}")
+            content = f"发生错误: {e}"
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send(content, ephemeral=True), 1
+            )
 
     # --- 私有方法 ---
 

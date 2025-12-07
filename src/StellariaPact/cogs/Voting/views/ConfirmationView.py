@@ -2,8 +2,7 @@ from typing import Awaitable, Callable
 
 import discord
 
-from StellariaPact.share.SafeDefer import safeDefer
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share import StellariaPactBot, safeDefer
 
 
 class ConfirmationView(discord.ui.View):

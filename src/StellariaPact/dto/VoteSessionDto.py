@@ -3,7 +3,7 @@ from typing import Optional
 
 from sqlmodel import Field
 
-from StellariaPact.share.BaseDto import BaseDto
+from StellariaPact.share import BaseDto
 
 
 class VoteSessionDto(BaseDto):

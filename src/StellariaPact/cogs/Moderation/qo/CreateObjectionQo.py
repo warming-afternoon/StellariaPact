@@ -1,5 +1,5 @@
-from StellariaPact.share.BaseDto import BaseDto
-from StellariaPact.share.enums.ObjectionStatus import ObjectionStatus
+from StellariaPact.share import BaseDto
+from StellariaPact.share.enums import ObjectionStatus
 
 
 class CreateObjectionQo(BaseDto):

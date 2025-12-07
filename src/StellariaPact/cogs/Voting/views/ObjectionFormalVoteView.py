@@ -2,8 +2,7 @@ import logging
 
 import discord
 
-from StellariaPact.share.SafeDefer import safeDefer
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share import StellariaPactBot, safeDefer
 
 logger = logging.getLogger(__name__)
 

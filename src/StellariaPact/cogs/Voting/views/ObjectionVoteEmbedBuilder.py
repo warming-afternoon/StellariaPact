@@ -1,12 +1,9 @@
 import discord
 
-from StellariaPact.cogs.Moderation.dto.HandleSupportObjectionResultDto import (
-    HandleSupportObjectionResultDto,
-)
-from StellariaPact.cogs.Moderation.dto.ObjectionDetailsDto import ObjectionDetailsDto
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
-from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-from StellariaPact.cogs.Voting.qo.BuildFirstObjectionEmbedQo import BuildFirstObjectionEmbedQo
+from StellariaPact.cogs.Voting import EligibilityService
+from StellariaPact.cogs.Voting.dto import VoteDetailDto
+from StellariaPact.cogs.Voting.qo import BuildFirstObjectionEmbedQo
+from StellariaPact.dto import HandleSupportObjectionResultDto, ObjectionDetailsDto
 
 
 class ObjectionVoteEmbedBuilder:
@@ -90,7 +87,7 @@ class ObjectionVoteEmbedBuilder:
             )
 
         embed.set_footer(
-            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
+            text=f"投票资格 : 在本帖及原讨论帖内总有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
             f"有效发言 : 去除表情后, 长度 ≥ 5"
         )
         return embed

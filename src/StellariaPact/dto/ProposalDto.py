@@ -1,4 +1,5 @@
-from ..share.BaseDto import BaseDto
+from StellariaPact.share.BaseDto import BaseDto
+
 from ..share.enums.ProposalStatus import ProposalStatus
 
 

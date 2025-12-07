@@ -7,12 +7,9 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Voting.dto.AdjustVoteTimeDto import AdjustVoteTimeDto
-from StellariaPact.cogs.Voting.dto.OptionResult import OptionResult
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto, VoterInfo
-from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
-from StellariaPact.dto.VoteSessionDto import VoteSessionDto
+from StellariaPact.cogs.Voting.dto import AdjustVoteTimeDto, OptionResult, VoteDetailDto, VoterInfo
+from StellariaPact.cogs.Voting.qo import AdjustVoteTimeQo, CreateVoteSessionQo
+from StellariaPact.dto import VoteSessionDto
 from StellariaPact.models.Objection import Objection
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.UserVote import UserVote
@@ -163,7 +160,7 @@ class VoteSessionService:
             select(VoteSession)
             .where(VoteSession.end_time != None)  # noqa: E711
             .where(VoteSession.status == 1)  # 1 表示 "进行中"
-            .where(VoteSession.end_time <= now_utc)  # type: ignore
+            .where(VoteSession.end_time <= now_utc.replace(tzinfo=None))  # type: ignore
         )
         result = await self.session.exec(statement)
         sessions = result.all()
@@ -194,7 +191,6 @@ class VoteSessionService:
             raise ValueError("投票已经结束，无法调整时间。")
 
         # 如果当前没有结束时间，则以当前时间为基准
-        # 确保基础时间是时区感知的 (UTC)
         base_time = vote_session.end_time or datetime.now(timezone.utc)
         if base_time.tzinfo is None:
             base_time = base_time.replace(tzinfo=timezone.utc)
@@ -202,7 +198,7 @@ class VoteSessionService:
         old_end_time = base_time
         new_end_time = old_end_time + timedelta(hours=qo.hours_to_adjust)
 
-        vote_session.end_time = new_end_time
+        vote_session.end_time = new_end_time.replace(tzinfo=None)
         await self.session.flush()
 
         return AdjustVoteTimeDto(

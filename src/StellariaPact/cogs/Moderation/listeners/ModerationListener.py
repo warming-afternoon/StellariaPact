@@ -7,29 +7,32 @@ import discord
 from discord.ext import commands, tasks
 from sqlalchemy import select, update
 
-from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
-from StellariaPact.dto.ConfirmationSessionDto import ConfirmationSessionDto
-from StellariaPact.models.UserActivity import UserActivity
-
-from ....cogs.Moderation.dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
-from ....cogs.Moderation.dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from ....cogs.Moderation.dto.SubsequentObjectionDto import SubsequentObjectionDto
-from ....cogs.Moderation.qo.BuildAdminReviewEmbedQo import BuildAdminReviewEmbedQo
-from ....cogs.Moderation.qo.BuildProposalFrozenEmbedQo import BuildProposalFrozenEmbedQo
-from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
-from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
-from ....cogs.Moderation.views.ObjectionManageView import ObjectionManageView
-from ....dto.ProposalDto import ProposalDto
-from ....share.DiscordUtils import DiscordUtils
-from ....share.enums.ProposalStatus import ProposalStatus
-from ....share.SafeDefer import safeDefer
-from ....share.StringUtils import StringUtils
-from ....share.UnitOfWork import UnitOfWork
-from ..ModerationLogic import ModerationLogic
-from ..thread_manager import ProposalThreadManager
+from StellariaPact.cogs.Moderation.dto import SubsequentObjectionDto
+from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
+from StellariaPact.cogs.Moderation.qo import (
+    BuildAdminReviewEmbedQo,
+    BuildProposalFrozenEmbedQo,
+    EditObjectionReasonQo,
+    ObjectionSupportQo,
+)
+from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
+from StellariaPact.cogs.Moderation.views import (
+    ModerationEmbedBuilder,
+    ObjectionManageView,
+    ObjectionModal,
+)
+from StellariaPact.dto import (
+    ConfirmationSessionDto,
+    HandleSupportObjectionResultDto,
+    ObjectionVotePanelDto,
+    ProposalDto,
+)
+from StellariaPact.models import UserActivity
+from StellariaPact.share import DiscordUtils, StringUtils, UnitOfWork, safeDefer
+from StellariaPact.share.enums import ProposalStatus
 
 if TYPE_CHECKING:
-    from ....share.StellariaPactBot import StellariaPactBot
+    from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 
 logger = logging.getLogger(__name__)
@@ -583,3 +586,66 @@ class ModerationListener(commands.Cog):
 
         except Exception as e:
             logger.error(f"更新帖子 {thread_id} 状态时发生未知错误: {e}", exc_info=True)
+
+    @commands.Cog.listener()
+    async def on_vote_view_raise_objection_clicked(self, interaction: discord.Interaction):
+        """处理来自帖子内投票视图"发起异议"按钮的点击"""
+        try:
+            # 既然是从帖子内点击，可以直接获取信息
+            if not interaction.channel or not interaction.guild:
+                await interaction.response.send_message("此交互似乎已失效。", ephemeral=True)
+                return
+
+            # 构建提案链接
+            proposal_link = (
+                f"https://discord.com/channels/{interaction.guild.id}/{interaction.channel.id}"
+            )
+
+            # 创建并预填异议模态框
+            modal = ObjectionModal(self.bot, proposal_link=proposal_link)
+
+            # 发送模态框给用户
+            await interaction.response.send_modal(modal)
+
+        except Exception as e:
+            logger.error(f"处理帖子内发起异议点击时出错: {e}", exc_info=True)
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message("处理请求时出错", ephemeral=True), 1
+            )
+
+    @commands.Cog.listener()
+    async def on_voting_channel_raise_objection_clicked(self, interaction: discord.Interaction):
+        """处理来自投票频道"发起异议"按钮的点击"""
+        try:
+            if not interaction.message or not interaction.guild:
+                await interaction.response.send_message("此交互似乎已失效。", ephemeral=True)
+                return
+
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                session = await uow.vote_session.get_vote_session_by_voting_channel_message_id(
+                    interaction.message.id
+                )
+
+                if not session or not session.context_thread_id:
+                    await interaction.response.send_message(
+                        "找不到关联的原始投票信息。", ephemeral=True
+                    )
+                    return
+
+                # 在 with 块内部安全地访问 session 对象的属性，并存入局部变量
+                context_thread_id = session.context_thread_id
+                guild_id = interaction.guild.id
+
+            # 构建提案链接
+            proposal_link = f"https://discord.com/channels/{guild_id}/{context_thread_id}"
+
+            # 创建异议模态框
+            modal = ObjectionModal(self.bot, proposal_link=proposal_link)
+
+            await interaction.response.send_modal(modal)
+
+        except Exception as e:
+            logger.error(f"处理投票频道发起异议点击时出错: {e}", exc_info=True)
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message("处理请求时出错", ephemeral=True), 1
+            )

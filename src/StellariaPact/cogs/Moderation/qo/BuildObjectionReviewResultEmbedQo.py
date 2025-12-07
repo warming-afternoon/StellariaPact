@@ -1,4 +1,4 @@
-from StellariaPact.share.BaseDto import BaseDto
+from StellariaPact.share import BaseDto
 
 
 class BuildObjectionReviewResultEmbedQo(BaseDto):

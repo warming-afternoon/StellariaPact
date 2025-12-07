@@ -1,22 +1,24 @@
 import asyncio
 import logging
 
-from StellariaPact.cogs.Moderation.Cog import Moderation
-from StellariaPact.cogs.Moderation.listeners.ModerationListener import (
-    ModerationListener,
-)
-from StellariaPact.cogs.Moderation.listeners.NotificationEventListener import (
-    NotificationEventListener,
-)
-from StellariaPact.cogs.Moderation.listeners.VotingEventListener import VotingEventListener
-from StellariaPact.cogs.Moderation.tasks.ThreadReconciliation import (
-    ThreadReconciliation,
-)
-from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share import StellariaPactBot
 
-from .views.ObjectionCreationVoteView import ObjectionCreationVoteView
+from .Cog import Moderation
+from .listeners import ModerationListener, NotificationEventListener, VotingEventListener
+from .ModerationLogic import ModerationLogic
+from .tasks import ThreadReconciliation
+from .views import ConfirmationView, ObjectionManageView
+
+__all__ = [
+    "Moderation",
+    "ModerationLogic",
+    "ModerationListener",
+    "NotificationEventListener",
+    "VotingEventListener",
+    "ThreadReconciliation",
+    "ConfirmationView",
+    "ObjectionManageView",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,6 @@ async def setup(bot: StellariaPactBot):
     # 为持久化视图注册
     bot.add_view(ConfirmationView(bot))
     bot.add_view(ObjectionManageView(bot))
-    bot.add_view(ObjectionCreationVoteView(bot))
 
     cogs_to_load = [
         Moderation(bot),

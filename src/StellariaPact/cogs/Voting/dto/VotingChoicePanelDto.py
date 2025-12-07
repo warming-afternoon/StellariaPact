@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from StellariaPact.cogs.Voting.dto.OptionResult import OptionResult
+from StellariaPact.cogs.Voting.dto import OptionResult
 
 
 @dataclass

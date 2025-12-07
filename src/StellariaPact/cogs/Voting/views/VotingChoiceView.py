@@ -3,13 +3,14 @@ from typing import Any, Callable, Coroutine, Optional
 
 import discord
 
-from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
-from StellariaPact.cogs.Voting.views.AdjustTimeModal import AdjustTimeModal
-from StellariaPact.cogs.Voting.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Voting.views.ReopenVoteModal import ReopenVoteModal
-from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
-from StellariaPact.share.SafeDefer import safeDefer
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.cogs.Voting.dto import VotingChoicePanelDto
+from StellariaPact.cogs.Voting.views import (
+    AdjustTimeModal,
+    ConfirmationView,
+    ReopenVoteModal,
+    VoteEmbedBuilder,
+)
+from StellariaPact.share import StellariaPactBot, safeDefer
 
 logger = logging.getLogger(__name__)
 

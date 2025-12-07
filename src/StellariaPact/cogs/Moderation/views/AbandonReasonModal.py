@@ -4,8 +4,7 @@ from typing import TYPE_CHECKING
 import discord
 
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
-from StellariaPact.share.SafeDefer import safeDefer
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share import StellariaPactBot, safeDefer
 
 if TYPE_CHECKING:
     from StellariaPact.cogs.Moderation.Cog import Moderation

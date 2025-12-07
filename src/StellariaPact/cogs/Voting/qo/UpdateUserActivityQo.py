@@ -1,6 +1,6 @@
 from typing import Literal
 
-from StellariaPact.share.BaseDto import BaseDto
+from StellariaPact.share import BaseDto
 
 
 class UpdateUserActivityQo(BaseDto):

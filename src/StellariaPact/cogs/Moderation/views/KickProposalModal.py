@@ -3,10 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 import discord
 
-from ....cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
-from ....share.SafeDefer import safeDefer
-from ....share.StellariaPactBot import StellariaPactBot
-from ....share.UnitOfWork import UnitOfWork
+from StellariaPact.cogs.Moderation.views import ModerationEmbedBuilder
+from StellariaPact.share import StellariaPactBot, UnitOfWork, safeDefer
 
 logger = logging.getLogger(__name__)
 

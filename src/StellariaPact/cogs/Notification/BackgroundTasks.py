@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands, tasks
 
 from StellariaPact.cogs.Notification.NotificationLogic import NotificationLogic
-from StellariaPact.dto.AnnouncementDto import AnnouncementDto
+from StellariaPact.dto import AnnouncementDto
 from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from StellariaPact.share.DiscordUtils import DiscordUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot

@@ -1,6 +1,6 @@
 from typing import Dict, List
 
-from ....share.BaseDto import BaseDto
+from StellariaPact.share import BaseDto
 
 
 class BuildConfirmationEmbedQo(BaseDto):

@@ -3,12 +3,10 @@ import logging
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
-from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
-from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
+from StellariaPact.cogs.Voting.qo import DeleteVoteQo, RecordVoteQo
+from StellariaPact.cogs.Voting.views import VoteEmbedBuilder, VotingChoiceView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
-from StellariaPact.share.SafeDefer import safeDefer
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share import DiscordUtils, PermissionGuard, StellariaPactBot, safeDefer
 
 logger = logging.getLogger(__name__)
 
@@ -193,3 +191,48 @@ class ViewEventListener(commands.Cog):
         self, *, interaction: discord.Interaction, message_id: int, thread_id: int
     ):
         await self._handle_toggle_action(interaction, message_id, "toggle_notify", "投票结束通知")
+
+    @commands.Cog.listener()
+    async def on_manage_vote_button_clicked(self, interaction: discord.Interaction):
+        """
+        处理来自 VoteView 的 manage_vote_button 点击事件。
+        """
+        if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("此功能仅在帖子内可用。", ephemeral=True), priority=1
+            )
+            return
+
+        if not interaction.message:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("无法找到原始投票消息，请重试。", ephemeral=True),
+                priority=1,
+            )
+            return
+
+        try:
+            panel_data = await self.logic.prepare_voting_choice_data(
+                user_id=interaction.user.id,
+                thread_id=interaction.channel.id,
+                message_id=interaction.message.id,
+            )
+
+            embed = VoteEmbedBuilder.create_management_panel_embed(
+                jump_url=interaction.message.jump_url, panel_data=panel_data
+            )
+
+            can_manage = await PermissionGuard.can_manage_vote(interaction)
+
+            choice_view = VotingChoiceView(
+                bot=self.bot,
+                original_message_id=interaction.message.id,
+                thread_id=interaction.channel.id,
+                panel_data=panel_data,
+                can_manage=can_manage,
+            )
+            await DiscordUtils.send_private_panel(
+                self.bot, interaction, embed=embed, view=choice_view
+            )
+        except Exception as e:
+            logger.error(f"处理管理投票面板时出错: {e}", exc_info=True)
+            await interaction.followup.send(f"处理投票管理面板时出错: {e}", ephemeral=True)

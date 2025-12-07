@@ -3,13 +3,15 @@ import json
 import logging
 import os
 import sys
-from pathlib import Path
 
 import aiorun
 import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
+from StellariaPact.cogs.Moderation.Cog import Moderation
+from StellariaPact.cogs.Notification.Cog import Notification
+from StellariaPact.cogs.Voting.Cog import Voting
 from StellariaPact.share.ApiScheduler import APIScheduler
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.DatabaseHandler import get_db_handler, initialize_db_handler
@@ -102,26 +104,19 @@ async def main_async():
             return
 
         logger.info("开始加载所有 Cogs...")
-        cogs_path = Path(__file__).parent / "cogs"
-        cog_load_tasks = []
-        for cog_dir in cogs_path.iterdir():
-            if cog_dir.is_dir() and (cog_dir / "__init__.py").exists():
-                extension_path = f"StellariaPact.cogs.{cog_dir.name}"
-                cog_load_tasks.append(bot.load_extension(extension_path))
+        cogs_to_load = [
+            Moderation(bot),
+            Notification(bot),
+            Voting(bot),
+        ]
+        cog_load_tasks = [bot.add_cog(cog) for cog in cogs_to_load]
+        try:
+            await asyncio.gather(*cog_load_tasks)
+            for cog in cogs_to_load:
+                logger.info(f"成功加载 Cog: {cog.qualified_name}")
+        except Exception as e:
+            logger.exception(f"加载 Cogs 时发生错误: {e}")
 
-        if cog_load_tasks:
-            results = await asyncio.gather(*cog_load_tasks, return_exceptions=True)
-            # 检查 Cogs 加载结果
-            cog_names = [
-                cog.name
-                for cog in cogs_path.iterdir()
-                if cog.is_dir() and (cog / "__init__.py").exists()
-            ]
-            for result, name in zip(results, cog_names):
-                if isinstance(result, Exception):
-                    logger.exception(f"加载 Cog '{name}' 失败: {result}")
-                else:
-                    logger.info(f"成功加载 Cog: {name}")
         logger.info("所有 Cogs 加载完成。")
 
         logger.info("正在同步命令...")

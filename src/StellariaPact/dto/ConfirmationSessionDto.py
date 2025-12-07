@@ -2,7 +2,7 @@ from typing import Dict, List, Optional
 
 from pydantic import Field
 
-from ..share.BaseDto import BaseDto
+from StellariaPact.share.BaseDto import BaseDto
 
 
 class ConfirmationSessionDto(BaseDto):

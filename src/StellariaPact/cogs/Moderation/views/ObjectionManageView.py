@@ -2,11 +2,9 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Moderation.views.ObjectionActionView import ObjectionActionView
-from StellariaPact.share.auth.RoleGuard import RoleGuard
-from StellariaPact.share.SafeDefer import safeDefer
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.UnitOfWork import UnitOfWork
+from StellariaPact.share import RoleGuard, StellariaPactBot, UnitOfWork, safeDefer
+
+from . import ObjectionActionView
 
 logger = logging.getLogger(__name__)
 

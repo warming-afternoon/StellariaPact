@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from ....share.BaseDto import BaseDto
+from StellariaPact.share.BaseDto import BaseDto
 
 
 class HandleSupportObjectionResultDto(BaseDto):

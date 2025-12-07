@@ -4,22 +4,23 @@ from typing import List, Optional
 
 import discord
 
-from StellariaPact.cogs.Voting.dto.OptionResult import OptionResult
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
-from StellariaPact.cogs.Voting.dto.VoteStatusDto import VoteStatusDto
-from StellariaPact.cogs.Voting.dto.VotingChoicePanelDto import VotingChoicePanelDto
-from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-from StellariaPact.cogs.Voting.qo.AdjustVoteTimeQo import AdjustVoteTimeQo
-from StellariaPact.cogs.Voting.qo.DeleteVoteQo import DeleteVoteQo
-from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
-from StellariaPact.dto.UserActivityDto import UserActivityDto
-from StellariaPact.dto.UserVoteDto import UserVoteDto
+from StellariaPact.cogs.Voting import EligibilityService
+from StellariaPact.cogs.Voting.dto import (
+    OptionResult,
+    VoteDetailDto,
+    VoteStatusDto,
+    VotingChoicePanelDto,
+)
+from StellariaPact.cogs.Voting.qo import (
+    AdjustVoteTimeQo,
+    DeleteVoteQo,
+    RecordVoteQo,
+    UpdateUserActivityQo,
+)
+from StellariaPact.dto import UserActivityDto, UserVoteDto, VoteSessionDto
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.services.VoteSessionService import VoteSessionService
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.TimeUtils import TimeUtils
-from StellariaPact.share.UnitOfWork import UnitOfWork
+from StellariaPact.share import StellariaPactBot, TimeUtils, UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,7 @@ class VotingLogic:
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 先获取会话，以便知道是否需要检查父帖子
-            vote_session = await uow.vote_session.get_vote_session_by_context_message_id(
-                qo.message_id
-            )
+            vote_session = await uow.vote_session.get_vote_session_with_details(qo.message_id)
             if not vote_session:
                 raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
 
@@ -400,24 +399,28 @@ class VotingLogic:
                 result_dto.old_end_time,
             )
 
-    async def tally_and_close_session(self, vote_session_id: int) -> VoteStatusDto:
+    async def tally_and_close_session(self, vote_session: VoteSessionDto) -> VoteStatusDto:
         """
         计票并关闭一个投票会话。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            vote_session = await uow.vote_session.get_vote_session_with_details(vote_session_id)
+            if not vote_session.context_message_id:
+                raise ValueError("无法计票：缺少关联的消息ID。")
+            vote_session_dto = await uow.vote_session.get_vote_session_with_details(
+                vote_session.context_message_id
+            )
 
-            if not vote_session:
-                raise ValueError(f"找不到ID为 {vote_session_id} 的投票会话")
+            if not vote_session_dto:
+                raise ValueError(f"找不到ID为 {vote_session.id} 的投票会话")
 
             # 从已加载的关系中获取投票
-            all_votes = vote_session.userVotes
+            all_votes = vote_session_dto.userVotes
             option_results: List[OptionResult] = []
             total_approve_votes = 0
             total_reject_votes = 0
 
             # 单独查询投票选项
-            options = await uow.vote_option.get_vote_options(vote_session_id)
+            options = await uow.vote_option.get_vote_options(vote_session.id)
             if options:
                 for option in options:
                     approve = sum(
@@ -446,21 +449,21 @@ class VotingLogic:
                 total_reject_votes = sum(1 for v in all_votes if v.choice == 0)
 
             # 更新会话状态
-            vote_session.status = 0  # 已结束
+            vote_session_dto.status = 0  # 已结束
             await uow.flush()
 
             voters_dto_list = (
                 [UserVoteDto.model_validate(vote) for vote in all_votes]
-                if not vote_session.anonymous_flag
+                if not vote_session_dto.anonymous_flag
                 else []
             )
 
             return VoteStatusDto(
-                is_anonymous=vote_session.anonymous_flag,
-                realtime_flag=vote_session.realtime_flag,
-                notify_flag=vote_session.notify_flag,
-                end_time=vote_session.end_time,
-                status=vote_session.status,
+                is_anonymous=vote_session_dto.anonymous_flag,
+                realtime_flag=vote_session_dto.realtime_flag,
+                notify_flag=vote_session_dto.notify_flag,
+                end_time=vote_session_dto.end_time,
+                status=vote_session_dto.status,
                 totalVotes=len(all_votes),
                 approveVotes=total_approve_votes,
                 rejectVotes=total_reject_votes,

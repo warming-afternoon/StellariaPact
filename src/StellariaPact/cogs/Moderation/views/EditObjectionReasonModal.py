@@ -1,8 +1,7 @@
 import discord
 
-from ....cogs.Moderation.qo.EditObjectionReasonQo import EditObjectionReasonQo
-from ....share.SafeDefer import safeDefer
-from ....share.StellariaPactBot import StellariaPactBot
+from StellariaPact.cogs.Moderation.qo import EditObjectionReasonQo
+from StellariaPact.share import StellariaPactBot, safeDefer
 
 
 class EditObjectionReasonModal(discord.ui.Modal):

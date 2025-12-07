@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Voting.qo.UpdateUserActivityQo import UpdateUserActivityQo
+from StellariaPact.cogs.Voting.qo import UpdateUserActivityQo
 from StellariaPact.models.UserActivity import UserActivity
 
 logger = logging.getLogger(__name__)

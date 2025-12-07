@@ -5,9 +5,8 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands, tasks
 
-from ....share.DiscordUtils import DiscordUtils
-from ....share.StellariaPactBot import StellariaPactBot
-from ..ModerationLogic import ModerationLogic
+from StellariaPact.cogs.Moderation import ModerationLogic
+from StellariaPact.share import DiscordUtils, StellariaPactBot
 
 logger = logging.getLogger(__name__)
 

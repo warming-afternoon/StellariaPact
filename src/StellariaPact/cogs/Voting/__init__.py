@@ -1,15 +1,32 @@
 import asyncio
 import logging
 
-from StellariaPact.cogs.Voting.Cog import Voting
-from StellariaPact.cogs.Voting.listeners.ModerationEventListener import ModerationEventListener
-from StellariaPact.cogs.Voting.listeners.ViewEventListener import ViewEventListener
-from StellariaPact.cogs.Voting.listeners.VotingMessageListener import VotingMessageListener
-from StellariaPact.cogs.Voting.tasks.VoteCloser import VoteCloser
-from StellariaPact.cogs.Voting.views.ObjectionFormalVoteView import ObjectionFormalVoteView
-from StellariaPact.cogs.Voting.views.VoteView import VoteView
-from StellariaPact.cogs.Voting.views.VotingChannelView import VotingChannelView
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
+
+from .Cog import Voting
+from .EligibilityService import EligibilityService
+from .listeners.ModerationEventListener import ModerationEventListener
+from .listeners.ViewEventListener import ViewEventListener
+from .listeners.VotingMessageListener import VotingMessageListener
+from .tasks.VoteCloser import VoteCloser
+from .views import ObjectionCreationVoteView
+from .views.ObjectionFormalVoteView import ObjectionFormalVoteView
+from .views.VoteView import VoteView
+from .views.VotingChannelView import VotingChannelView
+from .VotingLogic import VotingLogic
+
+__all__ = [
+    "Voting",
+    "EligibilityService",
+    "VotingLogic",
+    "ModerationEventListener",
+    "ViewEventListener",
+    "VotingMessageListener",
+    "VoteCloser",
+    "ObjectionFormalVoteView",
+    "VoteView",
+    "VotingChannelView",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +39,7 @@ async def setup(bot: StellariaPactBot):
     bot.add_view(VoteView(bot))
     bot.add_view(ObjectionFormalVoteView(bot))
     bot.add_view(VotingChannelView(bot))
+    bot.add_view(ObjectionCreationVoteView(bot))
 
     # 实例化核心 Cog
     voting_cog = Voting(bot)

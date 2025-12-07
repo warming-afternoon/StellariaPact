@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Voting.qo.RecordVoteQo import RecordVoteQo
+from StellariaPact.cogs.Voting.qo import RecordVoteQo
 from StellariaPact.dto.UserVoteDto import UserVoteDto
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession

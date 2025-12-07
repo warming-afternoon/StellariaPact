@@ -5,36 +5,38 @@ from typing import Optional
 import discord
 from sqlalchemy.exc import IntegrityError
 
-from ...dto.ConfirmationSessionDto import ConfirmationSessionDto
-from ...dto.ObjectionDto import ObjectionDto
-from ...dto.ProposalDto import ProposalDto
-from ...dto.VoteSessionDto import VoteSessionDto
-from ...models.Announcement import Announcement
-from ...share.enums.ObjectionStatus import ObjectionStatus
-from ...share.enums.ProposalStatus import ProposalStatus
-from ...share.enums.VoteDuration import VoteDuration
-from ...share.StellariaPactBot import StellariaPactBot
-from ...share.StringUtils import StringUtils
-from ...share.UnitOfWork import UnitOfWork
-from ..Voting.dto.VoteStatusDto import VoteStatusDto
-from ..Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
-from .dto.CollectionExpiredResultDto import CollectionExpiredResultDto
-from .dto.ExecuteProposalResultDto import ExecuteProposalResultDto
-from .dto.HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
-from .dto.ObjectionDetailsDto import ObjectionDetailsDto
-from .dto.ObjectionReasonUpdateResultDto import ObjectionReasonUpdateResultDto
-from .dto.ObjectionReviewResultDto import ObjectionReviewResultDto
-from .dto.ObjectionVotePanelDto import ObjectionVotePanelDto
-from .dto.SubsequentObjectionDto import SubsequentObjectionDto
-from .dto.VoteFinishedResultDto import VoteFinishedResultDto
-from .qo.BuildCollectionExpiredEmbedQo import BuildCollectionExpiredEmbedQo
-from .qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
-from .qo.CreateConfirmationSessionQo import CreateConfirmationSessionQo
-from .qo.CreateObjectionAndVoteSessionShellQo import CreateObjectionAndVoteSessionShellQo
-from .qo.CreateObjectionQo import CreateObjectionQo
-from .qo.EditObjectionReasonQo import EditObjectionReasonQo
-from .qo.ObjectionSupportQo import ObjectionSupportQo
-from .thread_manager import ProposalThreadManager
+from StellariaPact.cogs.Moderation.dto import (
+    CollectionExpiredResultDto,
+    ExecuteProposalResultDto,
+    ObjectionReasonUpdateResultDto,
+    ObjectionReviewResultDto,
+    SubsequentObjectionDto,
+    VoteFinishedResultDto,
+)
+from StellariaPact.cogs.Moderation.qo import (
+    BuildCollectionExpiredEmbedQo,
+    BuildVoteResultEmbedQo,
+    CreateConfirmationSessionQo,
+    CreateObjectionAndVoteSessionShellQo,
+    CreateObjectionQo,
+    EditObjectionReasonQo,
+    ObjectionSupportQo,
+)
+from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
+from StellariaPact.cogs.Voting.dto import VoteStatusDto
+from StellariaPact.cogs.Voting.qo import CreateVoteSessionQo
+from StellariaPact.dto import (
+    ConfirmationSessionDto,
+    HandleSupportObjectionResultDto,
+    ObjectionDetailsDto,
+    ObjectionDto,
+    ObjectionVotePanelDto,
+    ProposalDto,
+    VoteSessionDto,
+)
+from StellariaPact.models import Announcement
+from StellariaPact.share import StellariaPactBot, StringUtils, UnitOfWork
+from StellariaPact.share.enums import ObjectionStatus, ProposalStatus, VoteDuration
 
 logger = logging.getLogger(__name__)
 
@@ -792,15 +794,16 @@ class ModerationLogic:
                 await thread_manager.update_status(thread, "discussion")
                 # 派发事件，让 Voting cog 创建投票面板
                 self.bot.dispatch(
-                    "proposal_created",
-                    proposal_dto,
-                    [],  # options - 空列表，因为自动创建的提案没有投票选项
-                    VoteDuration.PROPOSAL_DEFAULT,
-                    True,  # anonymous
-                    True,  # realtime
-                    True,  # notify
-                    True,  # create_in_voting_channel
-                    True,  # notify_creation_role
+                    "vote_session_created",
+                    proposal_dto=proposal_dto,
+                    options=[],
+                    duration_hours=VoteDuration.PROPOSAL_DEFAULT,
+                    anonymous=True,
+                    realtime=True,
+                    notify=True,
+                    create_in_voting_channel=True,
+                    notify_creation_role=True,
+                    thread=thread,
                 )
 
         except Exception as e:

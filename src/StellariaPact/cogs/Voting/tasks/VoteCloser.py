@@ -5,9 +5,8 @@ import random
 from discord.ext import commands, tasks
 
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
+from StellariaPact.share import StellariaPactBot, UnitOfWork
 from StellariaPact.share.enums.ObjectionStatus import ObjectionStatus
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.UnitOfWork import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +20,7 @@ class VoteCloser(commands.Cog):
     def cog_unload(self):
         self.close_expired_votes.cancel()
 
-    @tasks.loop(minutes=2)
+    @tasks.loop(minutes=1)
     async def close_expired_votes(self):
         """
         每2分钟检查一次并关闭已到期的投票。
@@ -55,7 +54,7 @@ class VoteCloser(commands.Cog):
                                 objection_id = objection.id
                                 objection_status = objection.status
 
-                    result_dto = await self.logic.tally_and_close_session(session_dto.id)
+                    result_dto = await self.logic.tally_and_close_session(session_dto)
 
                     # 步骤 2b: 检查是否为异议投票，并根据异议状态分派不同事件
                     if objection_id and objection_status and result_dto:

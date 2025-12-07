@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import List, Optional
 
-from StellariaPact.cogs.Voting.dto.OptionResult import OptionResult
-from StellariaPact.dto.UserVoteDto import UserVoteDto
-from StellariaPact.share.BaseDto import BaseDto
+from StellariaPact.cogs.Voting.dto import OptionResult
+from StellariaPact.dto import UserVoteDto
+from StellariaPact.share import BaseDto
 
 
 class VoteStatusDto(BaseDto):

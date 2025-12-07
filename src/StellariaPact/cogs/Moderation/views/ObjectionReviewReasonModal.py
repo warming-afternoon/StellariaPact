@@ -3,13 +3,12 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from ....share.SafeDefer import safeDefer
-from ....share.StellariaPactBot import StellariaPactBot
-from ..qo.BuildObjectionReviewResultEmbedQo import BuildObjectionReviewResultEmbedQo
-from .ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.qo import BuildObjectionReviewResultEmbedQo
+from StellariaPact.cogs.Moderation.views import ModerationEmbedBuilder
+from StellariaPact.share import StellariaPactBot, safeDefer
 
 if TYPE_CHECKING:
-    from ..ModerationLogic import ModerationLogic
+    from StellariaPact.cogs.Moderation import ModerationLogic
 
 
 logger = logging.getLogger(__name__)

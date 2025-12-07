@@ -3,10 +3,10 @@ from typing import TYPE_CHECKING
 
 from discord.ext import commands
 
-from ..ModerationLogic import ModerationLogic
+from StellariaPact.cogs.Moderation import ModerationLogic
 
 if TYPE_CHECKING:
-    from ....share.StellariaPactBot import StellariaPactBot
+    from StellariaPact.share import StellariaPactBot
 
 logger = logging.getLogger(__name__)
 

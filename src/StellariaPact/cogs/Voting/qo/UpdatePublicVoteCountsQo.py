@@ -1,5 +1,5 @@
-from StellariaPact.cogs.Voting.dto.VoteDetailDto import VoteDetailDto
-from StellariaPact.share.BaseDto import BaseDto
+from StellariaPact.cogs.Voting.dto import VoteDetailDto
+from StellariaPact.share import BaseDto
 
 
 class UpdatePublicVoteCountsQo(BaseDto):

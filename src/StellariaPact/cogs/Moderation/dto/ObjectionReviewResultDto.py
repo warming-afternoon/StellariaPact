@@ -1,8 +1,8 @@
 from typing import Optional
 
-from ....dto.ObjectionDto import ObjectionDto
-from ....dto.ProposalDto import ProposalDto
-from ....share.BaseDto import BaseDto
+from StellariaPact.dto.ObjectionDto import ObjectionDto
+from StellariaPact.dto.ProposalDto import ProposalDto
+from StellariaPact.share.BaseDto import BaseDto
 
 
 class ObjectionReviewResultDto(BaseDto):

@@ -1,6 +1,6 @@
 import discord
 
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share import StellariaPactBot
 
 
 class ObjectionModal(discord.ui.Modal, title="发起异议"):

@@ -1,7 +1,7 @@
 from typing import List, Optional
 
-from ....cogs.Moderation.qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
-from ....share.BaseDto import BaseDto
+from StellariaPact.cogs.Moderation.qo.BuildVoteResultEmbedQo import BuildVoteResultEmbedQo
+from StellariaPact.share.BaseDto import BaseDto
 
 
 class VoteFinishedResultDto(BaseDto):

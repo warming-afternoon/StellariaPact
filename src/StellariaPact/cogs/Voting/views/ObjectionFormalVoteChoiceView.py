@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 import discord
 
 if TYPE_CHECKING:
-    from StellariaPact.share.StellariaPactBot import StellariaPactBot
+    from StellariaPact.share import StellariaPactBot
 
 
 logger = logging.getLogger(__name__)

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from StellariaPact.share.BaseDto import BaseDto
+from StellariaPact.share import BaseDto
 
 
 class AnnouncementDto(BaseDto):
