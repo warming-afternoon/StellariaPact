@@ -40,7 +40,6 @@ async def setup(bot: StellariaPactBot):
     bot.add_view(ObjectionFormalVoteView(bot))
     bot.add_view(VotingChannelView(bot))
     bot.add_view(ObjectionCreationVoteView(bot))
-
     # 实例化核心 Cog
     voting_cog = Voting(bot)
 

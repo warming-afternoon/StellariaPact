@@ -8,10 +8,7 @@ from discord.ext import commands, tasks
 
 from StellariaPact.cogs.Notification.NotificationLogic import NotificationLogic
 from StellariaPact.dto import AnnouncementDto
-from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
-from StellariaPact.share.DiscordUtils import DiscordUtils
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.UnitOfWork import UnitOfWork
+from StellariaPact.share import DiscordUtils, StellariaPactBot, UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +20,7 @@ class BackgroundTasks(commands.Cog):
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
+        self.notification_logic = NotificationLogic(bot)
         self.announcement_channel_id = self.bot.config["channels"]["discussion"]
         self.discussion_tag_id = self.bot.config["tags"]["discussion"]
         self.executing_tag_id = self.bot.config["tags"]["executing"]
@@ -69,21 +67,8 @@ class BackgroundTasks(commands.Cog):
         # 遍历ID列表，为每个监控执行独立的原子操作
         for monitor_id in pending_monitor_ids:
             try:
-                logger.debug(f"正在处理监控器 ID: {monitor_id}...")
-                async with UnitOfWork(self.bot.db_handler) as uow_atomic:
-                    notification_logic = NotificationLogic(self.bot, uow_atomic.session)
-                    # 在新的事务中重新获取monitor对象
-                    monitor_to_process = await uow_atomic.session.get(
-                        AnnouncementChannelMonitor, monitor_id
-                    )
-                    if not monitor_to_process:
-                        logger.warning(f"在处理前无法找到监控器 ID: {monitor_id}，可能已被处理。")
-                        continue
-
-                    await notification_logic.process_single_repost(monitor_to_process)
-                    await uow_atomic.commit()
-                logger.debug(f"成功处理并提交了监控器 ID: {monitor_id}")
-
+                await self.notification_logic.process_single_repost(monitor_id)
+                logger.debug(f"成功处理了监控器 ID: {monitor_id}")
             except Exception as e:
                 logger.error(f"处理监控器 ID {monitor_id} 时发生错误: {e}", exc_info=True)
                 # 单个任务失败，记录日志并继续处理下一个

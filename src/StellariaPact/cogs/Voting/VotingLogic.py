@@ -4,7 +4,7 @@ from typing import List, Optional
 
 import discord
 
-from StellariaPact.cogs.Voting import EligibilityService
+from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.dto import (
     OptionResult,
     VoteDetailDto,

@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Moderation import ModerationLogic
 from StellariaPact.cogs.Moderation.dto import CollectionExpiredResultDto
+from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.cogs.Moderation.views import ModerationEmbedBuilder
 from StellariaPact.cogs.Voting.dto import VoteStatusDto

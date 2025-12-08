@@ -8,10 +8,8 @@ import discord
 from discord.ext import commands, tasks
 from sqlalchemy import func, select, update
 
-from StellariaPact.models.Announcement import Announcement
-from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
-from StellariaPact.share.UnitOfWork import UnitOfWork
+from StellariaPact.models import Announcement, AnnouncementChannelMonitor
+from StellariaPact.share import StellariaPactBot, UnitOfWork
 
 logger = logging.getLogger(__name__)
 

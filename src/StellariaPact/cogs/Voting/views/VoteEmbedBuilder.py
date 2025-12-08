@@ -7,8 +7,8 @@ from zoneinfo import ZoneInfo
 
 import discord
 
-from StellariaPact.cogs.Voting import EligibilityService
 from StellariaPact.cogs.Voting.dto import VoteDetailDto, VoteStatusDto, VotingChoicePanelDto
+from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.dto import ObjectionDetailsDto, ProposalDto
 
 logger = logging.getLogger(__name__)

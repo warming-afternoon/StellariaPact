@@ -681,11 +681,7 @@ class ModerationLogic:
                 if not qo.interaction.guild:
                     raise RuntimeError("交互不包含服务器信息。")
 
-                # 提交事务以保存更改
-                await uow.commit()
-
-                # 将数据打包到 DTO
-                return ObjectionReasonUpdateResultDto(
+                result_dto = ObjectionReasonUpdateResultDto(
                     success=True,
                     message="异议理由已成功更新。",
                     guild_id=qo.interaction.guild.id,
@@ -697,6 +693,8 @@ class ModerationLogic:
                     objector_id=objection.objector_id,
                     new_reason=objection.reason,
                 )
+
+                return result_dto
         except (PermissionError, ValueError, RuntimeError) as e:
             logger.warning(f"更新异议理由时发生错误: {e}")
             return ObjectionReasonUpdateResultDto(success=False, message=str(e))

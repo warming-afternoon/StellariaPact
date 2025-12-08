@@ -1,7 +1,7 @@
 import discord
 
-from StellariaPact.cogs.Voting import EligibilityService
 from StellariaPact.cogs.Voting.dto import VoteDetailDto
+from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo import BuildFirstObjectionEmbedQo
 from StellariaPact.dto import HandleSupportObjectionResultDto, ObjectionDetailsDto
 

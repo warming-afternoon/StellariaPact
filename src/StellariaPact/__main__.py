@@ -9,9 +9,6 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
-from StellariaPact.cogs.Moderation.Cog import Moderation
-from StellariaPact.cogs.Notification.Cog import Notification
-from StellariaPact.cogs.Voting.Cog import Voting
 from StellariaPact.share.ApiScheduler import APIScheduler
 from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.DatabaseHandler import get_db_handler, initialize_db_handler
@@ -103,21 +100,20 @@ async def main_async():
             # 如果数据库初始化失败，可能不应该继续，这里可以选择直接返回或抛出异常
             return
 
-        logger.info("开始加载所有 Cogs...")
-        cogs_to_load = [
-            Moderation(bot),
-            Notification(bot),
-            Voting(bot),
-        ]
-        cog_load_tasks = [bot.add_cog(cog) for cog in cogs_to_load]
-        try:
-            await asyncio.gather(*cog_load_tasks)
-            for cog in cogs_to_load:
-                logger.info(f"成功加载 Cog: {cog.qualified_name}")
-        except Exception as e:
-            logger.exception(f"加载 Cogs 时发生错误: {e}")
+        logger.info("开始加载所有 Cogs 模块...")
+        from StellariaPact.cogs import Moderation, Notification, Voting
 
-        logger.info("所有 Cogs 加载完成。")
+        # 依次调用每个模块的 setup 函数
+        module_setups = [
+            Moderation.setup(bot),
+            Notification.setup(bot),
+            Voting.setup(bot),
+        ]
+        try:
+            await asyncio.gather(*module_setups)
+            logger.info("所有 Cogs 模块加载完成。")
+        except Exception as e:
+            logger.exception(f"加载 Cogs 模块时发生错误: {e}")
 
         logger.info("正在同步命令...")
         await bot.api_scheduler.submit(bot.tree.sync(), priority=5)

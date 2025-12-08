@@ -55,11 +55,4 @@ class ObjectionCreationVoteView(discord.ui.View):
             )
             return
 
-        # 分派事件
-        logger.debug(
-            (
-                "分派异议创建投票事件: "
-                f"user={interaction.user.id}, choice={choice}, message={interaction.message.id}"
-            )
-        )
         self.bot.dispatch("objection_creation_vote_cast", interaction, choice)

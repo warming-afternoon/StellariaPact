@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 import discord
 from discord import ui
 
-from StellariaPact.share.StellariaPactBot import StellariaPactBot
+from StellariaPact.share import StellariaPactBot
 
 if TYPE_CHECKING:
     from StellariaPact.cogs.Notification.Cog import Notification

@@ -437,6 +437,15 @@ class ModerationListener(commands.Cog):
             # 获取帖子的启动消息
             original_message = review_thread.starter_message
             if not original_message:
+                try:
+                    original_message = await review_thread.fetch_message(review_thread.id)
+                except discord.NotFound:
+                    logger.warning(
+                        f"无法通过 API 拉取到审核帖子 {review_thread.id} 的启动消息。"
+                    )
+                    original_message = None
+
+            if not original_message:
                 logger.warning(f"审核帖子 {dto.review_thread_id} 中没有启动消息，无法更新。")
                 return
 
