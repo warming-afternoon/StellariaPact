@@ -94,5 +94,5 @@ class NotificationLogic:
             monitor.message_count_since_last = 0
             monitor.last_repost_at = datetime.now(timezone.utc)
             uow.session.add(monitor)
-            await uow.commit()
             logger.debug(f"成功在频道 {monitor.channel_id} 重播了公示 {monitor.announcement_id}。")
+            await uow.commit()

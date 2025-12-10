@@ -3,7 +3,7 @@ import logging
 import discord
 
 from StellariaPact.cogs.Moderation.qo import BuildConfirmationEmbedQo
-from StellariaPact.cogs.Moderation.views import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.dto import ConfirmationSessionDto
 from StellariaPact.share import StellariaPactBot, UnitOfWork, safeDefer
 from StellariaPact.share.auth import RoleGuard

@@ -16,11 +16,9 @@ from StellariaPact.cogs.Moderation.qo import (
     ObjectionSupportQo,
 )
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
-from StellariaPact.cogs.Moderation.views import (
-    ModerationEmbedBuilder,
-    ObjectionManageView,
-    ObjectionModal,
-)
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionManageView import ObjectionManageView
+from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
 from StellariaPact.dto import (
     ConfirmationSessionDto,
     HandleSupportObjectionResultDto,
@@ -440,9 +438,7 @@ class ModerationListener(commands.Cog):
                 try:
                     original_message = await review_thread.fetch_message(review_thread.id)
                 except discord.NotFound:
-                    logger.warning(
-                        f"无法通过 API 拉取到审核帖子 {review_thread.id} 的启动消息。"
-                    )
+                    logger.warning(f"无法通过 API 拉取到审核帖子 {review_thread.id} 的启动消息。")
                     original_message = None
 
             if not original_message:

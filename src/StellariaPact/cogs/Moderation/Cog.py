@@ -9,14 +9,12 @@ from StellariaPact.cogs.Moderation.dto import ExecuteProposalResultDto
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
 from StellariaPact.cogs.Moderation.qo import BuildConfirmationEmbedQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
-from StellariaPact.cogs.Moderation.views import (
-    AbandonReasonModal,
-    ConfirmationView,
-    KickProposalModal,
-    ModerationEmbedBuilder,
-    ObjectionModal,
-    VoteOptionsModal,
-)
+from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
+from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
+from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalModal
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
+from StellariaPact.cogs.Moderation.views.VoteOptionsModal import VoteOptionsModal
 from StellariaPact.dto import ProposalDto
 from StellariaPact.share import StellariaPactBot, StringUtils, UnitOfWork, safeDefer
 from StellariaPact.share.auth import PermissionGuard, RoleGuard
