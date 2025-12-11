@@ -359,13 +359,14 @@ class Notification(commands.Cog):
             new_end_time_utc = new_end_time.replace(tzinfo=ZoneInfo("UTC"))
 
             await uow.announcements.update_end_time(announcement.id, new_end_time_utc)
-            await uow.commit()
-
-            return AdjustTimeDto(
+            adjustTimeDto = AdjustTimeDto(
                 announcement_id=announcement.id,
                 old_end_time=old_end_time_utc,
                 new_end_time=new_end_time_utc,
             )
+            await uow.commit()
+
+            return adjustTimeDto
 
     async def _update_starter_message_timestamp(self, thread: discord.Thread, new_ts_string: str):
         """
