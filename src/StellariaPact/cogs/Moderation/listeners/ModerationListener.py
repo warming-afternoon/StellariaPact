@@ -166,7 +166,7 @@ class ModerationListener(commands.Cog):
         监听新帖子的创建，如果在提案讨论区，则委托给 ModerationLogic 处理
         """
         # 短暂休眠以等待帖子的启动消息被处理/缓存
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)
         # 检查是否在提案讨论区
         discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
         if not discussion_channel_id_str or thread.parent_id != int(discussion_channel_id_str):

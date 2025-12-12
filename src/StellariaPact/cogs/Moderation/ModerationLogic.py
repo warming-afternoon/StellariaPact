@@ -749,13 +749,13 @@ class ModerationLogic:
                 # 检查它是否是一个已知的异议帖
                 objection = await uow.objection.get_objection_by_thread_id(thread.id)
                 if objection:
-                    # logger.debug(f"帖子 {thread.id} 是一个已知的异议帖，跳过处理")
+                    logger.debug(f"帖子 {thread.id} 是一个已知的异议帖，跳过处理")
                     return
 
                 # 检查它是否已经是一个已知的提案帖
                 proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
                 if proposal:
-                    # logger.debug(f"提案 (帖子 ID: {thread.id}) 已存在，跳过处理")
+                    logger.debug(f"提案 (帖子 ID: {thread.id}) 已存在，跳过处理")
                     return
 
             # 如果以上都不是，则认定为新提案，执行创建流程

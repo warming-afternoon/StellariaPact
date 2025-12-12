@@ -24,7 +24,7 @@ class ThreadReconciliation(commands.Cog):
     def cog_unload(self):
         self.reconcile_missing_threads.cancel()
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(minutes=2)
     async def reconcile_missing_threads(self):
         """
         定期从讨论区论坛获取最近的帖子，并处理任何尚未在数据库中记录的帖子。
@@ -64,8 +64,8 @@ class ThreadReconciliation(commands.Cog):
                 if not thread.created_at or thread.created_at <= three_days_ago:
                     continue
 
+                await asyncio.sleep(1)
                 await self.logic.process_new_discussion_thread(thread)
-                await asyncio.sleep(1)  # 短暂延迟以避免在发现很多帖子时达到速率限制
 
         except Exception as e:
             logger.error(f"提案帖子审计任务中发生意外错误: {e}", exc_info=True)
