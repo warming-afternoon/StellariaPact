@@ -264,12 +264,14 @@ class ModerationListener(commands.Cog):
         await safeDefer(interaction, ephemeral=True)
 
         try:
-            # --- 阶段一: 创建数据库记录 ---
-            target_thread_id = self._determine_target_thread_id(interaction, proposal_link)
-
-            # 调用 Logic 层，它现在根据情况返回不同类型的 DTO
+            
+            target_thread_id = DiscordUtils.determine_target_thread_id(
+                interaction, proposal_link
+            )
             if not interaction.guild:
                 raise RuntimeError("交互不包含服务器信息。")
+            
+            # 创建数据库记录
             result_dto = await self.logic.handle_raise_objection(
                 user_id=interaction.user.id,
                 target_thread_id=target_thread_id,
@@ -277,16 +279,16 @@ class ModerationListener(commands.Cog):
                 guild_id=interaction.guild.id,
             )
 
-            # --- 阶段二: 根据结果处理UI ---
+            # 根据结果处理UI
             if isinstance(result_dto, ObjectionVotePanelDto):
-                # 如果返回 DTO，说明是首次异议，派发事件让 Voting 模块创建面板
+                # 首次异议，派发事件让 Voting 模块创建面板
                 assert isinstance(result_dto, ObjectionVotePanelDto)
                 self.bot.dispatch("create_objection_vote_panel", result_dto, interaction)
                 final_message = (
                     "异议已成功发起！\n由于为首次异议，将直接在公示频道开启异议产生票收集。"
                 )
             elif isinstance(result_dto, SubsequentObjectionDto):
-                # 如果返回 SubsequentObjectionDto，说明是后续异议，创建审核UI
+                # 后续异议，创建审核UI
                 assert isinstance(result_dto, SubsequentObjectionDto)
                 await self._handle_subsequent_objection_ui(interaction, result_dto)
                 final_message = (
@@ -296,7 +298,6 @@ class ModerationListener(commands.Cog):
                 # 兜底，理论上不应发生
                 final_message = "操作已提交，但返回了未知的处理结果。"
 
-            # --- 最终确认 ---
             await self.bot.api_scheduler.submit(
                 interaction.followup.send(final_message, ephemeral=True), 1
             )
@@ -349,31 +350,6 @@ class ModerationListener(commands.Cog):
             )
 
     # --- 私有方法 ---
-
-    def _determine_target_thread_id(
-        self, interaction: discord.Interaction, proposal_link: str
-    ) -> int:
-        """从交互上下文或链接中解析出目标帖子ID。
-
-        Args:
-            interaction (discord.Interaction): 当前的交互对象。
-            proposal_link (str): 用户提供的提案链接。
-
-        Raises:
-            ValueError: 如果链接格式不正确或在没有链接的情况下不在帖子内使用。
-
-        Returns:
-            int: 解析出的帖子ID。
-        """
-        if proposal_link:
-            thread_id = StringUtils.extract_thread_id_from_url(proposal_link)
-            if not thread_id:
-                raise ValueError("提供的链接格式不正确，无法识别帖子ID。")
-            return thread_id
-        elif isinstance(interaction.channel, discord.Thread):
-            return interaction.channel.id
-        else:
-            raise ValueError("此命令必须在提案帖子内使用，或通过“提案链接”参数指定目标帖子。")
 
     async def _handle_subsequent_objection_ui(
         self, interaction: discord.Interaction, dto: SubsequentObjectionDto
@@ -486,21 +462,17 @@ class ModerationListener(commands.Cog):
         )
 
         try:
-            # 准备QO并调用Logic层
+
             qo = ObjectionSupportQo(
                 user_id=interaction.user.id,
                 message_id=interaction.message.id,
                 action=choice,
             )
-
-            if choice == "support":
-                result_dto = await self.logic.handle_support_objection(qo)
-            else:
-                result_dto = await self.logic.handle_withdraw_support(qo)
+            result_dto = await self.logic.handle_objection_support_change(qo)
 
             self.bot.dispatch("update_objection_vote_panel", interaction.message, result_dto)
 
-            # 根据返回的DTO提供精确的用户反馈
+            # 根据返回的 DTO 提供对应的用户反馈
             feedback_messages = {
                 "supported": "成功支持该异议！",
                 "withdrew": "成功撤回支持。",
@@ -531,25 +503,20 @@ class ModerationListener(commands.Cog):
             proposal_dto: ProposalDto | None = None
             target_status: ProposalStatus | None = None
 
-            match session.context:
-                case "proposal_execution":
-                    proposal_dto = await self.logic.handle_proposal_execution_confirmed(
-                        session.target_id
-                    )
-                    target_status = ProposalStatus.EXECUTING
-                case "proposal_completion":
-                    proposal_dto = await self.logic.handle_proposal_completion_confirmed(
-                        session.target_id
-                    )
-                    target_status = ProposalStatus.FINISHED
-                case "proposal_abandonment":
-                    proposal_dto = await self.logic.handle_proposal_abandonment_confirmed(
-                        session.target_id
-                    )
-                    target_status = ProposalStatus.ABANDONED
-                case _:
-                    logger.warning(f"未知的确认上下文: {session.context}")
-                    return
+            target_status_map = {
+                "proposal_execution": ProposalStatus.EXECUTING,
+                "proposal_completion": ProposalStatus.FINISHED,
+                "proposal_abandonment": ProposalStatus.ABANDONED,
+            }
+            target_status = target_status_map.get(session.context)
+
+            if not target_status:
+                logger.warning(f"未知的确认上下文: {session.context}")
+                return
+
+            proposal_dto = await self.logic.proposal_status_change(
+                session.target_id, target_status
+            )
 
             if proposal_dto and target_status and proposal_dto.discussion_thread_id:
                 await self._update_thread_status_after_confirmation(
@@ -637,12 +604,8 @@ class ModerationListener(commands.Cog):
                     )
                     return
 
-                # 在 with 块内部安全地访问 session 对象的属性，并存入局部变量
-                context_thread_id = session.context_thread_id
-                guild_id = interaction.guild.id
-
-            # 构建提案链接
-            proposal_link = f"https://discord.com/channels/{guild_id}/{context_thread_id}"
+                # 会话内构建提案链接
+                proposal_link = f"https://discord.com/channels/{interaction.guild.id}/{session.context_thread_id}"
 
             # 创建异议模态框
             modal = ObjectionModal(self.bot, proposal_link=proposal_link)

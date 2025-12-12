@@ -332,9 +332,6 @@ class ModerationLogic:
             if result_dto.voters:
                 logger.debug(f"Voters data: {[v.dict() for v in result_dto.voters]}")
 
-            # 用于存储从事务中提取的数据
-            extracted_data = {}
-
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 获取关联数据
                 objection = await uow.objection.get_objection_by_id(objection_id)
@@ -362,7 +359,7 @@ class ModerationLogic:
                 uow.session.add(objection)
                 uow.session.add(proposal)
 
-                # 预取所有需要的数据
+                # 预取配置数据
                 guild_id = self.bot.config.get("guild_id")
                 if not guild_id:
                     raise RuntimeError("未在 config.json 中配置 'guild_id'。")
@@ -371,56 +368,45 @@ class ModerationLogic:
                 publicity_channel_id_str = self.bot.config.get("channels", {}).get(
                     "objection_publicity"
                 )
+                notification_channel_id = (
+                    int(publicity_channel_id_str) if publicity_channel_id_str else None
+                )
 
-                # 将所有需要在事务外使用的数据存入字典
-                extracted_data = {
-                    "proposal_title": proposal.title,
-                    "proposal_thread_id": proposal.discussion_thread_id,
-                    "objection_id": objection.id,
-                    "objector_id": objection.objector_id,
-                    "objection_reason": objection.reason,
-                    "objection_thread_id": objection.objection_thread_id,
-                    "is_passed": is_passed,
-                    "guild_id": guild_id,
-                    "notification_channel_id": int(publicity_channel_id_str)
-                    if publicity_channel_id_str
+                # 构建 QO 和 DTO
+                result_qo = BuildVoteResultEmbedQo(
+                    proposal_title=proposal.title,
+                    proposal_thread_url=f"https://discord.com/channels/{guild_id}/{proposal.discussion_thread_id}",
+                    objection_id=objection.id,
+                    objector_id=objection.objector_id,
+                    objection_reason=objection.reason,
+                    objection_thread_url=f"https://discord.com/channels/{guild_id}/{objection.objection_thread_id}"
+                    if objection.objection_thread_id
                     else None,
-                }
+                    is_passed=is_passed,
+                    approve_votes=result_dto.approveVotes,
+                    reject_votes=result_dto.rejectVotes,
+                    total_votes=result_dto.totalVotes,
+                )
 
-                # 提交事务
+                approve_voter_ids = None
+                reject_voter_ids = None
+                if not result_dto.is_anonymous and result_dto.voters:
+                    approve_voter_ids = [v.user_id for v in result_dto.voters if v.choice == 1]
+                    reject_voter_ids = [v.user_id for v in result_dto.voters if v.choice == 0]
+
+                return_dto = VoteFinishedResultDto(
+                    embed_qo=result_qo,
+                    is_passed=is_passed,
+                    original_proposal_thread_id=proposal.discussion_thread_id,
+                    objection_thread_id=objection.objection_thread_id,
+                    notification_channel_id=notification_channel_id,
+                    original_vote_message_id=session_dto.context_message_id,
+                    approve_voter_ids=approve_voter_ids,
+                    reject_voter_ids=reject_voter_ids,
+                )
+                
                 await uow.commit()
-
-            result_qo = BuildVoteResultEmbedQo(
-                proposal_title=extracted_data["proposal_title"],
-                proposal_thread_url=f"https://discord.com/channels/{extracted_data['guild_id']}/{extracted_data['proposal_thread_id']}",
-                objection_id=extracted_data["objection_id"],
-                objector_id=extracted_data["objector_id"],
-                objection_reason=extracted_data["objection_reason"],
-                objection_thread_url=f"https://discord.com/channels/{extracted_data['guild_id']}/{extracted_data['objection_thread_id']}"
-                if extracted_data["objection_thread_id"]
-                else None,
-                is_passed=extracted_data["is_passed"],
-                approve_votes=result_dto.approveVotes,
-                reject_votes=result_dto.rejectVotes,
-                total_votes=result_dto.totalVotes,
-            )
-
-            approve_voter_ids = None
-            reject_voter_ids = None
-            if not result_dto.is_anonymous and result_dto.voters:
-                approve_voter_ids = [v.user_id for v in result_dto.voters if v.choice == 1]
-                reject_voter_ids = [v.user_id for v in result_dto.voters if v.choice == 0]
-
-            return VoteFinishedResultDto(
-                embed_qo=result_qo,
-                is_passed=extracted_data["is_passed"],
-                original_proposal_thread_id=extracted_data["proposal_thread_id"],
-                objection_thread_id=extracted_data["objection_thread_id"],
-                notification_channel_id=extracted_data["notification_channel_id"],
-                original_vote_message_id=session_dto.context_message_id,
-                approve_voter_ids=approve_voter_ids,
-                reject_voter_ids=reject_voter_ids,
-            )
+                return return_dto
 
         except (ValueError, RuntimeError) as e:
             logger.error(f"处理异议投票结束事件 (异议ID: {objection_id}) 时发生逻辑错误: {e}")
@@ -441,7 +427,6 @@ class ModerationLogic:
             return None
 
         try:
-            extracted_data = {}
             async with UnitOfWork(self.bot.db_handler) as uow:
                 objection = await uow.objection.get_objection_by_id(objection_id)
                 if not objection:
@@ -454,7 +439,7 @@ class ModerationLogic:
                 # 将异议状态更新为“已否决”
                 await uow.objection.update_objection_status(objection_id, ObjectionStatus.REJECTED)
 
-                # 预取数据
+                # 预取配置数据
                 guild_id = self.bot.config.get("guild_id")
                 if not guild_id:
                     raise RuntimeError("未在 config.json 中配置 'guild_id'。")
@@ -462,37 +447,29 @@ class ModerationLogic:
                 publicity_channel_id_str = self.bot.config.get("channels", {}).get(
                     "objection_publicity"
                 )
+                notification_channel_id = (
+                    int(publicity_channel_id_str) if publicity_channel_id_str else None
+                )
 
-                extracted_data = {
-                    "proposal_title": proposal.title,
-                    "proposal_thread_id": proposal.discussion_thread_id,
-                    "objector_id": objection.objector_id,
-                    "objection_reason": objection.reason,
-                    "final_votes": result_dto.totalVotes,
-                    "required_votes": objection.required_votes,
-                    "guild_id": guild_id,
-                    "notification_channel_id": int(publicity_channel_id_str)
-                    if publicity_channel_id_str
-                    else None,
-                }
+                # 构建 QO 和 DTO
+                embed_qo = BuildCollectionExpiredEmbedQo(
+                    proposal_title=proposal.title,
+                    proposal_url=f"https://discord.com/channels/{guild_id}/{proposal.discussion_thread_id}",
+                    objector_id=objection.objector_id,
+                    objector_display_name=f"<@{objection.objector_id}>",
+                    objection_reason=objection.reason,
+                    final_votes=result_dto.totalVotes,
+                    required_votes=objection.required_votes,
+                )
+
+                return_dto = CollectionExpiredResultDto(
+                    embed_qo=embed_qo,
+                    notification_channel_id=notification_channel_id,
+                    original_vote_message_id=session_dto.context_message_id,
+                )
+
                 await uow.commit()
-
-            # 构建 QO 和 DTO
-            embed_qo = BuildCollectionExpiredEmbedQo(
-                proposal_title=extracted_data["proposal_title"],
-                proposal_url=f"https://discord.com/channels/{extracted_data['guild_id']}/{extracted_data['proposal_thread_id']}",
-                objector_id=extracted_data["objector_id"],
-                objector_display_name=f"<@{extracted_data['objector_id']}>",
-                objection_reason=extracted_data["objection_reason"],
-                final_votes=extracted_data["final_votes"],
-                required_votes=extracted_data["required_votes"],
-            )
-
-            return CollectionExpiredResultDto(
-                embed_qo=embed_qo,
-                notification_channel_id=extracted_data["notification_channel_id"],
-                original_vote_message_id=session_dto.context_message_id,
-            )
+                return return_dto
 
         except (ValueError, RuntimeError) as e:
             logger.error(f"处理异议 {objection_id} 支持票收集到期事件时发生逻辑错误: {e}")
@@ -524,22 +501,21 @@ class ModerationLogic:
                 exc_info=True,
             )
 
-    async def handle_support_objection(
+    async def handle_objection_support_change(
         self, qo: ObjectionSupportQo
     ) -> HandleSupportObjectionResultDto:
         """
-        处理对异议的支持操作。
+        处理对异议的支持或撤回操作，并根据结果更新状态、分派事件。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             result_dto = await uow.objection.objection_support(qo)
 
-            # 根据服务层的返回结果，处理业务逻辑（状态变更、事件分发）
+            # 检查是否首次达到目标
             goal_reached_first_time = (
                 result_dto.user_action_result == "supported"
                 and result_dto.objection_status != ObjectionStatus.VOTING
                 and result_dto.is_goal_reached
             )
-
             if goal_reached_first_time:
                 # 状态变更：收集票数 -> 正式投票
                 await uow.objection.update_objection_status(
@@ -548,23 +524,7 @@ class ModerationLogic:
                 # 事件分发
                 self.bot.dispatch("objection_goal_reached", result_dto)
 
-            # 提交事务
-            await uow.commit()
-
-            # 将从服务层获取的 DTO 返回给上层 (View)
-            return result_dto
-
-    async def handle_withdraw_support(
-        self, qo: ObjectionSupportQo
-    ) -> HandleSupportObjectionResultDto:
-        """
-        处理撤回对异议的支持。
-        """
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            # 调用服务层，获取DTO
-            result_dto = await uow.objection.objection_support(qo)
-
-            # 根据服务层的返回结果，处理状态变更
+            # 检查是否从达标状态跌落
             goal_lost = (
                 result_dto.user_action_result == "withdrew"
                 and result_dto.objection_status == ObjectionStatus.VOTING
@@ -576,10 +536,7 @@ class ModerationLogic:
                     result_dto.objection_id, ObjectionStatus.COLLECTING_VOTES
                 )
 
-            # 提交事务
             await uow.commit()
-
-            # 将从服务层获取的完整 DTO 返回给上层 (View)
             return result_dto
 
     async def handle_approve_objection(
@@ -634,8 +591,8 @@ class ModerationLogic:
                     proposal_title=proposal.title,
                     proposal_thread_id=proposal.discussion_thread_id,
                 )
-                objection_dto_for_result = ObjectionDto.from_orm(objection)
-                proposal_dto_for_result = ProposalDto.from_orm(proposal)
+                objection_dto_for_result = ObjectionDto.model_validate(objection)
+                proposal_dto_for_result = ProposalDto.model_validate(proposal)
 
                 await uow.commit()
 
@@ -723,8 +680,8 @@ class ModerationLogic:
                     raise ValueError("找不到关联的提案，操作中止。")
 
                 await uow.objection.update_objection_status(objection_id, ObjectionStatus.REJECTED)
-                objection_dto = ObjectionDto.from_orm(objection)
-                proposal_dto = ProposalDto.from_orm(proposal)
+                objection_dto = ObjectionDto.model_validate(objection)
+                proposal_dto = ProposalDto.model_validate(proposal)
                 await uow.commit()
 
             return ObjectionReviewResultDto(
@@ -810,31 +767,7 @@ class ModerationLogic:
                 exc_info=True,
             )
 
-    async def handle_proposal_execution_confirmed(self, proposal_id: int) -> ProposalDto | None:
-        """
-        处理提案进入执行状态的确认事件。
-        """
-        return await self._handle_proposal_status_change_confirmed(
-            proposal_id, ProposalStatus.EXECUTING
-        )
-
-    async def handle_proposal_completion_confirmed(self, proposal_id: int) -> ProposalDto | None:
-        """
-        处理提案完成的确认事件。
-        """
-        return await self._handle_proposal_status_change_confirmed(
-            proposal_id, ProposalStatus.FINISHED
-        )
-
-    async def handle_proposal_abandonment_confirmed(self, proposal_id: int) -> ProposalDto | None:
-        """
-        处理提案废弃的确认事件。
-        """
-        return await self._handle_proposal_status_change_confirmed(
-            proposal_id, ProposalStatus.ABANDONED
-        )
-
-    async def _handle_proposal_status_change_confirmed(
+    async def proposal_status_change(
         self, proposal_id: int, new_status: ProposalStatus
     ) -> ProposalDto | None:
         """

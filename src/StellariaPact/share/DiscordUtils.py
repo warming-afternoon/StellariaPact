@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, List, Optional, Sequence
 
 import discord
 
+from StellariaPact.share import StringUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 if TYPE_CHECKING:
@@ -160,3 +161,29 @@ class DiscordUtils:
                     interaction.followup.send("发送管理面板时出错，请重试。", ephemeral=True),
                     priority=1,
                 )
+
+    @staticmethod
+    def determine_target_thread_id(
+        interaction: discord.Interaction, proposal_link: str
+    ) -> int:
+        """从交互上下文或链接中解析出目标帖子ID。
+
+        Args:
+            interaction (discord.Interaction): 当前的交互对象。
+            proposal_link (str): 用户提供的提案链接。
+
+        Raises:
+            ValueError: 如果链接格式不正确或在没有链接的情况下不在帖子内使用。
+
+        Returns:
+            int: 解析出的帖子ID。
+        """
+        if proposal_link:
+            thread_id = StringUtils.extract_thread_id_from_url(proposal_link)
+            if not thread_id:
+                raise ValueError("提供的链接格式不正确，无法识别帖子ID。")
+            return thread_id
+        elif isinstance(interaction.channel, discord.Thread):
+            return interaction.channel.id
+        else:
+            raise ValueError("此命令必须在提案帖子内使用，或通过“提案链接”参数指定目标帖子。")
