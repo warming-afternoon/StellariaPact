@@ -163,9 +163,7 @@ class DiscordUtils:
                 )
 
     @staticmethod
-    def determine_target_thread_id(
-        interaction: discord.Interaction, proposal_link: str
-    ) -> int:
+    def determine_target_thread_id(interaction: discord.Interaction, proposal_link: str) -> int:
         """从交互上下文或链接中解析出目标帖子ID。
 
         Args:

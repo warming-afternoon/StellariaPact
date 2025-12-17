@@ -264,13 +264,10 @@ class ModerationListener(commands.Cog):
         await safeDefer(interaction, ephemeral=True)
 
         try:
-            
-            target_thread_id = DiscordUtils.determine_target_thread_id(
-                interaction, proposal_link
-            )
+            target_thread_id = DiscordUtils.determine_target_thread_id(interaction, proposal_link)
             if not interaction.guild:
                 raise RuntimeError("交互不包含服务器信息。")
-            
+
             # 创建数据库记录
             result_dto = await self.logic.handle_raise_objection(
                 user_id=interaction.user.id,
@@ -462,7 +459,6 @@ class ModerationListener(commands.Cog):
         )
 
         try:
-
             qo = ObjectionSupportQo(
                 user_id=interaction.user.id,
                 message_id=interaction.message.id,

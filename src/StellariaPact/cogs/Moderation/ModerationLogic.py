@@ -404,7 +404,7 @@ class ModerationLogic:
                     approve_voter_ids=approve_voter_ids,
                     reject_voter_ids=reject_voter_ids,
                 )
-                
+
                 await uow.commit()
                 return return_dto
 
