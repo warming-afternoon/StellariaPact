@@ -191,6 +191,7 @@ class BackgroundTasks(commands.Cog):
                 priority=8,
             )
 
+            # 如果自动进入执行，则分配事件给 moderation 模块处理
             if announcement_dto.auto_execute:
                 self.bot.dispatch("announcement_finished", announcement_dto)
         except discord.NotFound:

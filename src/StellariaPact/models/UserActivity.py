@@ -16,10 +16,20 @@ class UserActivity(BaseModel, table=True):
     __tablename__ = "user_activity"  # type: ignore
 
     user_id: int = Field(index=True, description="用户的Discord ID")
+    """用户的Discord ID"""
+
     context_thread_id: int = Field(index=True, description="上下文的帖子ID")
+    """上下文的帖子ID"""
+
     message_count: int = Field(default=0, description="该用户在帖子中的有效发言次数")
+    """该用户在帖子中的有效发言次数"""
+
     validation: int = Field(default=1, description="用户投票是否有效: 0-无效, 1-有效")
+    """用户投票是否有效: 0-无效, 1-有效"""
+
     mute_end_time: Optional[datetime] = Field(default=None, description="禁言截止的UTC时间")
+    """禁言截止的UTC时间"""
+
     last_updated: datetime = Field(
         default_factory=datetime.utcnow,
         sa_column_kwargs={
@@ -28,6 +38,7 @@ class UserActivity(BaseModel, table=True):
         },
         description="最后更新时间",
     )
+    """最后更新时间"""
 
     @declared_attr  # type: ignore
     def __table_args__(cls):

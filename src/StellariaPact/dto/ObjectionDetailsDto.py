@@ -8,9 +8,17 @@ class ObjectionDetailsDto(BaseDto):
 
     # --- Objection Fields ---
     objection_id: int
+    """异议ID"""
+
     objection_reason: str
+    """反对理由"""
+
     objector_id: int
+    """异议发起人的Discord ID"""
 
     # --- Proposal Fields ---
     proposal_id: int
+    """提案ID"""
+
     proposal_title: str
+    """提案标题"""

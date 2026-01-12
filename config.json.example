@@ -5,6 +5,7 @@
     "broadcast": [],
     "objection_audit": null,
     "objection_publicity": null,
+    "intake_review": null,
     "voting_channel": null
   },
   "tags": {
@@ -14,7 +15,8 @@
     "objection_voting": null,
     "finished": null,
     "abandoned": null,
-    "rejected": null
+    "rejected": null,
+    "under_objection": null
   },
   "status_tag_keys": [
     "discussion",
@@ -23,7 +25,22 @@
     "objection_voting",
     "finished",
     "abandoned",
-    "rejected"
+    "rejected",
+    "under_objection"
+  ],
+  "intake_tags": {
+    "pending_review": null,
+    "support_collecting": null,
+    "approved": null,
+    "rejected": null,
+    "modification_required": null
+  },
+  "intake_status_tag_keys": [
+    "pending_review",
+    "support_collecting",
+    "approved",
+    "rejected",
+    "modification_required"
   ],
   "roles": {
     "councilModerator": null,

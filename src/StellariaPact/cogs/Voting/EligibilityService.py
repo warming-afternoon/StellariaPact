@@ -8,7 +8,7 @@ class EligibilityService:
     提供用户投票资格判断的服务。
     """
 
-    REQUIRED_MESSAGES = 3
+    REQUIRED_MESSAGES = 2
 
     @staticmethod
     def is_eligible(

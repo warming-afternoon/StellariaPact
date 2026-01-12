@@ -21,14 +21,26 @@ class UserVote(BaseModel, table=True):
     session_id: int = Field(
         foreign_key="vote_session.id", index=True, description="关联的投票会话ID"
     )
+    """关联的投票会话ID"""
+
     user_id: int = Field(index=True, description="投票用户的Discord ID")
+    """投票用户的Discord ID"""
+
     choice: int = Field(description="用户的选项: 0-反对, 1-赞成")
-    choice_index: int = Field(default=1, description="投票选项索引")
+    """用户的选项: 0-反对, 1-赞成"""
+
+    option_type: int = Field(default=0, description="投票针对的选项类型: 0-普通, 1-异议")
+    """投票针对的选项类型: 0-普通, 1-异议"""
+
+    choice_index: int = Field(default=1, description="在此类型下的选项索引")
+    """在此类型下的选项索引"""
+
     voted_at: datetime = Field(
         default_factory=datetime.utcnow,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
         description="投票时间",
     )
+    """投票时间"""
 
     # --- 关系定义 ---
     session: Optional["VoteSession"] = Relationship(back_populates="userVotes")
@@ -39,7 +51,8 @@ class UserVote(BaseModel, table=True):
             UniqueConstraint(
                 cls.session_id,  # type: ignore
                 cls.user_id,  # type: ignore
+                cls.option_type,  # type: ignore
                 cls.choice_index,  # type: ignore
-                name="uk_user_vote_option",
+                name="uk_user_vote_type_option",
             ),
         )

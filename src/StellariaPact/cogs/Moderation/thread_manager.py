@@ -52,6 +52,12 @@ class ProposalThreadManager:
                 "archive": True,
                 "lock": True,
             },
+            "under_objection": {
+                "prefix": "[异议中]",
+                "tag_name": "under_objection",
+                "archive": False,
+                "lock": False,
+            },
         }
 
     async def update_status(self, thread: discord.Thread, new_status_key: str):

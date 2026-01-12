@@ -43,6 +43,11 @@ class ModerationEmbedBuilder:
                 ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已废弃",
                 ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
             },
+            "proposal_rediscuss": {
+                ConfirmationStatus.PENDING.value: "⏳ 流程确认中：恢复为讨论中",
+                ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已恢复为讨论中",
+                ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
+            },
         }
         color_map = {
             ConfirmationStatus.PENDING.value: discord.Color.yellow(),
@@ -109,44 +114,6 @@ class ModerationEmbedBuilder:
         if reason:
             embed.add_field(name="原因", value=reason, inline=False)
         embed.timestamp = datetime.now(timezone.utc)
-        return embed
-
-    @staticmethod
-    def create_kick_embed(
-        moderator: discord.Member,
-        kicked_user: discord.User | discord.Member,
-        reason: str,
-        target_message: discord.Message,
-        is_voting_allowed: bool,
-        mute_end_time: Optional[datetime] = None,
-    ) -> discord.Embed:
-        """
-        创建踢出提案的处罚公示 Embed。
-        """
-        description_lines = [f"**目标用户**: {kicked_user.mention}"]
-
-        if is_voting_allowed:
-            description_lines.append("**处理方式**:\n保留本帖投票资格")
-            color = discord.Color.orange()  # 使用警告色
-        else:
-            description_lines.append("**处理方式**:\n剥夺本帖投票资格")
-            color = discord.Color.red()  # 使用错误/危险色
-
-        if mute_end_time:
-            ts = int(mute_end_time.timestamp())
-            description_lines.append(f"**禁言至**: <t:{ts}:F> (<t:{ts}:R>)")
-
-        embed = discord.Embed(
-            title="议事成员资格变动公示",
-            description="\n".join(description_lines),
-            color=color,
-            timestamp=datetime.now(ZoneInfo("UTC")),
-        )
-        embed.add_field(name="处理理由", value=reason, inline=False)
-        embed.add_field(
-            name="相关消息", value=f"[点击跳转]({target_message.jump_url})", inline=True
-        )
-        embed.add_field(name="操作人员", value=moderator.mention, inline=True)
         return embed
 
     @staticmethod

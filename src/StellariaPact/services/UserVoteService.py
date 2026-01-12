@@ -42,7 +42,9 @@ class UserVoteService:
             (
                 vote
                 for vote in vote_session.userVotes
-                if vote.user_id == qo.user_id and vote.choice_index == qo.choice_index
+                if vote.user_id == qo.user_id
+                and vote.option_type == qo.option_type
+                and vote.choice_index == qo.choice_index
             ),
             None,
         )
@@ -57,6 +59,7 @@ class UserVoteService:
                 session_id=vote_session.id,
                 user_id=qo.user_id,
                 choice=qo.choice,
+                option_type=qo.option_type,
                 choice_index=qo.choice_index,
             )
             self.session.add(new_vote)
@@ -65,7 +68,7 @@ class UserVoteService:
         return vote_session
 
     async def delete_vote(
-        self, user_id: int, choice_index: int, vote_session: VoteSession
+        self, user_id: int, option_type: int, choice_index: int, vote_session: VoteSession
     ) -> Optional[VoteSession]:
         """
         删除用户的投票。
@@ -77,7 +80,9 @@ class UserVoteService:
             (
                 vote
                 for vote in vote_session.userVotes
-                if vote.user_id == user_id and vote.choice_index == choice_index
+                if vote.user_id == user_id
+                and vote.option_type == option_type
+                and vote.choice_index == choice_index
             ),
             None,
         )

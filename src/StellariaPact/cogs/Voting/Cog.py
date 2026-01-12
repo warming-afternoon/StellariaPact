@@ -6,16 +6,17 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.dto import VoteDetailDto, VoteStatusDto
+from StellariaPact.cogs.Voting.dto import VoteDetailDto
 from StellariaPact.cogs.Voting.qo import DeleteVoteQo, RecordVoteQo
 from StellariaPact.cogs.Voting.views import (
     ObjectionFormalVoteChoiceView,
     ObjectionVoteEmbedBuilder,
     VoteEmbedBuilder,
-    VotingChoiceView,
+    VoteView,
 )
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import ProposalDto, VoteSessionDto
+from StellariaPact.services.VoteSessionService import VoteSessionService
 from StellariaPact.share import (
     DiscordUtils,
     MissingRole,
@@ -25,6 +26,7 @@ from StellariaPact.share import (
     UnitOfWork,
     safeDefer,
 )
+from StellariaPact.share.enums import VoteDuration
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +64,124 @@ class Voting(commands.Cog):
                     priority=1,
                 )
 
+    @app_commands.command(name="刷新投票汇总面板", description="检查并修复当前帖子的投票汇总面板。若消息丢失则重新发送。")
+    @app_commands.guild_only()
+    async def refresh_vote_panel(self, interaction: discord.Interaction):
+        await safeDefer(interaction, ephemeral=True)
+
+        # 检查是否在讨论帖内
+        if not isinstance(interaction.channel, discord.Thread):
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("此命令只能在讨论帖内使用。"), priority=1
+            )
+            return
+
+        # 权限检查：限定提案人或管理组成员可以使用此命令
+        can_manage = await PermissionGuard.can_manage_vote(interaction)
+        if not can_manage:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("你没有权限执行此操作。需为提案人或管理组成员。"), priority=1
+            )
+            return
+
+        thread = interaction.channel
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 获取关联的提案
+            proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
+            if not proposal:
+                await self.bot.api_scheduler.submit(
+                    interaction.followup.send("此帖子没有关联的提案，无法处理投票面板。"), priority=1
+                )
+                return
+
+            # 查询本讨论帖对应 session_type=1 的 VoteSession 列表
+            sessions = await uow.vote_session.get_all_sessions_in_thread_with_details(thread.id)
+            type_1_sessions = [s for s in sessions if s.session_type == 1]
+
+            if not type_1_sessions:
+                # 场景 A: 本讨论帖对应 session_type=1 的 VoteSession 不存在
+                # 派发创建事件，系统将自动创建 VoteSession、发送贴内面板及频道镜像
+                proposal_dto = ProposalDto.model_validate(proposal)
+                self.bot.dispatch(
+                    "vote_session_created",
+                    proposal_dto=proposal_dto,
+                    options=[],  # 默认选项
+                    duration_hours=VoteDuration.PROPOSAL_DEFAULT,
+                    anonymous=True,
+                    realtime=True,
+                    notify=True,
+                    create_in_voting_channel=True,
+                    notify_creation_role=False,
+                    thread=thread
+                )
+                await self.bot.api_scheduler.submit(
+                    interaction.followup.send("未找到正式投票会话，正在初始化新的投票面板及镜像..."), priority=1
+                )
+                return
+
+        # 场景 B: 若有，则拿最新的一个
+        latest_session = max(type_1_sessions, key=lambda s: s.created_at)
+
+        # 查询其对应消息能否获取到
+        message_exists = False
+        if latest_session.context_message_id:
+            try:
+                await thread.fetch_message(latest_session.context_message_id)
+                message_exists = True
+            except discord.NotFound:
+                pass
+            except discord.Forbidden:
+                logger.warning(f"无法访问帖子 {thread.id} 的消息 {latest_session.context_message_id} (权限不足)")
+
+        # 场景 B-1: 查询到则不做处理
+        if message_exists:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("当前投票汇总面板消息完好，无需处理。"), priority=1
+            )
+            return
+
+        # 场景 B-2: 存在但对应消息不能获取到 (已丢失)
+        # 汇总成 VoteDetailDto
+        if latest_session.id is None:
+            logger.error(f"投票会话 {latest_session} 的 ID 为 None，无法获取投票选项")
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("投票会话数据异常，无法处理。"), priority=1
+            )
+            return
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            vote_options = await uow.vote_option.get_vote_options(latest_session.id)
+            vote_details = VoteSessionService.get_vote_details_dto(latest_session, vote_options)
+            await uow.commit()
+
+        # 发送讨论帖内新的投票面板
+        view = VoteView(self.bot)
+        embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(
+            topic=proposal.title,
+            vote_details=vote_details,
+        )
+
+        new_msg = await self.bot.api_scheduler.submit(
+            thread.send(embeds=embeds, view=view), priority=5
+        )
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 更新 VoteSession.context_message_id 并提交数据库
+            latest_session.context_message_id = new_msg.id
+            uow.session.add(latest_session)
+            await uow.commit()
+
+        # 更新 DTO，并派发刷新事件以同步镜像（若镜像存在会被刷新显示为最新数据）
+        vote_details.context_message_id = new_msg.id
+        self.bot.dispatch("vote_details_updated", vote_details)
+
+        await self.bot.api_scheduler.submit(
+            interaction.followup.send("检测到面板消息丢失，已重新发送并刷新关联的镜像。"), priority=1
+        )
+
     @commands.Cog.listener()
-    async def on_vote_finished(self, session: "VoteSessionDto", result: "VoteStatusDto"):
+    async def on_vote_finished(self, session: "VoteSessionDto", result: "VoteDetailDto"):
         """
         监听通用投票结束事件，并发送最终结果。
         """
@@ -81,33 +199,17 @@ class Voting(commands.Cog):
 
             logger.info(f"投票会话 {session.id} 结束，生成跳转链接: {jump_url}")
 
-            # 构建主结果 Embed
-            result_embed = VoteEmbedBuilder.build_vote_result_embed(
+            # 构建主结果 Embeds (包含普通投票和异议投票结果)
+            result_embeds = VoteEmbedBuilder.build_vote_result_embeds(
                 topic, result, jump_url=jump_url
             )
 
-            all_embeds_to_send = [result_embed]
+            all_embeds_to_send = result_embeds
 
-            # 如果不是匿名投票，则构建并添加投票者名单
+            # 如果不是匿名投票，则构建并添加各选项的投票者名单
             if not result.is_anonymous and result.voters:
-                approve_voter_ids = [v.user_id for v in result.voters if v.choice == 1]
-                reject_voter_ids = [v.user_id for v in result.voters if v.choice == 0]
-
-                if approve_voter_ids:
-                    approve_embeds = VoteEmbedBuilder.build_voter_list_embeds(
-                        title="赞成票投票人",
-                        voter_ids=approve_voter_ids,
-                        color=discord.Color.green(),
-                    )
-                    all_embeds_to_send.extend(approve_embeds)
-
-                if reject_voter_ids:
-                    reject_embeds = VoteEmbedBuilder.build_voter_list_embeds(
-                        title="反对票投票人",
-                        voter_ids=reject_voter_ids,
-                        color=discord.Color.red(),
-                    )
-                    all_embeds_to_send.extend(reject_embeds)
+                voter_embeds = VoteEmbedBuilder.build_voter_list_embeds_from_details(result)
+                all_embeds_to_send.extend(voter_embeds)
 
             # 准备要@的身份组
             content_to_send = ""
@@ -369,6 +471,8 @@ class Voting(commands.Cog):
                     message_id=original_message_id,
                     thread_id=thread_id,
                     choice=choice,
+                    option_type=1,
+                    choice_index=1,
                 )
             )
 
@@ -409,6 +513,7 @@ class Voting(commands.Cog):
                 DeleteVoteQo(
                     user_id=interaction.user.id,
                     message_id=original_message_id,
+                    option_type=1,
                     choice_index=choice_index,
                 )
             )
@@ -436,71 +541,6 @@ class Voting(commands.Cog):
     # 投票频道与同步监听器
     # -------------------------
 
-    @commands.Cog.listener()
-    async def on_voting_channel_manage_vote_clicked(self, interaction: discord.Interaction):
-        """处理来自投票频道"管理投票"按钮的点击"""
-        try:
-            await safeDefer(interaction, ephemeral=True)
-
-            if not interaction.message or not interaction.guild:
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send("此交互似乎已失效。", ephemeral=True), 1
-                )
-                return
-
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                session = await uow.vote_session.get_vote_session_by_voting_channel_message_id(
-                    interaction.message.id
-                )
-
-                if not session or not session.context_message_id or not session.context_thread_id:
-                    await self.bot.api_scheduler.submit(
-                        interaction.followup.send("找不到关联的原始投票信息", ephemeral=True), 1
-                    )
-                    return
-
-                context_thread_id = session.context_thread_id
-                context_message_id = session.context_message_id
-                guild_id = interaction.guild.id
-
-            # 准备投票管理面板数据
-            panel_data = await self.logic.prepare_voting_choice_data(
-                user_id=interaction.user.id,
-                thread_id=context_thread_id,
-                message_id=context_message_id,
-            )
-
-            # 检查用户是否有管理权限
-            can_manage = await PermissionGuard.can_manage_vote(interaction)
-
-            # 构建管理面板
-            embed = VoteEmbedBuilder.create_management_panel_embed(
-                jump_url=f"https://discord.com/channels/{guild_id}/{context_thread_id}/{context_message_id}",
-                panel_data=panel_data,
-                base_title="投票管理",
-                approve_text="✅ 赞成",
-                reject_text="❌ 反对",
-            )
-
-            # 创建投票选择视图
-            choice_view = VotingChoiceView(
-                bot=self.bot,
-                original_message_id=context_message_id,
-                thread_id=context_thread_id,
-                panel_data=panel_data,
-                can_manage=can_manage,
-            )
-
-            await DiscordUtils.send_private_panel(
-                self.bot, interaction, embed=embed, view=choice_view
-            )
-
-        except Exception as e:
-            logger.error(f"处理投票频道管理点击时出错: {e}", exc_info=True)
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("处理请求时出错", ephemeral=True), 1
-            )
-
     async def _update_thread_panel(self, thread: discord.Thread, vote_details: VoteDetailDto):
         """辅助方法：更新帖子内的投票面板。"""
         if not vote_details.context_message_id:
@@ -521,17 +561,13 @@ class Voting(commands.Cog):
                         )
             else:
                 clean_topic = StringUtils.clean_title(thread.name)
-                new_embed = VoteEmbedBuilder.create_vote_panel_embed(
+                new_embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(
                     topic=clean_topic,
-                    anonymous_flag=vote_details.is_anonymous,
-                    realtime_flag=vote_details.realtime_flag,
-                    notify_flag=vote_details.notify_flag,
-                    end_time=vote_details.end_time,
                     vote_details=vote_details,
                 )
 
-            if new_embed:
-                await self.bot.api_scheduler.submit(message.edit(embed=new_embed), priority=2)
+            if new_embeds:
+                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds), priority=2)
         except discord.NotFound:
             logger.warning(f"找不到帖子内投票消息 {vote_details.context_message_id}，跳过更新。")
         except Exception as e:
@@ -550,6 +586,7 @@ class Voting(commands.Cog):
         try:
             message = await channel.fetch_message(vote_details.voting_channel_message_id)
             new_embed = None
+            new_embeds = None
 
             if vote_details.objection_id:
                 async with UnitOfWork(self.bot.db_handler) as uow:
@@ -569,11 +606,13 @@ class Voting(commands.Cog):
                     )
                     if proposal and thread:
                         proposal_dto = ProposalDto.model_validate(proposal)
-                        new_embed = VoteEmbedBuilder.build_voting_channel_embed(
+                        new_embeds = VoteEmbedBuilder.build_voting_channel_embed(
                             proposal_dto, vote_details, thread.jump_url
                         )
 
-            if new_embed:
+            if new_embeds:
+                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds), priority=2)
+            elif new_embed:
                 await self.bot.api_scheduler.submit(message.edit(embed=new_embed), priority=2)
         except discord.NotFound:
             logger.warning(

@@ -4,12 +4,7 @@ from typing import List, Optional
 
 import discord
 
-from StellariaPact.cogs.Voting.dto import (
-    OptionResult,
-    VoteDetailDto,
-    VoteStatusDto,
-    VotingChoicePanelDto,
-)
+from StellariaPact.cogs.Voting.dto import VoteDetailDto, VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo import (
     AdjustVoteTimeQo,
@@ -17,10 +12,11 @@ from StellariaPact.cogs.Voting.qo import (
     RecordVoteQo,
     UpdateUserActivityQo,
 )
-from StellariaPact.dto import UserActivityDto, UserVoteDto, VoteSessionDto
+from StellariaPact.dto import UserActivityDto, VoteSessionDto
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.services.VoteSessionService import VoteSessionService
-from StellariaPact.share import StellariaPactBot, TimeUtils, UnitOfWork
+from StellariaPact.share import DiscordUtils, StellariaPactBot, StringUtils, TimeUtils, UnitOfWork
+from StellariaPact.share.enums import ProposalStatus
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +160,12 @@ class VotingLogic:
             final_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not final_session:
                 raise ValueError(f"在切换匿名状态后无法重新获取会话 {message_id}。")
-            return VoteSessionService.get_vote_details_dto(final_session)
+
+            # 加载并传入选项
+            vote_options = None
+            if final_session.id:
+                vote_options = await uow.vote_option.get_vote_options(final_session.id)
+            return VoteSessionService.get_vote_details_dto(final_session, vote_options)
 
     async def toggle_realtime(self, message_id: int) -> VoteDetailDto:
         """切换指定投票的实时票数状态。"""
@@ -177,7 +178,12 @@ class VotingLogic:
             final_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not final_session:
                 raise ValueError(f"在切换实时状态后无法重新获取会话 {message_id}。")
-            return VoteSessionService.get_vote_details_dto(final_session)
+
+            # 加载并传入选项
+            vote_options = None
+            if final_session.id:
+                vote_options = await uow.vote_option.get_vote_options(final_session.id)
+            return VoteSessionService.get_vote_details_dto(final_session, vote_options)
 
     async def toggle_notify(self, message_id: int) -> VoteDetailDto:
         """切换指定投票的结束通知状态。"""
@@ -190,7 +196,12 @@ class VotingLogic:
             final_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not final_session:
                 raise ValueError(f"在切换通知状态后无法重新获取会话 {message_id}。")
-            return VoteSessionService.get_vote_details_dto(final_session)
+
+            # 修复：加载并传入选项
+            vote_options = None
+            if final_session.id:
+                vote_options = await uow.vote_option.get_vote_options(final_session.id)
+            return VoteSessionService.get_vote_details_dto(final_session, vote_options)
 
     async def delete_vote_and_get_details(self, qo: DeleteVoteQo) -> VoteDetailDto:
         """
@@ -203,6 +214,7 @@ class VotingLogic:
 
             updated_session = await uow.user_vote.delete_vote(
                 user_id=qo.user_id,
+                option_type=qo.option_type,
                 choice_index=qo.choice_index,
                 vote_session=vote_session,
             )
@@ -399,74 +411,71 @@ class VotingLogic:
                 result_dto.old_end_time,
             )
 
-    async def tally_and_close_session(self, vote_session: VoteSessionDto) -> VoteStatusDto:
+    async def tally_and_close_session(self, vote_session: VoteSessionDto) -> VoteDetailDto:
         """
         计票并关闭一个投票会话。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             if not vote_session.context_message_id:
                 raise ValueError("无法计票：缺少关联的消息ID。")
-            vote_session_dto = await uow.vote_session.get_vote_session_with_details(
+            vote_session_model = await uow.vote_session.get_vote_session_with_details(
                 vote_session.context_message_id
             )
 
-            if not vote_session_dto:
+            if not vote_session_model:
                 raise ValueError(f"找不到ID为 {vote_session.id} 的投票会话")
 
-            # 从已加载的关系中获取投票
-            all_votes = vote_session_dto.userVotes
-            option_results: List[OptionResult] = []
-            total_approve_votes = 0
-            total_reject_votes = 0
-
-            # 单独查询投票选项
-            options = await uow.vote_option.get_vote_options(vote_session.id)
-            if options:
-                for option in options:
-                    approve = sum(
-                        1
-                        for v in all_votes
-                        if v.choice_index == option.choice_index and v.choice == 1
-                    )
-                    reject = sum(
-                        1
-                        for v in all_votes
-                        if v.choice_index == option.choice_index and v.choice == 0
-                    )
-                    option_results.append(
-                        OptionResult(
-                            choice_index=option.choice_index,
-                            choice_text=option.choice_text,
-                            approve_votes=approve,
-                            reject_votes=reject,
-                            total_votes=approve + reject,
-                        )
-                    )
-                    total_approve_votes += approve
-                    total_reject_votes += reject
-            else:
-                total_approve_votes = sum(1 for v in all_votes if v.choice == 1)
-                total_reject_votes = sum(1 for v in all_votes if v.choice == 0)
-
-            # 更新会话状态
-            vote_session_dto.status = 0  # 已结束
+            # 更新会话状态为已结束
+            vote_session_model.status = 0
             await uow.flush()
 
-            voters_dto_list = (
-                [UserVoteDto.model_validate(vote) for vote in all_votes]
-                if not vote_session_dto.anonymous_flag
-                else []
+            # 获取选项以构建 DTO
+            vote_options = None
+            if vote_session_model.id:
+                vote_options = await uow.vote_option.get_vote_options(vote_session_model.id)
+
+            return VoteSessionService.get_vote_details_dto(vote_session_model, vote_options)
+
+    async def set_proposal_under_objection(self, thread_id: int):
+        """
+        将提案设置为“异议中”状态，并同步更新 Discord 帖子的 UI。
+        """
+
+        # 处理 Discord 同步
+        thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
+        if not thread or not isinstance(thread, discord.Thread):
+            logger.warning(f"无法找到帖子 {thread_id}，跳过 UI 同步。")
+            return
+
+        # 计算新标题
+        clean_name = StringUtils.clean_title(thread.name)
+        new_name = f"[异议中] {clean_name}"
+
+        # 计算新标签
+        new_tags = None
+        if isinstance(thread.parent, discord.ForumChannel):
+            new_tags = DiscordUtils.calculate_new_tags(
+                current_tags=thread.applied_tags,
+                forum_tags=thread.parent.available_tags,
+                config=self.bot.config,
+                target_tag_name="under_objection"
             )
 
-            return VoteStatusDto(
-                is_anonymous=vote_session_dto.anonymous_flag,
-                realtime_flag=vote_session_dto.realtime_flag,
-                notify_flag=vote_session_dto.notify_flag,
-                end_time=vote_session_dto.end_time,
-                status=vote_session_dto.status,
-                totalVotes=len(all_votes),
-                approveVotes=total_approve_votes,
-                rejectVotes=total_reject_votes,
-                options=option_results,
-                voters=voters_dto_list,
+        # 构造编辑载荷
+        payload = {}
+        if thread.name != new_name:
+            payload["name"] = new_name
+        if new_tags is not None:
+            payload["applied_tags"] = new_tags
+
+        if payload:
+            # 通过调度器执行 API 调用
+            await self.bot.api_scheduler.submit(thread.edit(**payload), priority=3)
+            logger.info(f"提案帖子 {thread_id} 已同步为 [异议中]")
+
+        # 更新数据库状态
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.proposal.update_proposal_status_by_thread_id(
+                thread_id, ProposalStatus.UNDER_OBJECTION
             )
+            await uow.commit()
