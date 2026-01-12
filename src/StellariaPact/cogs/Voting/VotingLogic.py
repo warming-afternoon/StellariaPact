@@ -464,9 +464,9 @@ class VotingLogic:
                 notify_flag=vote_session_dto.notify_flag,
                 end_time=vote_session_dto.end_time,
                 status=vote_session_dto.status,
-                totalVotes=len(all_votes),
-                approveVotes=total_approve_votes,
-                rejectVotes=total_reject_votes,
+                total_votes=len(all_votes),
+                approve_votes=total_approve_votes,
+                reject_votes=total_reject_votes,
                 options=option_results,
                 voters=voters_dto_list,
             )

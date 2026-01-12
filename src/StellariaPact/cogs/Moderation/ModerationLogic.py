@@ -343,7 +343,7 @@ class ModerationLogic:
                     raise ValueError(f"找不到异议 {objection_id} 关联的提案。")
 
                 # 判断投票结果并更新状态
-                is_passed = result_dto.approveVotes > result_dto.rejectVotes
+                is_passed = result_dto.approve_votes > result_dto.reject_votes
                 objection.status = (
                     ObjectionStatus.PASSED if is_passed else ObjectionStatus.REJECTED
                 )
@@ -383,9 +383,9 @@ class ModerationLogic:
                     if objection.objection_thread_id
                     else None,
                     is_passed=is_passed,
-                    approve_votes=result_dto.approveVotes,
-                    reject_votes=result_dto.rejectVotes,
-                    total_votes=result_dto.totalVotes,
+                    approve_votes=result_dto.approve_votes,
+                    reject_votes=result_dto.reject_votes,
+                    total_votes=result_dto.total_votes,
                 )
 
                 approve_voter_ids = None
@@ -458,7 +458,7 @@ class ModerationLogic:
                     objector_id=objection.objector_id,
                     objector_display_name=f"<@{objection.objector_id}>",
                     objection_reason=objection.reason,
-                    final_votes=result_dto.totalVotes,
+                    final_votes=result_dto.total_votes,
                     required_votes=objection.required_votes,
                 )
 

@@ -203,9 +203,9 @@ class VoteEmbedBuilder:
                     inline=True,
                 )
         else:
-            embed.add_field(name="赞成", value=f"{result.approveVotes}", inline=True)
-            embed.add_field(name="反对", value=f"{result.rejectVotes}", inline=True)
-            embed.add_field(name="总票数", value=f"{result.totalVotes}", inline=True)
+            embed.add_field(name="赞成", value=f"{result.approve_votes}", inline=True)
+            embed.add_field(name="反对", value=f"{result.reject_votes}", inline=True)
+            embed.add_field(name="总票数", value=f"{result.total_votes}", inline=True)
 
         return embed
 
