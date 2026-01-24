@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from StellariaPact.services import IntakeService
+
 if TYPE_CHECKING:
     from StellariaPact.services.AnnouncementMonitorService import AnnouncementMonitorService
     from StellariaPact.services.AnnouncementService import AnnouncementService
@@ -25,13 +27,11 @@ class UnitOfWork:
     """
     一个实现了工作单元模式的异步上下文管理器。
 
-    它封装了数据库会话和事务管理，并提供了对各个服务（仓库）的访问<br>
-    这确保了在单个业务操作中的所有数据库更改要么一起提交，要么一起回滚。
+    封装了数据库会话和事务管理，并提供了对各个服务（仓库）的访问<br>
 
     用法:<br>
     async with UnitOfWork() as uow:<br>
         await uow.announcements.create_announcement(...)<br>
-        await uow.commit()<br>
     """
 
     def __init__(self, db_handler: Optional["DatabaseHandler"]):
@@ -186,3 +186,12 @@ class UnitOfWork:
 
             self._proposal_service = ProposalService(self.session)
         return self._proposal_service
+
+    @property
+    def intake(self) -> "IntakeService":
+        """获取草案服务实例。"""
+        if not hasattr(self, "_intake_service"):
+            from StellariaPact.services.IntakeService import IntakeService
+
+            self._intake_service = IntakeService(self.session)
+        return self._intake_service

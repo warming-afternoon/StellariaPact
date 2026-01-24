@@ -26,7 +26,7 @@ from StellariaPact.dto import (
     ProposalDto,
 )
 from StellariaPact.models import UserActivity
-from StellariaPact.share import DiscordUtils, StringUtils, UnitOfWork, safeDefer
+from StellariaPact.share import DiscordUtils, UnitOfWork, safeDefer
 from StellariaPact.share.enums import ProposalStatus
 
 if TYPE_CHECKING:
