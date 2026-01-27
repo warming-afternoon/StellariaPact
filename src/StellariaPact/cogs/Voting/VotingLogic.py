@@ -4,13 +4,13 @@ from typing import List, Optional
 
 import discord
 
+from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.dto import (
     OptionResult,
     VoteDetailDto,
     VoteStatusDto,
     VotingChoicePanelDto,
 )
-from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo import (
     AdjustVoteTimeQo,
     DeleteVoteQo,
