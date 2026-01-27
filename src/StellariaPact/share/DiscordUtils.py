@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, List, Optional, Sequence
 
 import discord
 
-from StellariaPact.share import StringUtils
+from StellariaPact.share.StringUtils import StringUtils
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 if TYPE_CHECKING:
