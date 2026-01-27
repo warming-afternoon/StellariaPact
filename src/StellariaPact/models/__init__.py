@@ -4,7 +4,6 @@ from .BaseModel import BaseModel
 from .ConfirmationSession import ConfirmationSession
 from .Objection import Objection
 from .Proposal import Proposal
-from .ProposalIntake import ProposalIntake
 from .UserActivity import UserActivity
 from .UserVote import UserVote
 from .VoteOption import VoteOption
@@ -21,5 +20,4 @@ __all__ = [
     "UserVote",
     "VoteOption",
     "VoteSession",
-    "ProposalIntake",
 ]

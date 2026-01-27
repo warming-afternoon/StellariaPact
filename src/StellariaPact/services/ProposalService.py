@@ -56,24 +56,6 @@ class ProposalService:
             await self.session.rollback()
             return None
 
-    async def add_proposal(self, proposal: Proposal) -> Proposal:
-        """
-        将一个提案 ORM 对象添加到会话中。
-        """
-        self.session.add(proposal)
-        await self.session.flush()
-        await self.session.refresh(proposal)
-        return proposal
-
-    async def update_proposal(self, proposal: Proposal) -> Proposal:
-        """
-        更新一个提案 ORM 对象。
-        """
-        self.session.add(proposal)
-        await self.session.flush()
-        await self.session.refresh(proposal)
-        return proposal
-
     async def update_proposal_status_by_thread_id(self, thread_id: int, status: int):
         """
         根据帖子ID更新提案的状态。

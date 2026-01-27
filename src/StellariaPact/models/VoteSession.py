@@ -17,35 +17,22 @@ class VoteSession(BaseModel, table=True):
 
     __tablename__ = "vote_session"  # type: ignore
 
-    session_type: int = Field(
-        default=0, index=True, description="投票类型, 0-提案, 1-异议支持, 2-异议, 3-草案"
-    )
-
-    total_choices: int = Field(default=0, description="选项总数")
-
-    proposal_id: Optional[int] = Field(default=None, description="关联的提案ID")
-    objection_id: Optional[int] = Field(default=None, description="关联的异议ID")
-    intake_id: Optional[int] = Field(default=None, description="关联的草案ID")
-
     guild_id: int = Field(index=True, description="服务器ID")
+    total_choices: int = Field(default=0, description="选项总数")
     context_thread_id: int = Field(index=True, description="投票发生的频道ID")
+    objection_id: Optional[int] = Field(
+        default=None, foreign_key="objection.id", description="关联的异议ID"
+    )
     context_message_id: Optional[int] = Field(
         default=None, index=True, description="投票面板消息的ID"
     )
     voting_channel_message_id: Optional[int] = Field(
         default=None, index=True, description="投票频道中镜像投票消息的ID"
     )
-
     anonymous_flag: bool = Field(default=True, description="是否为匿名投票")
     realtime_flag: bool = Field(default=True, description="是否实时展示投票进度")
     notify_flag: bool = Field(default=True, description="投票结束时是否通知相关方")
     status: int = Field(default=1, index=True, description="投票状态: 0-已结束, 1-进行中")
-
-    start_time: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
-        description="投票开始时间",
-    )
     end_time: Optional[datetime] = Field(default=None, description="投票截止时间")
     created_at: datetime = Field(
         default_factory=datetime.utcnow,
