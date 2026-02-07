@@ -182,6 +182,7 @@ class ModerationEventListener(commands.Cog):
             qo = CreateVoteSessionQo(
                 guild_id=thread.guild.id,
                 thread_id=thread.id,
+                proposal_id=proposal_dto.id,
                 context_message_id=message.id,
                 realtime=realtime,
                 anonymous=anonymous,
@@ -344,6 +345,7 @@ class ModerationEventListener(commands.Cog):
                     guild_id=thread.guild.id,
                     thread_id=thread.id,
                     objection_id=objection_dto.objection_id,
+                    proposal_id=objection_dto.proposal_id,
                     context_message_id=message_in_thread.id,
                     realtime=True,
                     anonymous=True,

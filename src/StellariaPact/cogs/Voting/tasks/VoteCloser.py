@@ -9,6 +9,7 @@ from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import VoteSessionDto
 from StellariaPact.share import StellariaPactBot, UnitOfWork
 from StellariaPact.share.enums.ObjectionStatus import ObjectionStatus
+from StellariaPact.share.enums.VoteSessionType import VoteSessionType
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +63,11 @@ class VoteCloser(commands.Cog):
         """
         根据投票会话的类型和状态分派相应的事件
         """
-        # 对于非异议投票，分派通用事件 "vote_finished"
+        # 对于提案投票，分派事件 "vote_finished"
         if not session_dto.objection_id:
-            logger.debug(f"普通投票 {session_dto.id} 已结束。分派 'vote_finished' 事件。")
-            self.bot.dispatch("vote_finished", session_dto, result_dto)
+            if session_dto.session_type == VoteSessionType.PROPOSAL_FINAL:
+                logger.debug(f"提案投票 {session_dto.id} 已结束。分派 'vote_finished' 事件")
+                self.bot.dispatch("vote_finished", session_dto, result_dto)
             return
 
         # 对于异议投票，获取异议状态，分派对应事件

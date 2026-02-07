@@ -129,6 +129,7 @@ class VoteSessionService:
             guild_id=qo.guild_id,
             context_thread_id=qo.thread_id,
             objection_id=qo.objection_id,
+            proposal_id=qo.proposal_id,
             intake_id=qo.intake_id,
             context_message_id=qo.context_message_id,
             realtime_flag=qo.realtime,

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class IntakeCloser:
     """
-    独立清理器：每 5 分钟检查一次已超过 3 天且未达标的草案。
+    Intake 模块清理器：每 5 分钟检查一次已超过 3 天且未达标的草案
     """
 
     def __init__(self, intake_cog: "IntakeCog"):

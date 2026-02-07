@@ -570,6 +570,7 @@ class ModerationLogic:
                     guild_id=guild_id,
                     thread_id=proposal.discussion_thread_id,
                     objection_id=objection.id,
+                    proposal_id=proposal.id,
                     context_message_id=0,  # 占位符，将在UI创建后更新
                     end_time=end_time,
                 )

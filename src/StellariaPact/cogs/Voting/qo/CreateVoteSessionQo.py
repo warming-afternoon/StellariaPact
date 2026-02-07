@@ -17,6 +17,9 @@ class CreateVoteSessionQo(BaseDto):
     objection_id: Optional[int] = None
     """关联的异议ID (如果是异议投票)"""
 
+    proposal_id: Optional[int] = None
+    """关联的提案ID"""
+
     intake_id: Optional[int] = None
     """关联的草案ID (如果是草案投票)"""
 
@@ -38,5 +41,5 @@ class CreateVoteSessionQo(BaseDto):
     total_choices: int = 0
     """投票选项总数"""
 
-    session_type: int = 0
+    session_type: int = 1
     """投票会话类型"""

@@ -18,9 +18,9 @@ class VoteSession(BaseModel, table=True):
     __tablename__ = "vote_session"  # type: ignore
 
     session_type: int = Field(
-        default=0, index=True, description="投票类型, 0-提案, 1-异议支持, 2-异议, 3-草案"
+        default=1, index=True, description="投票类型, 1-提案, 2-异议支持, 3-异议, 4-草案"
     )
-    """投票类型, 0-提案, 1-异议支持, 2-异议, 3-草案"""
+    """投票类型, 1-提案, 2-异议支持, 3-异议, 4-草案"""
 
     total_choices: int = Field(default=0, description="选项总数")
     """选项总数"""
