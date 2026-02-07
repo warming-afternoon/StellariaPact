@@ -18,6 +18,13 @@ class VoteOption(BaseModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    """主键ID"""
+
     session_id: int = Field(index=True, description="关联的投票会话ID")
+    """关联的投票会话ID"""
+
     choice_index: int = Field(description="选项在此会话中的顺序 (从1开始)")
+    """选项在此会话中的顺序 (从1开始)"""
+
     choice_text: str = Field(description="选项文本")
+    """选项文本"""

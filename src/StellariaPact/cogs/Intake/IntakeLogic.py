@@ -224,6 +224,7 @@ class IntakeLogic:
                 select(func.count(UserVote.id))  # type: ignore
                 .join(VoteSession, UserVote.session_id == VoteSession.id)  # type: ignore
                 .where(VoteSession.intake_id == intake_id)  # type: ignore
+                .where(VoteSession.session_type == VoteSessionType.INTAKE_SUPPORT)  # type: ignore
             )
             current_votes = (await uow.session.execute(count_stmt)).scalar_one()
             return "already_processed", current_votes or 0

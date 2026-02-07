@@ -108,7 +108,7 @@ class IntakeEmbedBuilder:
         if success:
             embed = discord.Embed(
                 title=f"✅ [已立案] {intake.title}",
-                description=f"该草案已获得足够的社区支持（{intake.required_votes} 票），已正式立案。",
+                description="提案已创建讨论帖",
                 color=discord.Color.green(),
             )
             embed.add_field(name="草案ID", value=f"`{intake.id}`", inline=True)
@@ -117,7 +117,6 @@ class IntakeEmbedBuilder:
                 # 构建跳转到新讨论帖的链接
                 url = IntakeEmbedBuilder._get_jump_url(intake.guild_id, thread_id)
                 embed.add_field(name="正式讨论帖", value=f"👉 [点击前往讨论]({url})", inline=False)
-            embed.set_footer(text="草案支持票收集已成功完成")
         else:
             embed = discord.Embed(
                 title=f"❌ [收集失败] {intake.title}",

@@ -119,7 +119,8 @@ class ModerationEventListener(commands.Cog):
         starter_message = thread.starter_message or await thread.fetch_message(thread.id)
         if not starter_message:
             logger.warning(
-                f"无法找到帖子 {proposal_dto.discussion_thread_id} 的启动消息，无法解析投票截止时间。"
+                f"无法找到帖子 {proposal_dto.discussion_thread_id} 的启动消息，"
+                f"无法解析投票截止时间。"
             )
             return None, None, None
 
@@ -291,9 +292,7 @@ class ModerationEventListener(commands.Cog):
             )
             await uow.commit()
 
-        logger.debug(
-            f"成功为会话 {session_dto.id} 创建并关联了镜像投票，消息ID: {voting_channel_message.id}"
-        )
+        logger.debug(f"成功为会话 {session_dto.id} 创建并关联了镜像投票")
 
     @commands.Cog.listener()
     async def on_objection_thread_created(

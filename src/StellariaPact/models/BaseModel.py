@@ -43,7 +43,8 @@ class BaseModel(SQLModel, metaclass=CustomSQLModelMetaclass):
     - 提供共享的配置和通用字段。
     """
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: Optional[int] = Field(default=None, primary_key=True, description="主键ID")
+    """主键ID"""
 
     class Config:
         """

@@ -9,10 +9,25 @@ class ObjectionVotePanelDto(BaseDto):
     """
 
     objection_id: int
+    """异议ID"""
+
     vote_session_id: int
+    """投票会话ID"""
+
     objector_id: int
+    """异议发起人的Discord ID"""
+
     objection_reason: str
+    """反对理由"""
+
     required_votes: int
+    """触发投票所需的反对票数"""
+
     proposal_id: int
+    """提案ID"""
+
     proposal_title: str
+    """提案标题"""
+
     proposal_thread_id: int
+    """提案讨论帖ID"""
