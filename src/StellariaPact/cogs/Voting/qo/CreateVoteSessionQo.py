@@ -17,6 +17,9 @@ class CreateVoteSessionQo(BaseDto):
     objection_id: Optional[int] = None
     """关联的异议ID (如果是异议投票)"""
 
+    intake_id: Optional[int] = None
+    """关联的草案ID (如果是草案投票)"""
+
     context_message_id: int
     """上下文消息ID (通常是帖子内的投票面板消息)"""
 
@@ -34,3 +37,6 @@ class CreateVoteSessionQo(BaseDto):
 
     total_choices: int = 0
     """投票选项总数"""
+
+    session_type: int = 0
+    """投票会话类型"""
