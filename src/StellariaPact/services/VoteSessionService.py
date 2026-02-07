@@ -129,12 +129,14 @@ class VoteSessionService:
             guild_id=qo.guild_id,
             context_thread_id=qo.thread_id,
             objection_id=qo.objection_id,
+            intake_id=qo.intake_id,
             context_message_id=qo.context_message_id,
             realtime_flag=qo.realtime,
             anonymous_flag=qo.anonymous,
             notify_flag=qo.notify_flag,
             end_time=qo.end_time,
             total_choices=qo.total_choices,
+            session_type=qo.session_type,
         )
         self.session.add(new_session)
         await self.session.flush()

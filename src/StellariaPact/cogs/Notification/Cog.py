@@ -13,7 +13,6 @@ from StellariaPact.cogs.Notification.dto.AdjustTimeDto import AdjustTimeDto
 from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
 from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
 from StellariaPact.cogs.Notification.views.AnnouncementModal import AnnouncementModal
-from StellariaPact.share.auth import MissingRole, RoleGuard
 from StellariaPact.share import (
     DiscordUtils,
     StellariaPactBot,
@@ -22,6 +21,7 @@ from StellariaPact.share import (
     UnitOfWork,
     safeDefer,
 )
+from StellariaPact.share.auth import MissingRole, RoleGuard
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +281,8 @@ class Notification(commands.Cog):
 
             await self._update_starter_message_timestamp(interaction.channel, new_ts_string)
 
-            old_ts = f"<t:{int(result.old_end_time.timestamp())}:F> (<t:{int(result.old_end_time.timestamp())}:R>)"
+            old_timestamp = int(result.old_end_time.timestamp())
+            old_ts = f"<t:{old_timestamp}:F> (<t:{old_timestamp}:R>)"
             embed = AnnouncementEmbedBuilder.create_time_modification_embed(
                 interaction_user=interaction.user,
                 operation=operation,
@@ -321,8 +322,8 @@ class Notification(commands.Cog):
             time_change_hours: 要调整的小时数（正数表示延长，负数表示缩短）。
 
         Returns:
-            如果成功，返回包含新旧结束时间的 AdjustTimeDto；如果失败（例如帖子无效、公示已结束等），
-            则向用户发送错误消息并返回 None。
+            如果成功，返回包含新旧结束时间的 AdjustTimeDto；
+            如果失败（例如帖子无效、公示已结束等），则向用户发送错误消息并返回 None。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             announcement = await uow.announcements.get_by_thread_id(thread.id)
