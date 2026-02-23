@@ -39,3 +39,31 @@ class IntakeService:
         )
         result = await self.session.exec(statement)
         return result.all()
+
+    async def get_intake_by_review_thread_id(self, thread_id: int) -> Optional[ProposalIntake]:
+        """
+        通过审核帖子 ID 获取 ProposalIntake。
+
+        Args:
+            thread_id: 审核帖子的 Discord ID。
+
+        Returns:
+            如果找到则返回 ProposalIntake，否则返回 None。
+        """
+        statement = select(ProposalIntake).where(ProposalIntake.review_thread_id == thread_id)
+        result = await self.session.exec(statement)
+        return result.one_or_none()
+
+    async def get_intake_by_discussion_thread_id(self, thread_id: int) -> Optional[ProposalIntake]:
+        """
+        通过讨论帖子 ID 获取 ProposalIntake。
+
+        Args:
+            thread_id: 讨论帖子的 Discord ID。
+
+        Returns:
+            如果找到则返回 ProposalIntake，否则返回 None。
+        """
+        statement = select(ProposalIntake).where(ProposalIntake.discussion_thread_id == thread_id)
+        result = await self.session.exec(statement)
+        return result.one_or_none()

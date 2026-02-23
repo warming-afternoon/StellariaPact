@@ -5,12 +5,11 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.services import IntakeService
-
 if TYPE_CHECKING:
     from StellariaPact.services.AnnouncementMonitorService import AnnouncementMonitorService
     from StellariaPact.services.AnnouncementService import AnnouncementService
     from StellariaPact.services.ConfirmationSessionService import ConfirmationSessionService
+    from StellariaPact.services.IntakeService import IntakeService
     from StellariaPact.services.ObjectionService import ObjectionService
     from StellariaPact.services.ProposalService import ProposalService
     from StellariaPact.services.UserActivityService import UserActivityService

@@ -8,6 +8,7 @@ from discord import Interaction, app_commands
 from discord.ext import commands
 
 from StellariaPact.cogs.Intake.listeners.IntakeEventListener import IntakeEventListenerCog
+from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.cogs.Intake.views.IntakeSubmissionView import IntakeSubmissionView
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 
@@ -29,6 +30,7 @@ class IntakeCog(commands.Cog):
         self.closer = IntakeCloser(self)  # 启动清理器
         # 在 bot 启动时注册持久化视图
         bot.add_view(IntakeSubmissionView())
+        bot.add_view(IntakeReviewView(bot))
 
     def cog_unload(self):
         """当 Cog 被卸载时停止定时任务"""

@@ -5,19 +5,38 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ui import Button, View
 
+from StellariaPact.cogs.Intake.views.IntakeReviewModal import IntakeReviewModal
+from StellariaPact.share.auth.RoleGuard import RoleGuard
+
 if TYPE_CHECKING:
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 
 class IntakeReviewView(View):
     """
-    一个用于审核草案的视图，包含“批准”、“拒绝”和“要求修改”按钮。
+    一个用于审核草案的视图，包含"批准"、"拒绝"和"要求修改"按钮。
     """
 
-    def __init__(self, bot: "StellariaPactBot", intake_id: int):
+    def __init__(self, bot: "StellariaPactBot"):
         super().__init__(timeout=None)
         self.bot = bot
-        self.intake_id = intake_id
+
+    async def _check_permissions(self, interaction: discord.Interaction) -> bool:
+        """检查用户是否有审核权限（stewards身份组）"""
+        if not RoleGuard.hasRoles(interaction, "stewards"):
+            await interaction.response.send_message(
+                "❌ 您没有权限执行此操作，需要 steward 身份组。", ephemeral=True
+            )
+            return False
+        return True
+
+    async def _handle_review_action(self, interaction: discord.Interaction, action: str):
+        """处理审核动作的通用方法"""
+        if not await self._check_permissions(interaction):
+            return
+
+        modal = IntakeReviewModal(self.bot, action)
+        await interaction.response.send_modal(modal)
 
     @discord.ui.button(
         label="✅ 批准",
@@ -25,13 +44,7 @@ class IntakeReviewView(View):
         custom_id="persistent:intake_approve",
     )
     async def approve(self, interaction: discord.Interaction, button: Button):
-        self.bot.dispatch("intake_approved", self.intake_id)
-        await interaction.response.send_message(
-            f"✅ 草案 `{self.intake_id}` 已批准，正在创建支持票收集贴...", ephemeral=True
-        )
-        button.disabled = True
-        assert interaction.message is not None
-        await interaction.message.edit(view=self)
+        await self._handle_review_action(interaction, "approved")
 
     @discord.ui.button(
         label="❌ 拒绝",
@@ -39,13 +52,7 @@ class IntakeReviewView(View):
         custom_id="persistent:intake_reject",
     )
     async def reject(self, interaction: discord.Interaction, button: Button):
-        self.bot.dispatch("intake_rejected", self.intake_id)
-        await interaction.response.send_message(
-            f"❌ 草案 `{self.intake_id}` 已被拒绝。", ephemeral=True
-        )
-        button.disabled = True
-        assert interaction.message is not None
-        await interaction.message.edit(view=self)
+        await self._handle_review_action(interaction, "rejected")
 
     @discord.ui.button(
         label="📝 要求修改",
@@ -53,10 +60,4 @@ class IntakeReviewView(View):
         custom_id="persistent:intake_modify",
     )
     async def modify(self, interaction: discord.Interaction, button: Button):
-        self.bot.dispatch("intake_modification_requested", self.intake_id)
-        await interaction.response.send_message(
-            f"📝 草案 `{self.intake_id}` 已标记为需要修改。", ephemeral=True
-        )
-        button.disabled = True
-        assert interaction.message is not None
-        await interaction.message.edit(view=self)
+        await self._handle_review_action(interaction, "modification_requested")

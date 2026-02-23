@@ -77,6 +77,24 @@ class IntakeEmbedBuilder:
         return embed
 
     @staticmethod
+    def build_review_content(intake: ProposalIntake) -> str:
+        """构建审核贴的纯文本内容"""
+        from datetime import datetime
+
+        submitted_at = datetime.utcnow()
+        submitted_timestamp = int(submitted_at.timestamp())
+
+        status_text = IntakeEmbedBuilder._get_review_status_text(intake.status)
+        if " " in status_text:
+            emoji, status_desc = status_text.split(" ", 1)
+        else:
+            emoji = ""
+            status_desc = status_text
+
+        content = f"""👤 **提案人：** <@{intake.author_id}>\n📅 **提交时间：** <t:{submitted_timestamp}:f>\n🆔 **草案ID：** `{intake.id}`\n\n---\n\n🏷️ **议案标题**\n{intake.title}\n\n📝 **提案原因**\n{intake.reason}\n\n📋 **议案动议**\n{intake.motion}\n\n🔧 **执行方案**\n{intake.implementation}\n\n👨‍💼 **议案执行人**\n{intake.executor}\n\n---\n\n{emoji} **状态：** {status_desc}\n"""
+        return content.strip()
+
+    @staticmethod
     def build_support_embed(intake: ProposalIntake) -> discord.Embed:
         """构建用于收集支持票的嵌入消息。"""
         embed = discord.Embed(

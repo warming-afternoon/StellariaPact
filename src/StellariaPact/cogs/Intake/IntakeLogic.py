@@ -12,6 +12,7 @@ from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.ProposalIntake import ProposalIntake
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
+from StellariaPact.share import DiscordUtils
 from StellariaPact.share.enums import IntakeStatus, ProposalStatus, VoteSessionType
 
 from .views.IntakeEmbedBuilder import IntakeEmbedBuilder
@@ -43,7 +44,7 @@ class IntakeLogic:
         3. 在帖子中发送一条消息，附上包含"批准"、"拒绝"等操作的视图。
         4. 更新草案记录，关联新创建的审核帖子ID。
         """
-        # 1. 创建并保存草案实体
+        # 创建并保存草案实体
         intake = ProposalIntake(
             guild_id=dto.guild_id,
             author_id=dto.author_id,
@@ -57,7 +58,7 @@ class IntakeLogic:
         created_intake = await uow.intake.create_intake(intake)
         await uow.flush([created_intake])
 
-        # 2. 在审核论坛创建帖子
+        # 在审核论坛创建帖子
         channels_config = self.bot.config.get("channels", {})
         review_forum_id = channels_config.get("intake_review")
         if not review_forum_id:
@@ -69,41 +70,56 @@ class IntakeLogic:
             logger.error(f"ID为 {review_forum_id} 的频道不是论坛频道。")
             raise TypeError("审核频道类型不正确。")
 
-        embed = IntakeEmbedBuilder.build_review_embed(created_intake)
+        content = IntakeEmbedBuilder.build_review_content(created_intake)
         assert created_intake.id is not None
         thread_with_message = await review_forum.create_thread(
-            name=f"草案 #{created_intake.id} - {created_intake.title}",
-            embed=embed,
-            view=IntakeReviewView(self.bot, created_intake.id),
+            name=f"{created_intake.title}",
+            content=content,
+            view=IntakeReviewView(self.bot),
         )
 
-        # 3. 更新草案，关联帖子ID
+        # 更新草案，关联帖子ID
         created_intake.review_thread_id = thread_with_message.thread.id
         await uow.intake.update_intake(created_intake)
 
+        # 更新审核帖标签
+        await self._update_review_thread_tags(created_intake)
+
+        # 在返回前将对象从会话中分离，避免会话关闭后的延迟加载问题
+        uow.session.expunge(created_intake)
+
         return created_intake
 
-    async def approve_intake(self, uow: "UnitOfWork", intake_id: int) -> ProposalIntake:
+    async def approve_intake(
+        self, uow: "UnitOfWork", thread_id: int, reviewer_id: int, review_comment: str
+    ) -> ProposalIntake:
         """
-        批准一个待审核的草案。
+        通过审核帖子ID批准一个待审核的草案。
 
-        1. 将草案状态更新为“支持票收集中”。
-        2. 在指定的投票频道发送一个消息，用于收集社区支持票。
-        3. 为此草案创建一个“准入支持”类型的投票会话。
+        1. 通过 thread_id 查询草案。
+        2. 记录审核信息（审核人ID、审核时间、审核意见）。
+        3. 将草案状态更新为"支持票收集中"。
+        4. 在指定的投票频道发送一个消息，用于收集社区支持票。
+        5. 为此草案创建一个"准入支持"类型的投票会话。
         """
-        intake = await uow.intake.get_intake_by_id(intake_id)
+        intake = await uow.intake.get_intake_by_review_thread_id(thread_id)
         if not intake:
-            raise ValueError("草案不存在。")
+            raise ValueError("未找到对应的草案。")
         if intake.status != IntakeStatus.PENDING_REVIEW:
             raise ValueError("草案状态不正确，无法批准。")
         if not intake.review_thread_id:
             raise ValueError("草案缺少审核帖子ID，无法继续。")
 
-        # 1. 更新状态
+        # 记录审核信息
+        intake.reviewer_id = reviewer_id
+        intake.reviewed_at = datetime.utcnow()
+        intake.review_comment = review_comment
+
+        # 更新状态
         intake.status = IntakeStatus.SUPPORT_COLLECTING
         await uow.intake.update_intake(intake)
 
-        # 2. 在投票频道发送消息
+        # 在投票频道发送消息
         channels_config = self.bot.config.get("channels", {})
         voting_channel_id = channels_config.get("voting_channel")
         if not voting_channel_id:
@@ -119,7 +135,7 @@ class IntakeLogic:
         intake.voting_message_id = vote_msg.id
         await uow.intake.update_intake(intake)
 
-        # 3. 创建投票会话
+        # 创建投票会话
         now = datetime.utcnow()
         vote_qo = CreateVoteSessionQo(
             guild_id=vote_msg.guild.id if vote_msg.guild else 0,
@@ -130,6 +146,9 @@ class IntakeLogic:
             end_time=now + timedelta(days=3),  # 记录结束时间
         )
         await uow.vote_session.create_vote_session(vote_qo)
+
+        # 更新审核帖标签
+        await self._update_review_thread_tags(intake)
 
         return intake
 
@@ -182,6 +201,10 @@ class IntakeLogic:
         created_proposal.discussion_thread_id = thread_with_message.thread.id
         await uow.proposal.update_proposal(created_proposal)
 
+        # 同时更新 ProposalIntake 的 discussion_thread_id
+        intake.discussion_thread_id = thread_with_message.thread.id
+        await uow.intake.update_intake(intake)
+
         # 更新投票频道的面板为"成功"并移除按钮
         if not intake.voting_message_id:
             return created_proposal
@@ -202,6 +225,10 @@ class IntakeLogic:
 
         # 更新审核贴
         await self._update_review_thread_message(intake, "草案已立案", view=None)
+
+        # 更新审核帖标签
+        await self._update_review_thread_tags(intake)
+
         return created_proposal
 
     async def handle_support_toggle(
@@ -217,7 +244,7 @@ class IntakeLogic:
         if not intake:
             raise ValueError("草案不存在。")
 
-        # 如果状态已经不是“支持票收集中”，说明已经被别人抢先立案或已关闭
+        # 如果状态已经不是"支持票收集中"，说明已经被别人抢先立案或已关闭
         if intake.status != IntakeStatus.SUPPORT_COLLECTING:
             # 重新计算一下票数并返回
             count_stmt = (
@@ -278,7 +305,7 @@ class IntakeLogic:
         # 再次刷新以获取最新状态，防止在计票期间状态被外部更改
         await uow.session.refresh(intake)
 
-        # 如果状态已经不是“支持票收集中”，说明已经被别人抢先处理
+        # 如果状态已经不是"支持票收集中"，说明已经被别人抢先处理
         if intake.status != IntakeStatus.SUPPORT_COLLECTING:
             action = "already_processed"
             return action, current_votes
@@ -310,6 +337,9 @@ class IntakeLogic:
             intake, "草案因 3 天内支持票不足已自动关闭。", view=None
         )
 
+        # 更新审核帖标签
+        await self._update_review_thread_tags(intake)
+
         # 更新投票频道的消息
         if intake.voting_message_id:
             channels_config = self.bot.config.get("channels", {})
@@ -334,35 +364,63 @@ class IntakeLogic:
             .values(status=0)
         )
 
-    async def reject_intake(self, uow: "UnitOfWork", intake_id: int) -> ProposalIntake:
+    async def reject_intake(
+        self, uow: "UnitOfWork", thread_id: int, reviewer_id: int, review_comment: str
+    ) -> ProposalIntake:
         """
-        拒绝一个草案。
-        """
-        intake = await uow.intake.get_intake_by_id(intake_id)
-        if not intake:
-            raise ValueError("草案不存在。")
+        通过审核帖子ID拒绝一个草案。
 
+        1. 通过 thread_id 查询草案。
+        2. 记录审核信息（审核人ID、审核时间、审核意见）。
+        3. 更新草案状态为已拒绝。
+        """
+        intake = await uow.intake.get_intake_by_review_thread_id(thread_id)
+        if not intake:
+            raise ValueError("未找到对应的草案。")
+
+        # 记录审核信息
+        intake.reviewer_id = reviewer_id
+        intake.reviewed_at = datetime.utcnow()
+        intake.review_comment = review_comment
+
+        # 更新状态
         intake.status = IntakeStatus.REJECTED
         await uow.intake.update_intake(intake)
 
         await self._update_review_thread_message(intake, "草案已被拒绝", view=None)
 
+        # 更新审核帖标签
+        await self._update_review_thread_tags(intake)
+
         return intake
 
     async def request_modification_intake(
-        self, uow: "UnitOfWork", intake_id: int
+        self, uow: "UnitOfWork", thread_id: int, reviewer_id: int, review_comment: str
     ) -> ProposalIntake:
         """
-        请求修改一个草案。
-        """
-        intake = await uow.intake.get_intake_by_id(intake_id)
-        if not intake:
-            raise ValueError("草案不存在。")
+        通过审核帖子ID请求修改一个草案。
 
+        1. 通过 thread_id 查询草案。
+        2. 记录审核信息（审核人ID、审核时间、审核意见）。
+        3. 更新草案状态为需要修改。
+        """
+        intake = await uow.intake.get_intake_by_review_thread_id(thread_id)
+        if not intake:
+            raise ValueError("未找到对应的草案。")
+
+        # 记录审核信息
+        intake.reviewer_id = reviewer_id
+        intake.reviewed_at = datetime.utcnow()
+        intake.review_comment = review_comment
+
+        # 更新状态
         intake.status = IntakeStatus.MODIFICATION_REQUIRED
         await uow.intake.update_intake(intake)
 
         await self._update_review_thread_message(intake, "草案需要修改", view=None)
+
+        # 更新审核帖标签
+        await self._update_review_thread_tags(intake)
 
         return intake
 
@@ -384,3 +442,56 @@ class IntakeLogic:
                 logger.error(f"无法在帖子 {thread.id} 中找到起始消息。")
             except discord.Forbidden:
                 logger.error(f"没有权限编辑帖子 {thread.id} 中的消息。")
+
+    def _get_tag_name_for_status(self, status: int) -> str | None:
+        """根据状态获取对应的标签键名"""
+        status_tag_map = {
+            int(IntakeStatus.PENDING_REVIEW): "pending_review",
+            int(IntakeStatus.SUPPORT_COLLECTING): "support_collecting",
+            int(IntakeStatus.APPROVED): "approved",
+            int(IntakeStatus.REJECTED): "rejected",
+            int(IntakeStatus.MODIFICATION_REQUIRED): "modification_required",
+        }
+        return status_tag_map.get(status)
+
+    async def _update_review_thread_tags(self, intake: ProposalIntake):
+        """更新审核帖子的标签"""
+        if not intake.review_thread_id:
+            logger.warning(f"草案 {intake.id} 缺少 review_thread_id，无法更新标签。")
+            return
+
+        thread = self.bot.get_channel(intake.review_thread_id)
+        if not isinstance(thread, discord.Thread):
+            logger.warning(f"草案 {intake.id} 的 review_thread_id 无效。")
+            return
+
+        forum = thread.parent
+        if not isinstance(forum, discord.ForumChannel):
+            logger.warning(f"帖子 {thread.id} 的父频道不是论坛频道。")
+            return
+
+        target_tag_name = self._get_tag_name_for_status(intake.status)
+        if not target_tag_name:
+            logger.warning(f"草案 {intake.id} 的状态 {intake.status} 没有对应的标签。")
+            return
+
+        # 构建用于 intake_tags 的配置
+        config = {
+            "tags": self.bot.config.get("intake_tags", {}),
+            "status_tag_keys": self.bot.config.get("intake_status_tag_keys", []),
+        }
+
+        new_tags = DiscordUtils.calculate_new_tags(
+            current_tags=thread.applied_tags,
+            forum_tags=forum.available_tags,
+            config=config,
+            target_tag_name=target_tag_name,
+        )
+
+        if new_tags is not None:
+            try:
+                await thread.edit(applied_tags=new_tags)
+            except discord.Forbidden:
+                logger.error(f"没有权限编辑帖子 {thread.id} 的标签。")
+            except Exception as e:
+                logger.error(f"更新帖子 {thread.id} 的标签时出错: {e}")

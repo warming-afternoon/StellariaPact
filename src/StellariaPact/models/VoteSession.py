@@ -80,5 +80,12 @@ class VoteSession(BaseModel, table=True):
     """创建时间"""
 
     # --- 关系定义 ---
-    objection: Optional[Objection] = Relationship(back_populates="vote_session")
+    objection: Optional[Objection] = Relationship(
+        back_populates="vote_session",
+        sa_relationship_kwargs={
+            "primaryjoin": "VoteSession.objection_id == Objection.id",
+            "foreign_keys": "[VoteSession.objection_id]",
+            "viewonly": True,
+        },
+    )
     userVotes: List["UserVote"] = Relationship(back_populates="session")

@@ -8,10 +8,10 @@ class IntakeStatus(IntEnum):
     """待审核"""
 
     SUPPORT_COLLECTING = 1
-    """支持票收集中"""
+    """支持票收集中(已通过)"""
 
     APPROVED = 2
-    """已通过"""
+    """已发布"""
 
     REJECTED = 3
     """已拒绝"""

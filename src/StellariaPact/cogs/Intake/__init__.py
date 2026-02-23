@@ -1,3 +1,3 @@
-from .Cog import IntakeCog
+from .Cog import IntakeCog, setup
 
-__all__ = ["IntakeCog"]
+__all__ = ["IntakeCog", "setup"]

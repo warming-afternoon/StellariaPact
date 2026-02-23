@@ -57,4 +57,11 @@ class Objection(BaseModel, table=True):
 
     # --- 关系定义 ---
     proposal: Optional[Proposal] = Relationship(back_populates="objections")
-    vote_session: Optional["VoteSession"] = Relationship(back_populates="objection")
+    vote_session: Optional["VoteSession"] = Relationship(
+        back_populates="objection",
+        sa_relationship_kwargs={
+            "primaryjoin": "Objection.id == VoteSession.objection_id",
+            "foreign_keys": "[VoteSession.objection_id]",
+            "viewonly": True,
+        },
+    )
