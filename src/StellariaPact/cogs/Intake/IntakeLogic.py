@@ -15,6 +15,7 @@ from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.share import DiscordUtils
 from StellariaPact.share.enums import IntakeStatus, ProposalStatus, VoteDuration, VoteSessionType
+from StellariaPact.share.StringUtils import StringUtils
 
 from .views.IntakeEmbedBuilder import IntakeEmbedBuilder
 from .views.IntakeReviewView import IntakeReviewView
@@ -73,18 +74,30 @@ class IntakeLogic:
 
         content = IntakeEmbedBuilder.build_review_content(created_intake)
         assert created_intake.id is not None
+
+        # 创建帖子
+        pending_tag = self._resolve_forum_tag(
+            forum=review_forum,
+            raw_tag_id=self.bot.config.get("intake_tags", {}).get("pending_review"),
+            tag_key="pending_review",
+        )
+        applied_tags = [pending_tag] if pending_tag else []
+
+        title_prefix = self._get_title_prefix_for_status(IntakeStatus.PENDING_REVIEW)
+        thread_name = (
+            f"{title_prefix} {created_intake.title}" if title_prefix else created_intake.title
+        )
+
         thread_with_message = await review_forum.create_thread(
-            name=f"{created_intake.title}",
+            name=thread_name,
             content=content,
             view=IntakeReviewView(self.bot),
+            applied_tags=applied_tags,
         )
 
         # 更新草案，关联帖子ID
         created_intake.review_thread_id = thread_with_message.thread.id
         await uow.intake.update_intake(created_intake)
-
-        # 更新审核帖标签
-        await self._update_review_thread_tags(created_intake)
 
         # 在返回前将对象从会话中分离，避免会话关闭后的延迟加载问题
         uow.session.expunge(created_intake)
@@ -198,9 +211,18 @@ class IntakeLogic:
             f"> ## 议案执行人\n{intake.executor}\n\n"
             f"*讨论帖创建时间: <t:{created_ts}:f>*"
         )
+        # 获取 discussion 标签
+        tags_config = self.bot.config.get("tags", {})
+        discussion_tag = self._resolve_forum_tag(
+            forum=discussion_forum,
+            raw_tag_id=tags_config.get("discussion"),
+            tag_key="discussion",
+        )
+        applied_tags = [discussion_tag] if discussion_tag else []
         thread_with_message = await discussion_forum.create_thread(
-            name=f"{intake.title}",
+            name=f"[讨论中] {intake.title}",
             content=discussion_content,
+            applied_tags=applied_tags,
         )
         discussion_thread_id = thread_with_message.thread.id
 
@@ -545,28 +567,14 @@ class IntakeLogic:
 
             lines.extend(
                 [
-                    "",
-                    "---",
-                    "",
-                    "🏷️ **议案标题**",
-                    intake.title,
-                    "",
-                    "📝 **提案原因**",
-                    intake.reason,
-                    "",
-                    "📋 **议案动议**",
-                    intake.motion,
-                    "",
-                    "🔧 **执行方案**",
-                    intake.implementation,
-                    "",
-                    "👨‍💼 **议案执行人**",
-                    intake.executor,
-                    "",
-                    "---",
-                    "",
-                    f"{status_emoji} **状态：** {status_text}",
-                    "",
+                    "\n---\n",
+                    f"\n🏷️ **议案标题**\n{intake.title}",
+                    f"\n📝 **提案原因**\n{intake.reason}",
+                    f"\n📋 **议案动议**\n{intake.motion}",
+                    f"\n🔧 **执行方案**\n{intake.implementation}"
+                    f"\n👨‍💼 **议案执行人**\n{intake.executor}",
+                    "\n---\n",
+                    f"{status_emoji} **状态：** {status_text}\n",
                     f"💬 **审核意见：** {intake.review_comment or '（无）'}",
                 ]
             )
@@ -603,7 +611,7 @@ class IntakeLogic:
             int(IntakeStatus.SUPPORT_COLLECTING): "审核通过",
             int(IntakeStatus.REJECTED): "审核拒绝",
             int(IntakeStatus.MODIFICATION_REQUIRED): "要求修改",
-            int(IntakeStatus.APPROVED): "已立案",
+            int(IntakeStatus.APPROVED): "已发布",
         }
         return result_map.get(status, "状态更新")
 
@@ -618,8 +626,41 @@ class IntakeLogic:
         }
         return status_tag_map.get(status)
 
+    def _get_title_prefix_for_status(self, status: int) -> str | None:
+        """根据状态获取审核帖标题前缀"""
+        status_prefix_map = {
+            int(IntakeStatus.PENDING_REVIEW): "[待审核]",
+            int(IntakeStatus.SUPPORT_COLLECTING): "[已通过]",
+            int(IntakeStatus.APPROVED): "[已发布]",
+            int(IntakeStatus.REJECTED): "[未通过]",
+            int(IntakeStatus.MODIFICATION_REQUIRED): "[需要修改]",
+        }
+        return status_prefix_map.get(status)
+
+    def _resolve_forum_tag(
+        self, forum: discord.ForumChannel, raw_tag_id: int | str | None, tag_key: str
+    ) -> discord.ForumTag | None:
+        """根据配置中的标签 ID 解析论坛标签。"""
+        if raw_tag_id is None:
+            return None
+
+        try:
+            tag_id = int(raw_tag_id)
+        except (TypeError, ValueError):
+            logger.warning(f"config.tags.{tag_key} 配置值无效: {raw_tag_id}")
+            return None
+
+        tag = next((item for item in forum.available_tags if item.id == tag_id), None)
+        if tag is None:
+            logger.warning(
+                f"在论坛 {forum.id} 的可用标签中未找到 ID 为 {tag_id} 的 {tag_key} 标签。"
+            )
+            return None
+
+        return tag
+
     async def _update_review_thread_tags(self, intake: ProposalIntake):
-        """更新审核帖子的标签"""
+        """更新审核帖子的标签和标题前缀"""
         if not intake.review_thread_id:
             logger.warning(f"草案 {intake.id} 缺少 review_thread_id，无法更新标签。")
             return
@@ -652,10 +693,24 @@ class IntakeLogic:
             target_tag_name=target_tag_name,
         )
 
+        edit_payload = {}
+
+        title_prefix = self._get_title_prefix_for_status(intake.status)
+        if title_prefix:
+            clean_title = StringUtils.clean_title(thread.name)
+            new_title = f"{title_prefix} {clean_title}"
+            if new_title != thread.name:
+                edit_payload["name"] = new_title
+
         if new_tags is not None:
-            try:
-                await thread.edit(applied_tags=new_tags)
-            except discord.Forbidden:
-                logger.error(f"没有权限编辑帖子 {thread.id} 的标签。")
-            except Exception as e:
-                logger.error(f"更新帖子 {thread.id} 的标签时出错: {e}")
+            edit_payload["applied_tags"] = new_tags
+
+        if not edit_payload:
+            return
+
+        try:
+            await thread.edit(**edit_payload)
+        except discord.Forbidden:
+            logger.error(f"没有权限编辑帖子 {thread.id} 的标签或标题。")
+        except Exception as e:
+            logger.error(f"更新帖子 {thread.id} 的标签或标题时出错: {e}")
