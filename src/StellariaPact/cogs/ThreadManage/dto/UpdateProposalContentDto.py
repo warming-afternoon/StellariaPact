@@ -30,8 +30,8 @@ class UpdateProposalContentDto:
         将各个字段格式化为提案内容字符串。
         """
         return (
-            f"### 提案原因\n\n{self.reason}\n\n"
-            f"### 议案动议\n\n{self.motion}\n\n"
-            f"### 执行方案\n\n{self.implementation}\n\n"
-            f"### 议案执行人\n\n{self.executor}"
+            f"> ## 提案原因\n{self.reason}\n\n"
+            f"> ## 议案动议\n{self.motion}\n\n"
+            f"> ## 执行方案\n{self.implementation}\n\n"
+            f"> ## 议案执行人\n{self.executor}"
         )
