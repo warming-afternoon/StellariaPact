@@ -95,25 +95,35 @@ class IntakeEmbedBuilder:
         return content.strip()
 
     @staticmethod
-    def build_support_embed(intake: ProposalIntake) -> discord.Embed:
-        """构建用于收集支持票的嵌入消息。"""
+    def build_support_embed(intake: ProposalIntake, current_votes: int = 0) -> discord.Embed:
+        """构建用于收集支持票的嵌入消息"""
         embed = discord.Embed(
-            title=f"📣 草案寻求支持: {intake.title}",
+            title=f"{intake.title}",
             description=(
-                f"该草案已通过管理组初步审核，现进入社区支持票收集阶段。\n"
+                "该提案已通过管理组初步审核，现进入社区支持票收集阶段。\n"
                 f"达到 **{intake.required_votes}** 票支持后，将自动转为正式提案进入讨论。"
             ),
             color=discord.Color.blue(),
         )
-        embed.add_field(name="草案ID", value=f"`{intake.id}`", inline=True)
         embed.add_field(name="发起人", value=f"<@{intake.author_id}>", inline=True)
-        embed.add_field(name="动议摘要", value=intake.motion, inline=False)
-        embed.set_footer(text="如果你支持该草案成为正式提案，请点击下方按钮。")
+        embed.add_field(
+            name="票数", value=f"**{current_votes}** / {intake.required_votes}", inline=True
+        )
+        embed.add_field(name="状态", value="🟢 支持票收集中", inline=True)
+        embed.add_field(name="议案标题", value=intake.title, inline=False)
+        embed.add_field(name="提案原因", value=intake.reason, inline=False)
+        embed.add_field(name="议案动议", value=intake.motion, inline=False)
+        embed.add_field(name="执行方案", value=intake.implementation, inline=False)
+        embed.add_field(name="议案执行人", value=intake.executor, inline=False)
+        embed.set_footer(text="点击下方按钮以支持, 再次点击可撤回支持。")
         return embed
 
     @staticmethod
     def build_support_result_embed(
-        intake: ProposalIntake, success: bool, thread_id: Optional[int] = None
+        intake: ProposalIntake,
+        success: bool,
+        thread_id: Optional[int] = None,
+        current_votes: int = 0,
     ) -> discord.Embed:
         """
         构建支持票收集结束后的结果 Embed
@@ -122,15 +132,19 @@ class IntakeEmbedBuilder:
             intake: 草案对象
             success: 是否成功达到支持票数
             thread_id: 成功时关联的讨论帖ID（可选）
+            current_votes: 当前获得的票数
         """
         if success:
             embed = discord.Embed(
-                title=f"✅ [已立案] {intake.title}",
+                title=f"✅ [已通过] {intake.title}",
                 description="提案已创建讨论帖",
                 color=discord.Color.green(),
             )
-            embed.add_field(name="草案ID", value=f"`{intake.id}`", inline=True)
             embed.add_field(name="发起人", value=f"<@{intake.author_id}>", inline=True)
+            embed.add_field(
+                name="票数", value=f"**{current_votes}** / {intake.required_votes}", inline=True
+            )
+            embed.add_field(name="状态", value="✅ 已立案", inline=True)
             if thread_id and intake.guild_id:
                 # 构建跳转到新讨论帖的链接
                 url = IntakeEmbedBuilder._get_jump_url(intake.guild_id, thread_id)
@@ -141,15 +155,19 @@ class IntakeEmbedBuilder:
                 description="当前草案未能在截止日期前获得足够支持，未能进入讨论阶段。",
                 color=discord.Color.light_gray(),
             )
-            embed.add_field(name="草案ID", value=f"`{intake.id}`", inline=True)
             embed.add_field(name="发起人", value=f"<@{intake.author_id}>", inline=True)
-            # 即使失败，也可以提供一个跳转回原审核贴（讨论过程）的链接
-            if intake.review_thread_id and intake.guild_id:
-                url = IntakeEmbedBuilder._get_jump_url(intake.guild_id, intake.review_thread_id)
-                embed.add_field(
-                    name="过程回顾", value=f"[点击查看审核贴详情]({url})", inline=False
-                )
+            embed.add_field(
+                name="票数", value=f"**{current_votes}** / {intake.required_votes}", inline=True
+            )
+            embed.add_field(name="状态", value="❌ 收集失败", inline=True)
             embed.set_footer(text="草案支持票收集已结束（未达标）")
+
+        # 添加提案详细信息
+        embed.add_field(name="议案标题", value=intake.title, inline=False)
+        embed.add_field(name="提案原因", value=intake.reason, inline=False)
+        embed.add_field(name="议案动议", value=intake.motion, inline=False)
+        embed.add_field(name="执行方案", value=intake.implementation, inline=False)
+        embed.add_field(name="议案执行人", value=intake.executor, inline=False)
 
         embed.timestamp = discord.utils.utcnow()
         return embed

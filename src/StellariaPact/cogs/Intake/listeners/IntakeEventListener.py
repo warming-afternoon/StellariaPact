@@ -136,7 +136,7 @@ class IntakeEventListenerCog(commands.Cog):
                 await interaction.followup.send(f"❌ 处理要求修改时出错: {str(e)}", ephemeral=True)
 
     @commands.Cog.listener()
-    async def on_intake_support_vote_added(self, interaction: discord.Interaction, intake_id: int):
+    async def on_intake_support_vote_added(self, interaction: discord.Interaction):
         """
         处理用户点击支持按钮的事件
         """
@@ -145,8 +145,11 @@ class IntakeEventListenerCog(commands.Cog):
 
         async with UnitOfWork(self.bot.db_handler) as uow:
             try:
+                assert interaction.message is not None
+                message_id = interaction.message.id
+
                 action, count = await self.intake_cog.logic.handle_support_toggle(
-                    uow, interaction.user.id, intake_id
+                    uow, interaction.user.id, message_id
                 )
                 await uow.commit()
 

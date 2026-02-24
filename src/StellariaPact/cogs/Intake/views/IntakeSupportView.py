@@ -8,7 +8,7 @@ from discord.ui import Button, View
 from StellariaPact.share.SafeDefer import safeDefer
 
 if TYPE_CHECKING:
-    pass
+    from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 
 class IntakeSupportView(View):
@@ -16,9 +16,9 @@ class IntakeSupportView(View):
     一个用于收集草案支持票的视图。
     """
 
-    def __init__(self, intake_id: int):
+    def __init__(self, bot: "StellariaPactBot"):
         super().__init__(timeout=None)
-        self.intake_id = intake_id
+        self.bot = bot
 
     @discord.ui.button(
         label="支持提案",
@@ -27,8 +27,8 @@ class IntakeSupportView(View):
     )
     async def support(self, interaction: discord.Interaction, button: Button):
         """
-        处理用户点击“支持”按钮的事件。
+        处理用户点击"支持"按钮的事件。
         """
         await safeDefer(interaction, ephemeral=True)
 
-        interaction.client.dispatch("intake_support_vote_added", interaction, self.intake_id)
+        self.bot.dispatch("intake_support_vote_added", interaction)

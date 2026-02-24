@@ -8,12 +8,13 @@ import discord
 from sqlalchemy import func, select, update
 
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
+from StellariaPact.dto import ProposalDto
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.ProposalIntake import ProposalIntake
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.share import DiscordUtils
-from StellariaPact.share.enums import IntakeStatus, ProposalStatus, VoteSessionType
+from StellariaPact.share.enums import IntakeStatus, ProposalStatus, VoteDuration, VoteSessionType
 
 from .views.IntakeEmbedBuilder import IntakeEmbedBuilder
 from .views.IntakeReviewView import IntakeReviewView
@@ -121,17 +122,19 @@ class IntakeLogic:
 
         # 在投票频道发送消息
         channels_config = self.bot.config.get("channels", {})
-        voting_channel_id = channels_config.get("voting_channel")
-        if not voting_channel_id:
-            raise ValueError("投票频道未配置。")
+        objection_publicity_channel_id = channels_config.get("objection_publicity")
+        if not objection_publicity_channel_id:
+            raise ValueError("公示频道未配置。")
 
-        voting_channel = self.bot.get_channel(voting_channel_id)
-        if not isinstance(voting_channel, discord.TextChannel):
-            raise TypeError("投票频道类型不正确。")
+        objection_publicity_channel = self.bot.get_channel(objection_publicity_channel_id)
+        if not isinstance(objection_publicity_channel, discord.TextChannel):
+            raise TypeError("公示频道类型不正确。")
 
-        embed = IntakeEmbedBuilder.build_support_embed(intake)
+        embed = IntakeEmbedBuilder.build_support_embed(intake, current_votes=0)
         assert intake.id is not None
-        vote_msg = await voting_channel.send(embed=embed, view=IntakeSupportView(intake.id))
+        vote_msg = await objection_publicity_channel.send(
+            embed=embed, view=IntakeSupportView(self.bot)
+        )
         intake.voting_message_id = vote_msg.id
         await uow.intake.update_intake(intake)
 
@@ -146,6 +149,9 @@ class IntakeLogic:
             end_time=now + timedelta(days=3),  # 记录结束时间
         )
         await uow.vote_session.create_vote_session(vote_qo)
+
+        # 更新审核帖首楼内容并通知提案人
+        await self._update_review_thread_message(intake, view=None, notify_proposer=True)
 
         # 更新审核帖标签
         await self._update_review_thread_tags(intake)
@@ -166,20 +172,11 @@ class IntakeLogic:
 
         # 同步数据到提案表
         proposal_content = (
-            f"### 提案原因\n\n{intake.reason}"
-            f"### 议案动议\n\n{intake.motion}"
-            f"### 执行方案\n\n{intake.implementation}"
-            f"### 议案执行人\n\n{intake.executor}"
+            f"> ### 提案原因\n{intake.reason}\n\n"
+            f"> ### 议案动议\n{intake.motion}\n\n"
+            f"> ### 执行方案\n{intake.implementation}\n\n"
+            f"> ### 议案执行人\n{intake.executor}"
         )
-
-        new_proposal = Proposal(
-            proposer_id=intake.author_id,
-            title=intake.title,
-            content=proposal_content,
-            status=ProposalStatus.DISCUSSION,
-        )
-        created_proposal = await uow.proposal.add_proposal(new_proposal)
-        await uow.flush([created_proposal])
 
         # 在讨论区创建帖子
         channels_config = self.bot.config.get("channels", {})
@@ -191,40 +188,75 @@ class IntakeLogic:
         if not isinstance(discussion_forum, discord.ForumChannel):
             raise TypeError("议案讨论区类型不正确。")
 
-        thread_with_message = await discussion_forum.create_thread(
-            name=f"提案 #{created_proposal.id} - {created_proposal.title}",
-            content=(
-                f"该提案由草案 `#{intake.id}` 发起，现已进入正式讨论阶段。"
-                f"\n\n---\n\n{proposal_content}"
-            ),
+        # 先创建讨论帖
+        created_ts = int(datetime.utcnow().timestamp())
+        discussion_content = (
+            f"***提案人: <@{intake.author_id}>***\n\n"
+            f"> ## 提案原因\n{intake.reason}\n\n"
+            f"> ## 议案动议\n{intake.motion}\n\n"
+            f"> ## 执行方案\n{intake.implementation}\n\n"
+            f"> ## 议案执行人\n{intake.executor}\n\n"
+            f"*讨论帖创建时间: <t:{created_ts}:f>*"
         )
-        created_proposal.discussion_thread_id = thread_with_message.thread.id
-        await uow.proposal.update_proposal(created_proposal)
+        thread_with_message = await discussion_forum.create_thread(
+            name=f"{intake.title}",
+            content=discussion_content,
+        )
+        discussion_thread_id = thread_with_message.thread.id
+
+        # 创建提案对象
+        new_proposal = Proposal(
+            discussion_thread_id=discussion_thread_id,
+            proposer_id=intake.author_id,
+            title=intake.title,
+            content=proposal_content,
+            status=ProposalStatus.DISCUSSION,
+        )
+        created_proposal = await uow.proposal.add_proposal(new_proposal)
+        await uow.flush([created_proposal])
 
         # 同时更新 ProposalIntake 的 discussion_thread_id
-        intake.discussion_thread_id = thread_with_message.thread.id
+        intake.discussion_thread_id = discussion_thread_id
         await uow.intake.update_intake(intake)
+
+        # 派发事件，创建讨论帖投票面板与投票频道镜像
+        proposal_dto = ProposalDto.model_validate(created_proposal)
+        self.bot.dispatch(
+            "vote_session_created",
+            proposal_dto=proposal_dto,
+            options=[],
+            duration_hours=VoteDuration.PROPOSAL_DEFAULT,
+            anonymous=True,
+            realtime=True,
+            notify=True,
+            create_in_voting_channel=True,
+            notify_creation_role=True,
+            thread=thread_with_message.thread,
+        )
 
         # 更新投票频道的面板为"成功"并移除按钮
         if not intake.voting_message_id:
             return created_proposal
 
         channels_config = self.bot.config.get("channels", {})
-        channel = self.bot.get_channel(channels_config.get("voting_channel"))
+        channel = self.bot.get_channel(channels_config.get("objection_publicity"))
         if not isinstance(channel, discord.TextChannel):
             return created_proposal
 
         try:
             msg = await channel.fetch_message(intake.voting_message_id)
             success_embed = IntakeEmbedBuilder.build_support_result_embed(
-                intake, success=True, thread_id=created_proposal.discussion_thread_id
+                intake,
+                success=True,
+                thread_id=created_proposal.discussion_thread_id,
+                current_votes=intake.required_votes,
             )
             await msg.edit(embed=success_embed, view=None)
         except Exception as e:
             logger.warning(f"更新成功面板失败: {e}")
 
         # 更新审核贴
-        await self._update_review_thread_message(intake, "草案已立案", view=None)
+        await self._update_review_thread_message(intake, view=None)
 
         # 更新审核帖标签
         await self._update_review_thread_tags(intake)
@@ -232,17 +264,20 @@ class IntakeLogic:
         return created_proposal
 
     async def handle_support_toggle(
-        self, uow: "UnitOfWork", user_id: int, intake_id: int
+        self, uow: "UnitOfWork", user_id: int, message_id: int
     ) -> tuple[str, int]:
         """
         处理用户对草案的支持切换逻辑。
         返回: (操作类型 "supported"|"withdrawn", 当前总票数)
         """
-        # 锁定并获取草案信息
-        intake = await uow.intake.get_intake_by_id(intake_id, for_update=True)
+        # 通过消息ID获取草案（带锁）
+        intake = await uow.intake.get_intake_by_voting_message_id(message_id, for_update=True)
 
         if not intake:
             raise ValueError("草案不存在。")
+
+        assert intake.id is not None
+        intake_id = intake.id
 
         # 如果状态已经不是"支持票收集中"，说明已经被别人抢先立案或已关闭
         if intake.status != IntakeStatus.SUPPORT_COLLECTING:
@@ -298,6 +333,9 @@ class IntakeLogic:
         )
         current_votes = (await uow.session.execute(count_stmt)).scalar_one() or 0
 
+        # 更新公示频道的消息（票数变化）
+        await self._update_support_message(intake, current_votes)
+
         # 如果未达到立案阈值，直接返回
         if current_votes < intake.required_votes:
             return action, current_votes
@@ -328,29 +366,44 @@ class IntakeLogic:
         if intake.status != IntakeStatus.SUPPORT_COLLECTING:
             return
 
+        # 查询与草案关联的投票会话
+        vote_session_stmt = select(VoteSession).where(
+            VoteSession.intake_id == intake_id,  # type: ignore
+            VoteSession.session_type == VoteSessionType.INTAKE_SUPPORT,  # type: ignore
+        )
+        vote_session = (await uow.session.execute(vote_session_stmt)).scalar_one_or_none()
+
+        current_votes = 0
+        if vote_session:
+            # 统计当前总票数
+            count_stmt = select(func.count(UserVote.id)).where(  # type: ignore
+                UserVote.session_id == vote_session.id
+            )
+            current_votes = (await uow.session.execute(count_stmt)).scalar_one() or 0
+
         # 更新草案状态为已拒绝（或新增一个 EXPIRED 状态，这里沿用 REJECTED）
         intake.status = IntakeStatus.REJECTED
         await uow.intake.update_intake(intake)
 
         # 更新审核贴消息
         await self._update_review_thread_message(
-            intake, "草案因 3 天内支持票不足已自动关闭。", view=None
+            intake, view=None, extra_note="草案因 3 天内支持票不足已自动关闭。"
         )
 
         # 更新审核帖标签
         await self._update_review_thread_tags(intake)
 
-        # 更新投票频道的消息
+        # 更新公示频道的消息
         if intake.voting_message_id:
             channels_config = self.bot.config.get("channels", {})
-            voting_channel_id = channels_config.get("voting_channel")
-            if voting_channel_id:
-                channel = self.bot.get_channel(voting_channel_id)
+            objection_publicity_channel_id = channels_config.get("objection_publicity")
+            if objection_publicity_channel_id:
+                channel = self.bot.get_channel(objection_publicity_channel_id)
                 if isinstance(channel, discord.TextChannel):
                     try:
                         msg = await channel.fetch_message(intake.voting_message_id)
                         fail_embed = IntakeEmbedBuilder.build_support_result_embed(
-                            intake, success=False
+                            intake, success=False, current_votes=current_votes
                         )
                         await msg.edit(embed=fail_embed, view=None)
                     except Exception as e:
@@ -387,7 +440,7 @@ class IntakeLogic:
         intake.status = IntakeStatus.REJECTED
         await uow.intake.update_intake(intake)
 
-        await self._update_review_thread_message(intake, "草案已被拒绝", view=None)
+        await self._update_review_thread_message(intake, view=None, notify_proposer=True)
 
         # 更新审核帖标签
         await self._update_review_thread_tags(intake)
@@ -417,31 +470,142 @@ class IntakeLogic:
         intake.status = IntakeStatus.MODIFICATION_REQUIRED
         await uow.intake.update_intake(intake)
 
-        await self._update_review_thread_message(intake, "草案需要修改", view=None)
+        await self._update_review_thread_message(intake, view=None, notify_proposer=True)
 
         # 更新审核帖标签
         await self._update_review_thread_tags(intake)
 
         return intake
 
+    async def _update_support_message(self, intake: ProposalIntake, current_votes: int):
+        """更新公示频道中的支持票面板（当前票数/通过票数）。"""
+        if not intake.voting_message_id:
+            return
+
+        channels_config = self.bot.config.get("channels", {})
+        channel = self.bot.get_channel(channels_config.get("objection_publicity"))
+        if not isinstance(channel, discord.TextChannel):
+            return
+
+        try:
+            msg = await channel.fetch_message(intake.voting_message_id)
+            embed = IntakeEmbedBuilder.build_support_embed(intake, current_votes=current_votes)
+            assert intake.id is not None
+            await msg.edit(embed=embed, view=IntakeSupportView(self.bot))
+        except discord.NotFound:
+            logger.warning(f"找不到支持票消息 {intake.voting_message_id}，跳过更新。")
+        except discord.Forbidden:
+            logger.error(f"没有权限编辑支持票消息 {intake.voting_message_id}。")
+        except Exception as e:
+            logger.warning(f"更新支持票面板失败 {intake.voting_message_id}: {e}")
+
     async def _update_review_thread_message(
-        self, intake: ProposalIntake, message: str, view: discord.ui.View | None
+        self,
+        intake: ProposalIntake,
+        view: discord.ui.View | None,
+        extra_note: str | None = None,
+        notify_proposer: bool = False,
     ):
-        """更新审核帖子中的消息和视图。"""
+        """更新审核帖子首楼内容，并在需要时通知提案人。"""
         if not intake.review_thread_id:
             logger.warning(f"草案 {intake.id} 缺少 review_thread_id，无法更新消息。")
             return
 
         thread = self.bot.get_channel(intake.review_thread_id)
-        if isinstance(thread, discord.Thread):
-            try:
-                msg = await thread.fetch_message(thread.id)
-                embed = IntakeEmbedBuilder.build_review_embed(intake)
-                await msg.edit(content=f"**状态更新**: {message}", embed=embed, view=view)
-            except discord.NotFound:
-                logger.error(f"无法在帖子 {thread.id} 中找到起始消息。")
-            except discord.Forbidden:
-                logger.error(f"没有权限编辑帖子 {thread.id} 中的消息。")
+        if not isinstance(thread, discord.Thread):
+            logger.warning(f"草案 {intake.id} 的 review_thread_id 无效。")
+            return
+
+        try:
+            msg = await thread.fetch_message(thread.id)
+
+            submitted_ts = int(msg.created_at.timestamp())
+            status_text = self._get_review_result_text(intake.status)
+            status_emoji = {
+                int(IntakeStatus.SUPPORT_COLLECTING): "✅",
+                int(IntakeStatus.REJECTED): "❌",
+                int(IntakeStatus.MODIFICATION_REQUIRED): "🟡",
+                int(IntakeStatus.APPROVED): "🎉",
+            }.get(int(intake.status), "ℹ️")
+
+            lines = [
+                f"👤 **提案人：** <@{intake.author_id}>",
+                f"📅 **提交时间：** <t:{submitted_ts}:f>",
+                f"🆔 **议案ID：** `{intake.id}`",
+            ]
+
+            if intake.reviewer_id and intake.reviewed_at:
+                reviewed_ts = int(intake.reviewed_at.timestamp())
+                lines.extend(
+                    [
+                        f"👨‍💼 **审核员：** <@{intake.reviewer_id}>",
+                        f"📅 **审核时间：** <t:{reviewed_ts}:f>",
+                    ]
+                )
+
+            lines.extend(
+                [
+                    "",
+                    "---",
+                    "",
+                    "🏷️ **议案标题**",
+                    intake.title,
+                    "",
+                    "📝 **提案原因**",
+                    intake.reason,
+                    "",
+                    "📋 **议案动议**",
+                    intake.motion,
+                    "",
+                    "🔧 **执行方案**",
+                    intake.implementation,
+                    "",
+                    "👨‍💼 **议案执行人**",
+                    intake.executor,
+                    "",
+                    "---",
+                    "",
+                    f"{status_emoji} **状态：** {status_text}",
+                    "",
+                    f"💬 **审核意见：** {intake.review_comment or '（无）'}",
+                ]
+            )
+
+            if extra_note:
+                lines.extend(["", f"ℹ️ {extra_note}"])
+
+            await msg.edit(content="\n".join(lines), embed=None, view=view)
+
+            if notify_proposer and intake.reviewer_id and intake.reviewed_at:
+                reviewed_ts = int(intake.reviewed_at.timestamp())
+                notify_lines = [
+                    f"<@{intake.author_id}> 您的议案已被审核！",
+                    "## 📋 审核记录",
+                    f"👨‍💼 **审核员：** <@{intake.reviewer_id}>",
+                    f"📅 **审核时间：** <t:{reviewed_ts}:f>",
+                    f"{status_emoji} **审核结果：** {status_text}",
+                    "",
+                    "💬 **审核意见：**",
+                    intake.review_comment or "（无）",
+                    "---",
+                    "📝 如有疑问，申请人可以联系审核员了解详细情况。",
+                ]
+                await thread.send("\n".join(notify_lines))
+
+        except discord.NotFound:
+            logger.error(f"无法在帖子 {thread.id} 中找到起始消息。")
+        except discord.Forbidden:
+            logger.error(f"没有权限编辑帖子 {thread.id} 中的消息。")
+
+    def _get_review_result_text(self, status: int) -> str:
+        """根据状态获取审核结果文本。"""
+        result_map = {
+            int(IntakeStatus.SUPPORT_COLLECTING): "审核通过",
+            int(IntakeStatus.REJECTED): "审核拒绝",
+            int(IntakeStatus.MODIFICATION_REQUIRED): "要求修改",
+            int(IntakeStatus.APPROVED): "已立案",
+        }
+        return result_map.get(status, "状态更新")
 
     def _get_tag_name_for_status(self, status: int) -> str | None:
         """根据状态获取对应的标签键名"""
