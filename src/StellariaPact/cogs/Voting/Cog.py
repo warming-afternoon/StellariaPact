@@ -369,6 +369,8 @@ class Voting(commands.Cog):
                     message_id=original_message_id,
                     thread_id=thread_id,
                     choice=choice,
+                    option_type=1,
+                    choice_index=1,
                 )
             )
 
@@ -409,6 +411,7 @@ class Voting(commands.Cog):
                 DeleteVoteQo(
                     user_id=interaction.user.id,
                     message_id=original_message_id,
+                    option_type=1,
                     choice_index=choice_index,
                 )
             )
@@ -521,17 +524,13 @@ class Voting(commands.Cog):
                         )
             else:
                 clean_topic = StringUtils.clean_title(thread.name)
-                new_embed = VoteEmbedBuilder.create_vote_panel_embed(
+                new_embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(
                     topic=clean_topic,
-                    anonymous_flag=vote_details.is_anonymous,
-                    realtime_flag=vote_details.realtime_flag,
-                    notify_flag=vote_details.notify_flag,
-                    end_time=vote_details.end_time,
                     vote_details=vote_details,
                 )
 
-            if new_embed:
-                await self.bot.api_scheduler.submit(message.edit(embed=new_embed), priority=2)
+            if new_embeds:
+                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds), priority=2)
         except discord.NotFound:
             logger.warning(f"找不到帖子内投票消息 {vote_details.context_message_id}，跳过更新。")
         except Exception as e:
@@ -550,6 +549,7 @@ class Voting(commands.Cog):
         try:
             message = await channel.fetch_message(vote_details.voting_channel_message_id)
             new_embed = None
+            new_embeds = None
 
             if vote_details.objection_id:
                 async with UnitOfWork(self.bot.db_handler) as uow:
@@ -569,11 +569,13 @@ class Voting(commands.Cog):
                     )
                     if proposal and thread:
                         proposal_dto = ProposalDto.model_validate(proposal)
-                        new_embed = VoteEmbedBuilder.build_voting_channel_embed(
+                        new_embeds = VoteEmbedBuilder.build_voting_channel_embed(
                             proposal_dto, vote_details, thread.jump_url
                         )
 
-            if new_embed:
+            if new_embeds:
+                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds), priority=2)
+            elif new_embed:
                 await self.bot.api_scheduler.submit(message.edit(embed=new_embed), priority=2)
         except discord.NotFound:
             logger.warning(

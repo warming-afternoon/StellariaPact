@@ -203,6 +203,7 @@ class VotingLogic:
 
             updated_session = await uow.user_vote.delete_vote(
                 user_id=qo.user_id,
+                option_type=qo.option_type,
                 choice_index=qo.choice_index,
                 vote_session=vote_session,
             )

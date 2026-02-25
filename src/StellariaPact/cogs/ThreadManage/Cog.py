@@ -7,10 +7,8 @@ import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.ThreadManage.dto.UpdateProposalContentDto import \
-    UpdateProposalContentDto
-from StellariaPact.cogs.ThreadManage.views.EditProposalContentModal import \
-    EditProposalContentModal
+from StellariaPact.cogs.ThreadManage.dto.UpdateProposalContentDto import UpdateProposalContentDto
+from StellariaPact.cogs.ThreadManage.views.EditProposalContentModal import EditProposalContentModal
 from StellariaPact.share import UnitOfWork, safeDefer
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 

@@ -137,7 +137,7 @@ class IntakeEmbedBuilder:
         if success:
             embed = discord.Embed(
                 title=f"✅ [已通过] {intake.title}",
-                description="提案已创建讨论帖",
+                description="",
                 color=discord.Color.green(),
             )
             embed.add_field(name="发起人", value=f"<@{intake.author_id}>", inline=True)
@@ -160,7 +160,6 @@ class IntakeEmbedBuilder:
                 name="票数", value=f"**{current_votes}** / {intake.required_votes}", inline=True
             )
             embed.add_field(name="状态", value="❌ 收集失败", inline=True)
-            embed.set_footer(text="草案支持票收集已结束（未达标）")
 
         # 添加提案详细信息
         embed.add_field(name="议案标题", value=intake.title, inline=False)

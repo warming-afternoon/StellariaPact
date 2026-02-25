@@ -109,15 +109,11 @@ class VotingMessageListener(commands.Cog):
                 if details.context_message_id:
                     try:
                         msg = await thread.fetch_message(details.context_message_id)
-                        new_embed = VoteEmbedBuilder.create_vote_panel_embed(
+                        new_embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(
                             topic=thread.name,
-                            anonymous_flag=details.is_anonymous,
-                            notify_flag=details.notify_flag,
-                            realtime_flag=details.realtime_flag,
-                            end_time=details.end_time,
                             vote_details=details,
                         )
-                        update_tasks.append(msg.edit(embed=new_embed))
+                        update_tasks.append(msg.edit(embeds=new_embeds))
                     except discord.NotFound:
                         logger.warning(
                             f"在帖子 {thread.id} 中未找到投票消息 "

@@ -29,8 +29,11 @@ class UserVote(BaseModel, table=True):
     choice: int = Field(description="用户的选项: 0-反对, 1-赞成")
     """用户的选项: 0-反对, 1-赞成"""
 
-    choice_index: int = Field(default=1, description="投票选项索引")
-    """投票选项索引"""
+    option_type: int = Field(default=0, description="投票针对的选项类型: 0-普通, 1-异议")
+    """投票针对的选项类型: 0-普通, 1-异议"""
+
+    choice_index: int = Field(default=1, description="在此类型下的选项索引")
+    """在此类型下的选项索引"""
 
     voted_at: datetime = Field(
         default_factory=datetime.utcnow,
@@ -48,7 +51,8 @@ class UserVote(BaseModel, table=True):
             UniqueConstraint(
                 cls.session_id,  # type: ignore
                 cls.user_id,  # type: ignore
+                cls.option_type,  # type: ignore
                 cls.choice_index,  # type: ignore
-                name="uk_user_vote_option",
+                name="uk_user_vote_type_option",
             ),
         )

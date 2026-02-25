@@ -13,8 +13,9 @@ class VoteOption(BaseModel, table=True):
 
     __tablename__ = "vote_option"  # type: ignore
 
+    # 唯一约束：会话ID + 选项类型 + 排序索引 必须唯一
     __table_args__ = (
-        UniqueConstraint("session_id", "choice_index", name="uk_voteoption_session_choice"),
+        UniqueConstraint("session_id", "option_type", "choice_index", name="uk_voteoption_session_type_choice"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -23,8 +24,11 @@ class VoteOption(BaseModel, table=True):
     session_id: int = Field(index=True, description="关联的投票会话ID")
     """关联的投票会话ID"""
 
-    choice_index: int = Field(description="选项在此会话中的顺序 (从1开始)")
-    """选项在此会话中的顺序 (从1开始)"""
+    option_type: int = Field(default=0, description="选项类型: 0-普通提案选项, 1-异议选项")
+    """选项类型: 0-普通提案选项, 1-异议选项"""
+
+    choice_index: int = Field(description="该选项在此会话、此类型中的排序 (从1开始)")
+    """该选项在此会话、此类型中的排序 (从1开始)"""
 
     choice_text: str = Field(description="选项文本")
     """选项文本"""

@@ -282,9 +282,12 @@ class VoteSessionService:
     ) -> VoteDetailDto:
         """
         根据给定的 VoteSession 对象（包含预加载的 userVotes）构建 VoteDetailDto。
+        支持按类型分类选项：普通选项和异议选项。
         """
         all_votes: List[UserVote] = vote_session.userVotes
         option_results: List[OptionResult] = []
+        normal_options: List[OptionResult] = []
+        objection_options: List[OptionResult] = []
         vote_session_model: VoteSession = vote_session
 
         total_approve_votes = 0
@@ -296,22 +299,34 @@ class VoteSessionService:
                 approve = sum(
                     1
                     for v in all_votes
-                    if v.choice_index == option_model.choice_index and v.choice == 1  # type: ignore
+                    if v.option_type == option_model.option_type
+                    and v.choice_index == option_model.choice_index
+                    and v.choice == 1  # type: ignore
                 )
                 reject = sum(
                     1
                     for v in all_votes
-                    if v.choice_index == option_model.choice_index and v.choice == 0  # type: ignore
+                    if v.option_type == option_model.option_type
+                    and v.choice_index == option_model.choice_index
+                    and v.choice == 0  # type: ignore
                 )
-                option_results.append(
-                    OptionResult(
-                        choice_index=option_model.choice_index,  # type: ignore
-                        choice_text=option_model.choice_text,  # type: ignore
-                        approve_votes=approve,
-                        reject_votes=reject,
-                        total_votes=approve + reject,
-                    )
+
+                option_result = OptionResult(
+                    choice_index=option_model.choice_index,  # type: ignore
+                    choice_text=option_model.choice_text,  # type: ignore
+                    approve_votes=approve,
+                    reject_votes=reject,
+                    total_votes=approve + reject,
                 )
+
+                option_results.append(option_result)
+
+                # 按类型分类
+                if option_model.option_type == 0:  # 普通选项
+                    normal_options.append(option_result)
+                else:  # 异议选项
+                    objection_options.append(option_result)
+
                 total_approve_votes += approve
                 total_reject_votes += reject
         else:
@@ -325,11 +340,13 @@ class VoteSessionService:
                     user_id=v.user_id,
                     choice=v.choice,
                     choice_index=v.choice_index,  # type: ignore
+                    option_type=v.option_type,  # type: ignore
                 )
                 for v in all_votes
             ]
 
         return VoteDetailDto(
+            guild_id=vote_session_model.guild_id,
             context_thread_id=vote_session_model.context_thread_id,
             objection_id=vote_session_model.objection_id,
             voting_channel_message_id=getattr(
@@ -346,6 +363,8 @@ class VoteSessionService:
             total_reject_votes=total_reject_votes,
             total_votes=total_approve_votes + total_reject_votes,
             options=option_results,
+            normal_options=normal_options,
+            objection_options=objection_options,
             voters=voters,
         )
 

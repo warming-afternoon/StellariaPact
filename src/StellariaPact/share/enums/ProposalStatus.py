@@ -21,3 +21,6 @@ class ProposalStatus(IntEnum):
 
     FINISHED = 5
     """已结束"""
+
+    UNDER_OBJECTION = 6
+    """异议中"""
