@@ -7,8 +7,12 @@ from zoneinfo import ZoneInfo
 
 import discord
 
-from StellariaPact.cogs.Voting.dto import (OptionResult, VoteDetailDto,
-                                           VoteStatusDto, VotingChoicePanelDto)
+from StellariaPact.cogs.Voting.dto import (
+    OptionResult,
+    VoteDetailDto,
+    VoteStatusDto,
+    VotingChoicePanelDto,
+)
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.dto import ObjectionDetailsDto, ProposalDto
 

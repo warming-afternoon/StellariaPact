@@ -12,14 +12,12 @@ from StellariaPact.cogs.Voting.views import (
     ObjectionFormalVoteChoiceView,
     ObjectionVoteEmbedBuilder,
     VoteEmbedBuilder,
-    VotingChoiceView,
 )
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import ProposalDto, VoteSessionDto
 from StellariaPact.share import (
     DiscordUtils,
     MissingRole,
-    PermissionGuard,
     StellariaPactBot,
     StringUtils,
     UnitOfWork,
@@ -438,71 +436,6 @@ class Voting(commands.Cog):
     # -------------------------
     # 投票频道与同步监听器
     # -------------------------
-
-    @commands.Cog.listener()
-    async def on_voting_channel_manage_vote_clicked(self, interaction: discord.Interaction):
-        """处理来自投票频道"管理投票"按钮的点击"""
-        try:
-            await safeDefer(interaction, ephemeral=True)
-
-            if not interaction.message or not interaction.guild:
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send("此交互似乎已失效。", ephemeral=True), 1
-                )
-                return
-
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                session = await uow.vote_session.get_vote_session_by_voting_channel_message_id(
-                    interaction.message.id
-                )
-
-                if not session or not session.context_message_id or not session.context_thread_id:
-                    await self.bot.api_scheduler.submit(
-                        interaction.followup.send("找不到关联的原始投票信息", ephemeral=True), 1
-                    )
-                    return
-
-                context_thread_id = session.context_thread_id
-                context_message_id = session.context_message_id
-                guild_id = interaction.guild.id
-
-            # 准备投票管理面板数据
-            panel_data = await self.logic.prepare_voting_choice_data(
-                user_id=interaction.user.id,
-                thread_id=context_thread_id,
-                message_id=context_message_id,
-            )
-
-            # 检查用户是否有管理权限
-            can_manage = await PermissionGuard.can_manage_vote(interaction)
-
-            # 构建管理面板
-            embed = VoteEmbedBuilder.create_management_panel_embed(
-                jump_url=f"https://discord.com/channels/{guild_id}/{context_thread_id}/{context_message_id}",
-                panel_data=panel_data,
-                base_title="投票管理",
-                approve_text="✅ 赞成",
-                reject_text="❌ 反对",
-            )
-
-            # 创建投票选择视图
-            choice_view = VotingChoiceView(
-                bot=self.bot,
-                original_message_id=context_message_id,
-                thread_id=context_thread_id,
-                panel_data=panel_data,
-                can_manage=can_manage,
-            )
-
-            await DiscordUtils.send_private_panel(
-                self.bot, interaction, embed=embed, view=choice_view
-            )
-
-        except Exception as e:
-            logger.error(f"处理投票频道管理点击时出错: {e}", exc_info=True)
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("处理请求时出错", ephemeral=True), 1
-            )
 
     async def _update_thread_panel(self, thread: discord.Thread, vote_details: VoteDetailDto):
         """辅助方法：更新帖子内的投票面板。"""
