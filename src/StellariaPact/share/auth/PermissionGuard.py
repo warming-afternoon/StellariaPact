@@ -31,25 +31,27 @@ class PermissionGuard:
         return False
 
     @staticmethod
-    async def can_manage_rules_or_options(interaction: discord.Interaction) -> bool:
+    async def can_manage_rules_or_options(interaction: discord.Interaction, thread_id: int | None = None) -> bool:
         """
         检查用户是否可以管理投票规则或创建投票选项。
         满足以下任一条件即可：
         1. 用户有 councilModerator、executionAuditor 或 stewards 身份。
         2. 用户是当前帖子关联提案的发起人。
         """
-        # 检查是否有所需的三种身份组之一
         if RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor", "stewards"):
             return True
 
-        # 检查是否为提案人
-        if not isinstance(interaction.channel, discord.Thread):
+        # 如果未传入 thread_id，则尝试从交互频道获取（兼容讨论帖内操作）
+        target_thread_id = thread_id
+        if target_thread_id is None and isinstance(interaction.channel, discord.Thread):
+            target_thread_id = interaction.channel.id
+            
+        if target_thread_id is None:
             return False
 
-        bot: StellariaPactBot = interaction.client  # type: ignore
+        bot: StellariaPactBot = interaction.client # type: ignore
         async with UnitOfWork(bot.db_handler) as uow:
-            proposal = await uow.proposal.get_proposal_by_thread_id(interaction.channel.id)
+            proposal = await uow.proposal.get_proposal_by_thread_id(target_thread_id)
             if proposal and proposal.proposer_id == interaction.user.id:
                 return True
-
         return False

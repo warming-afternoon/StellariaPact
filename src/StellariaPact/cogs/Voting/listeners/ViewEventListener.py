@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Literal
 
 import discord
 from discord.ext import commands
@@ -96,6 +97,109 @@ class ViewEventListener(commands.Cog):
         )
 
         await interaction.edit_original_response(embed=new_embed, view=refreshed_view)
+
+    async def _resolve_context(self, interaction: discord.Interaction, source_type: Literal["local", "mirror"]) -> tuple[int, int]:
+        """
+        显式解析上下文。
+        local: 交互来自讨论帖。直接取当前频道和消息 ID。
+        mirror: 交互来自投票频道。通过数据库根据镜像消息 ID 查回原帖信息。
+        """
+        if not interaction.message:
+            raise ValueError("交互消息无效。")
+
+        if source_type == "local":
+            if not isinstance(interaction.channel, discord.Thread):
+                 raise ValueError("此处只能在讨论帖内操作。")
+            return interaction.channel.id, interaction.message.id
+
+        if source_type == "mirror":
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                session = await uow.vote_session.get_vote_session_by_voting_channel_message_id(interaction.message.id)
+                if not session or not session.context_thread_id or not session.context_message_id:
+                    raise ValueError("无法在数据库中找到该镜像消息关联的原始投票会话。")
+                return session.context_thread_id, session.context_message_id
+
+        raise ValueError("未知的上下文来源。")
+
+    @commands.Cog.listener()
+    async def on_mirror_panel_clicked(self, interaction: discord.Interaction, action_name: str):
+        """镜像面板（投票频道）点击的入口"""
+        try:
+            thread_id, original_msg_id = await self._resolve_context(interaction, "mirror")
+            
+            if action_name == "manage_vote":
+                await self._internal_handle_manage_vote(interaction, thread_id, original_msg_id)
+            elif action_name == "manage_rules":
+                await self._internal_handle_manage_rules(interaction, thread_id, original_msg_id)
+            elif action_name == "create_normal":
+                await self._internal_handle_create_option(interaction, thread_id, original_msg_id, 0)
+            elif action_name == "create_objection":
+                await self._internal_handle_create_option(interaction, thread_id, original_msg_id, 1)
+        except Exception as e:
+            logger.error(f"镜像面板操作失败: {e}", exc_info=True)
+            msg = str(e) if "无法" in str(e) else "处理镜像请求时出错。"
+            if not interaction.response.is_done():
+                await interaction.response.send_message(msg, ephemeral=True)
+            else:
+                await interaction.followup.send(msg, ephemeral=True)
+
+    async def _internal_handle_manage_vote(self, interaction: discord.Interaction, thread_id: int, message_id: int):
+        """逻辑：弹出分页投票管理面板"""
+        vote_details = await self.logic.get_vote_details(message_id)
+        normal_options = vote_details.normal_options or []
+        objection_options = vote_details.objection_options or []
+
+        if not normal_options and not objection_options:
+            await interaction.followup.send("当前暂无可管理的投票选项。", ephemeral=True)
+            return
+
+        jump_url = f"https://discord.com/channels/{vote_details.guild_id}/{thread_id}/{message_id}"
+
+        # 如果有普通选项，发普通选项面板
+        if normal_options:
+            view = PaginatedManageView(self.bot, interaction, thread_id, message_id, normal_options, 0)
+            embed = VoteEmbedBuilder.build_paginated_manage_embed(jump_url, 0, normal_options, vote_details.realtime_flag)
+            await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
+
+        # 如果有异议选项，间隔一会发送异议面板
+        if objection_options:
+            if normal_options: await asyncio.sleep(0.5)
+            view = PaginatedManageView(self.bot, interaction, thread_id, message_id, objection_options, 1)
+            embed = VoteEmbedBuilder.build_paginated_manage_embed(jump_url, 1, objection_options, vote_details.realtime_flag)
+            await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
+
+    async def _internal_handle_manage_rules(self, interaction: discord.Interaction, thread_id: int, message_id: int):
+        """逻辑：弹出规则管理面板"""
+        can_manage = await PermissionGuard.can_manage_rules_or_options(interaction, thread_id)
+        if not can_manage:
+            await interaction.followup.send("你没有权限管理此投票的规则。", ephemeral=True)
+            return
+
+        flags = await self.logic.get_vote_flags(message_id)
+        view = RuleManagementView(self.bot, thread_id, message_id)
+        embed = discord.Embed(title="规则管理", color=discord.Color.blue())
+        embed.add_field(name="匿名投票", value="✅ 是" if flags[0] else "❌ 否", inline=True)
+        embed.add_field(name="实时票数", value="✅ 是" if flags[1] else "❌ 否", inline=True)
+        embed.add_field(name="结束通知", value="✅ 是" if flags[2] else "❌ 否", inline=True)
+        await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
+
+    async def _internal_handle_create_option(self, interaction: discord.Interaction, thread_id: int, message_id: int, option_type: int):
+        """逻辑：弹出创建选项 Modal"""
+        can_manage = await PermissionGuard.can_manage_rules_or_options(interaction, thread_id)
+        if not can_manage:
+            if not interaction.response.is_done():
+                await interaction.response.send_message("你没有权限为此提案创建投票选项。", ephemeral=True)
+            else:
+                await interaction.followup.send("你没有权限为此提案创建投票选项。", ephemeral=True)
+            return
+
+        modal = CreateOptionModal(self.bot, message_id, thread_id, option_type)
+        if not interaction.response.is_done():
+            await interaction.response.send_modal(modal)
+        else:
+            # 如果 interaction 已被 defer，Modal 是发不出来的，需要特殊处理
+            # 这里的镜像监听器 mirror_panel_clicked 在调用 create_normal 分支时故意不 safeDefer
+            logger.warning("尝试在已响应的 Interaction 上发送 Modal。")
 
 
     @commands.Cog.listener()
@@ -220,7 +324,7 @@ class ViewEventListener(commands.Cog):
         await safeDefer(interaction, ephemeral=True)
         try:
             toggle_method = getattr(self.logic, toggle_method_name)
-            await toggle_method(message_id, operator=interaction.user)
+            await toggle_method(message_id)
 
             await self.bot.api_scheduler.submit(
                 interaction.followup.send(f"已成功切换 **{setting_name}** 状态。", ephemeral=True),
@@ -255,90 +359,12 @@ class ViewEventListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_panel_manage_vote_clicked(self, interaction: discord.Interaction):
-        """处理主面板“投票管理”按钮，分别发普通/异议分页面板。"""
-        if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
-            await interaction.followup.send("此功能仅在帖子内可用。", ephemeral=True)
-            return
-
-        if not interaction.message:
-            await interaction.followup.send("无法找到原始投票消息，请重试。", ephemeral=True)
-            return
-
+        """讨论帖内点击『投票管理』"""
         try:
-            vote_details = await self.logic.get_vote_details(interaction.message.id)
-
-            normal_options = vote_details.normal_options or []
-            objection_options = vote_details.objection_options or []
-
-            if not normal_options and not objection_options:
-                await interaction.followup.send("当前暂无可管理的投票选项。", ephemeral=True)
-                return
-
-            if normal_options:
-                normal_view = PaginatedManageView(
-                    bot=self.bot,
-                    interaction=interaction,
-                    thread_id=interaction.channel.id,
-                    msg_id=interaction.message.id,
-                    options=normal_options,
-                    option_type=0,
-                    page=0,
-                )
-                jump_url = (
-                    f"https://discord.com/channels/{vote_details.guild_id}/{vote_details.context_thread_id}/{vote_details.context_message_id}"
-                    if vote_details.guild_id
-                    and vote_details.context_thread_id
-                    and vote_details.context_message_id
-                    else ""
-                )
-                normal_embed = VoteEmbedBuilder.build_paginated_manage_embed(
-                    jump_url=jump_url,
-                    option_type=0,
-                    options=normal_options,
-                    realtime_flag=vote_details.realtime_flag,
-                )
-                await DiscordUtils.send_private_panel(
-                    self.bot,
-                    interaction,
-                    embed=normal_embed,
-                    view=normal_view,
-                )
-                if objection_options:
-                    await asyncio.sleep(0.5)
-
-            if objection_options:
-                objection_view = PaginatedManageView(
-                    bot=self.bot,
-                    interaction=interaction,
-                    thread_id=interaction.channel.id,
-                    msg_id=interaction.message.id,
-                    options=objection_options,
-                    option_type=1,
-                    page=0,
-                )
-                jump_url = (
-                    f"https://discord.com/channels/{vote_details.guild_id}/{vote_details.context_thread_id}/{vote_details.context_message_id}"
-                    if vote_details.guild_id
-                    and vote_details.context_thread_id
-                    and vote_details.context_message_id
-                    else ""
-                )
-                objection_embed = VoteEmbedBuilder.build_paginated_manage_embed(
-                    jump_url=jump_url,
-                    option_type=1,
-                    options=objection_options,
-                    realtime_flag=vote_details.realtime_flag,
-                )
-                await DiscordUtils.send_private_panel(
-                    self.bot,
-                    interaction,
-                    embed=objection_embed,
-                    view=objection_view,
-                )
-
+            tid, mid = await self._resolve_context(interaction, "local")
+            await self._internal_handle_manage_vote(interaction, tid, mid)
         except Exception as e:
-            logger.error(f"处理投票管理面板时出错: {e}", exc_info=True)
-            await interaction.followup.send(f"处理投票管理面板时出错: {e}", ephemeral=True)
+            await interaction.followup.send(str(e), ephemeral=True)
 
     @commands.Cog.listener()
     async def on_manage_vote_button_clicked(self, interaction: discord.Interaction):
@@ -347,61 +373,22 @@ class ViewEventListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_panel_manage_rules_clicked(self, interaction: discord.Interaction):
-        """处理主面板“规则管理”按钮。"""
-        if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
-            await interaction.followup.send("此功能仅在帖子内可用。", ephemeral=True)
-            return
-
-        if not interaction.message:
-            await interaction.followup.send("无法找到原始投票消息，请重试。", ephemeral=True)
-            return
-
-        can_manage = await PermissionGuard.can_manage_rules_or_options(interaction)
-        if not can_manage:
-            await interaction.followup.send("你没有权限管理规则。", ephemeral=True)
-            return
-
+        """讨论帖内点击『规则管理』"""
         try:
-            anonymous_flag, realtime_flag, notify_flag = await self.logic.get_vote_flags(
-                interaction.message.id
-            )
-            view = RuleManagementView(
-                bot=self.bot,
-                thread_id=interaction.channel.id,
-                message_id=interaction.message.id,
-            )
-            embed = discord.Embed(title="规则管理", color=discord.Color.blue())
-            embed.add_field(name="匿名投票", value="✅ 是" if anonymous_flag else "❌ 否", inline=True)
-            embed.add_field(name="实时票数", value="✅ 是" if realtime_flag else "❌ 否", inline=True)
-            embed.add_field(name="结束通知", value="✅ 是" if notify_flag else "❌ 否", inline=True)
-            await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
+            tid, mid = await self._resolve_context(interaction, "local")
+            await self._internal_handle_manage_rules(interaction, tid, mid)
         except Exception as e:
-            logger.error(f"处理规则管理面板时出错: {e}", exc_info=True)
-            await interaction.followup.send("处理规则管理面板时出错。", ephemeral=True)
+            await interaction.followup.send(str(e), ephemeral=True)
 
     @commands.Cog.listener()
     async def on_panel_create_option_clicked(self, interaction: discord.Interaction, option_type: int):
-        """处理主面板“创建普通投票/创建异议”按钮。"""
-        if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
-            await interaction.followup.send("此功能仅在帖子内可用。", ephemeral=True)
-            return
-
-        if not interaction.message:
-            await interaction.followup.send("无法找到原始投票消息，请重试。", ephemeral=True)
-            return
-
-        can_manage = await PermissionGuard.can_manage_rules_or_options(interaction)
-        if not can_manage:
-            await interaction.followup.send("你没有权限创建投票选项。", ephemeral=True)
-            return
-
-        modal = CreateOptionModal(
-            bot=self.bot,
-            message_id=interaction.message.id,
-            thread_id=interaction.channel.id,
-            option_type=option_type,
-        )
-        await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
+        """讨论帖内点击『创建普通/异议』"""
+        try:
+            tid, mid = await self._resolve_context(interaction, "local")
+            await self._internal_handle_create_option(interaction, tid, mid, option_type)
+        except Exception as e:
+            # CreateOptionModal 涉及 response.send_modal，如果失败建议记录日志
+            logger.error(f"发送 Modal 失败: {e}")
 
     @commands.Cog.listener()
     async def on_new_option_submitted(
