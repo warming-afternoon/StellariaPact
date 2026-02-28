@@ -408,26 +408,34 @@ class ViewEventListener(commands.Cog):
 
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
+                # 正常的选项创建逻辑
                 vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
                 if not vote_session or not vote_session.id:
                     raise ValueError("找不到对应的投票会话。")
 
-                await uow.vote_option.add_option(vote_session.id, option_type=option_type, text=text)
+                await uow.vote_option.add_option(
+                    vote_session.id, option_type=option_type, text=text
+                )
                 all_options = await uow.vote_option.get_vote_options(vote_session.id)
                 await uow.vote_session.update_vote_session_total_choices(
                     vote_session.id, len(all_options)
                 )
-
-                if option_type == 1:
-                    await uow.proposal.update_proposal_status_by_thread_id(
-                        thread_id, ProposalStatus.UNDER_OBJECTION
-                    )
-
                 await uow.commit()
 
+            # 如果是异议类型，调用 Logic 层进行 UI 同步
+            if option_type == 1:
+                await self.logic.set_proposal_under_objection(thread_id)
+
+            # 更新面板
             vote_details = await self.logic.get_vote_details(message_id)
             self.bot.dispatch("vote_details_updated", vote_details)
-            await interaction.followup.send("已成功创建新投票选项。", ephemeral=True)
+            
+            success_message = "已成功创建新投票选项"
+            if option_type == 1:
+                success_message += ", 并将提案标为异议中。"
+            
+            await interaction.followup.send(success_message, ephemeral=True)
+
         except Exception as e:
             logger.error(f"创建新选项时出错: {e}", exc_info=True)
             await interaction.followup.send("创建新选项时发生错误。", ephemeral=True)

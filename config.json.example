@@ -15,7 +15,8 @@
     "objection_voting": null,
     "finished": null,
     "abandoned": null,
-    "rejected": null
+    "rejected": null,
+    "under_objection": null
   },
   "status_tag_keys": [
     "discussion",
@@ -24,7 +25,8 @@
     "objection_voting",
     "finished",
     "abandoned",
-    "rejected"
+    "rejected",
+    "under_objection"
   ],
   "intake_tags": {
     "pending_review": null,

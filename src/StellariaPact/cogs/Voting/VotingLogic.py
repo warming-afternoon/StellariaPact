@@ -20,8 +20,8 @@ from StellariaPact.cogs.Voting.qo import (
 from StellariaPact.dto import UserActivityDto, UserVoteDto, VoteSessionDto
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.services.VoteSessionService import VoteSessionService
-from StellariaPact.share import StellariaPactBot, TimeUtils, UnitOfWork
-
+from StellariaPact.share import DiscordUtils, StringUtils, StellariaPactBot, TimeUtils, UnitOfWork
+from StellariaPact.share.enums import ProposalStatus
 logger = logging.getLogger(__name__)
 
 
@@ -471,3 +471,47 @@ class VotingLogic:
                 options=option_results,
                 voters=voters_dto_list,
             )
+
+    async def set_proposal_under_objection(self, thread_id: int):
+        """
+        将提案设置为“异议中”状态，并同步更新 Discord 帖子的 UI。
+        """
+
+        # 处理 Discord 同步
+        thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
+        if not thread or not isinstance(thread, discord.Thread):
+            logger.warning(f"无法找到帖子 {thread_id}，跳过 UI 同步。")
+            return
+
+        # 计算新标题
+        clean_name = StringUtils.clean_title(thread.name)
+        new_name = f"[异议中] {clean_name}"
+
+        # 计算新标签
+        new_tags = None
+        if isinstance(thread.parent, discord.ForumChannel):
+            new_tags = DiscordUtils.calculate_new_tags(
+                current_tags=thread.applied_tags,
+                forum_tags=thread.parent.available_tags,
+                config=self.bot.config,
+                target_tag_name="under_objection"
+            )
+
+        # 构造编辑载荷
+        payload = {}
+        if thread.name != new_name:
+            payload["name"] = new_name
+        if new_tags is not None:
+            payload["applied_tags"] = new_tags
+
+        if payload:
+            # 通过调度器执行 API 调用
+            await self.bot.api_scheduler.submit(thread.edit(**payload), priority=3)
+            logger.info(f"提案帖子 {thread_id} 已同步为 [异议中]")
+
+        # 更新数据库状态
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.proposal.update_proposal_status_by_thread_id(
+                thread_id, ProposalStatus.UNDER_OBJECTION
+            )
+            await uow.commit()
