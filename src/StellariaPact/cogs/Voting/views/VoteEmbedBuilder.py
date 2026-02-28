@@ -7,12 +7,7 @@ from zoneinfo import ZoneInfo
 
 import discord
 
-from StellariaPact.cogs.Voting.dto import (
-    OptionResult,
-    VoteDetailDto,
-    VoteStatusDto,
-    VotingChoicePanelDto,
-)
+from StellariaPact.cogs.Voting.dto import OptionResult, VoteDetailDto, VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.dto import ObjectionDetailsDto, ProposalDto
 
@@ -169,72 +164,116 @@ class VoteEmbedBuilder:
         return embed
 
     @staticmethod
-    def build_vote_result_embed(
-        topic: str, result: "VoteStatusDto", jump_url: str | None = None
-    ) -> discord.Embed:
+    def build_vote_result_embeds(
+        topic: str, result: VoteDetailDto, jump_url: str | None = None
+    ) -> list[discord.Embed]:
         """
-        构建通用投票结果的 Embed 消息。
+        构建通用投票结果的 Embed 消息列表。
+        第一个是普通投票embed，如果有异议投票，则追加第二个异议投票结果embed。
         """
+        embeds = []
         description = None
         if jump_url:
-            description = f"\n\n[点击跳转至原投票]({jump_url})"
+            description = f"[点击跳转至原投票]({jump_url})"
 
-        embed = discord.Embed(
+        # --- 普通投票 Embed ---
+        normal_embed = discord.Embed(
             title=f"议题「{topic}」的投票已结束",
             description=description,
-            color=discord.Color.dark_grey(),
+            color=discord.Color.dark_green(),
         )
 
-        if result.options:
-            for i, option in enumerate(result.options, 1):
-                embed.add_field(
-                    name=f"**选项 {i} : {option.choice_text}**",
+        normal_options = result.normal_options if result.normal_options else result.options
+        if normal_options:
+            for i, option in enumerate(normal_options, 1):
+                normal_embed.add_field(
+                    name=f"**选项 {option.choice_index} : {option.choice_text}**",
                     value="",
                     inline=False,
                 )
-                embed.add_field(
-                    name="赞成",
-                    value=str(option.approve_votes),
-                    inline=True,
-                )
-                embed.add_field(
-                    name="反对",
-                    value=str(option.reject_votes),
-                    inline=True,
-                )
-                embed.add_field(
-                    name="总票数",
-                    value=str(option.total_votes),
-                    inline=True,
-                )
+                normal_embed.add_field(name="赞成", value=str(option.approve_votes), inline=True)
+                normal_embed.add_field(name="反对", value=str(option.reject_votes), inline=True)
+                normal_embed.add_field(name="总票数", value=str(option.total_votes), inline=True)
         else:
-            embed.add_field(name="赞成", value=f"{result.approve_votes}", inline=True)
-            embed.add_field(name="反对", value=f"{result.reject_votes}", inline=True)
-            embed.add_field(name="总票数", value=f"{result.total_votes}", inline=True)
+            normal_embed.add_field(name="赞成", value=f"{result.total_approve_votes}", inline=True)
+            normal_embed.add_field(name="反对", value=f"{result.total_reject_votes}", inline=True)
+            normal_embed.add_field(name="总票数", value=f"{result.total_votes}", inline=True)
 
-        return embed
+        embeds.append(normal_embed)
+
+        # --- 异议投票 Embed ---
+        if result.objection_options:
+            objection_embed = discord.Embed(
+                title=f"议题「{topic}」的异议投票已结束",
+                color=discord.Color.orange(),
+            )
+            for option in result.objection_options:
+                objection_embed.add_field(
+                    name=f"**异议 {option.choice_index} : {option.choice_text}**",
+                    value="",
+                    inline=False,
+                )
+                objection_embed.add_field(name="赞成异议", value=str(option.approve_votes), inline=True)
+                objection_embed.add_field(name="反对异议", value=str(option.reject_votes), inline=True)
+                objection_embed.add_field(name="总票数", value=str(option.total_votes), inline=True)
+
+            embeds.append(objection_embed)
+
+        return embeds
 
     @staticmethod
-    def build_voter_list_embeds(
-        title: str, voter_ids: list[int], color: discord.Color
-    ) -> list[discord.Embed]:
+    def build_voter_list_embeds_from_details(result: VoteDetailDto) -> list[discord.Embed]:
         """
-        将一个长的投票者列表分割成多个 Embed。
+        从 VoteDetailDto 构建详细的实名投票者名单 Embed 列表，支持按不同选项划分。
         """
         embeds = []
-        # 每 40 个 ID 创建一个 Embed，以确保不超过字符限制
-        chunk_size = 40
+        if result.is_anonymous or not result.voters:
+            return embeds
 
-        for i in range(0, len(voter_ids), chunk_size):
-            chunk = voter_ids[i : i + chunk_size]
-            description = "\n".join(f"<@{user_id}>" for user_id in chunk)
+        # 按 (option_type, choice_index, choice) 分组记录 voter_id
+        # option_type: 0-普通, 1-异议 | choice: 1-赞成, 0-反对
+        groups = {}
+        for v in result.voters:
+            key = (v.option_type, v.choice_index, v.choice)
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(v.user_id)
 
-            embed = discord.Embed(
-                title=f"{title} ({i + 1} - {i + len(chunk)})",
-                description=description,
-                color=color,
-            )
-            embeds.append(embed)
+        # 辅助获取选项文本的方法
+        def get_option_text(opt_type, idx):
+            if opt_type == 0:
+                opts = result.normal_options if result.normal_options else result.options
+                prefix = "选项"
+            else:
+                opts = result.objection_options
+                prefix = "异议"
+
+            for o in opts:
+                if o.choice_index == idx:
+                    return f"{prefix} {idx}: {o.choice_text}"
+            return f"{prefix} {idx}"
+
+        # 遍历所有存在票数的选项群组
+        for (opt_type, idx, choice), user_ids in sorted(groups.items()):
+            choice_str = "赞成" if choice == 1 else "反对"
+            color = discord.Color.green() if choice == 1 else discord.Color.red()
+            opt_text = get_option_text(opt_type, idx)
+
+            title = f"{choice_str}名单 - {opt_text}"
+
+            # 分块以避开 Discord 字符限制
+            chunk_size = 40
+            for i in range(0, len(user_ids), chunk_size):
+                chunk = user_ids[i : i + chunk_size]
+                description = "\n".join(f"<@{user_id}>" for user_id in chunk)
+                page_title = title if len(user_ids) <= chunk_size else f"{title} ({i + 1} - {i + len(chunk)})"
+
+                embed = discord.Embed(
+                    title=page_title,
+                    description=description,
+                    color=color,
+                )
+                embeds.append(embed)
 
         return embeds
 
@@ -303,6 +342,23 @@ class VoteEmbedBuilder:
             embed.add_field(name="投票状态", value="**已结束**", inline=False)
             embed.color = discord.Color.dark_grey()
 
+        return embed
+
+    @staticmethod
+    def create_new_option_notification_embed(
+        creator: discord.User | discord.Member,
+        option_type: int,
+        option_text: str
+    ) -> discord.Embed:
+        """创建一个通知贴内所有人有新选项/异议被添加的 Embed。"""
+        option_type_name = "普通投票选项" if option_type == 0 else "异议选项"
+        color = discord.Color.green() if option_type == 0 else discord.Color.orange()
+
+        embed = discord.Embed(
+            title=f"新增{option_type_name}",
+            description=f"> 创建人 : {creator.mention} \n\n{option_text}",
+            color=color,
+        )
         return embed
 
     @staticmethod
@@ -384,7 +440,7 @@ class VoteEmbedBuilder:
                 else:
                     value = "隐藏"
                 normal_embed.add_field(
-                    name=f"选项 {opt.choice_index}: {opt.choice_text}",
+                    name=f"选项 {opt.choice_index}: \n{opt.choice_text}\n",
                     value=value,
                     inline=False,
                 )
@@ -477,10 +533,10 @@ class VoteEmbedBuilder:
                 if vote_details.realtime_flag:
                     val = f"✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}"
                 else:
-                    val = "隐藏"
+                    val = ""
                 normal_embed.add_field(
-                    name=f"选项 {opt.choice_index}: {opt.choice_text}",
-                    value=val,
+                    name=f"选项 {opt.choice_index}: ",
+                    value=f"\n\n{opt.choice_text}\n\n"+val,
                     inline=False,
                 )
             embeds.append(normal_embed)

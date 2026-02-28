@@ -182,9 +182,9 @@ class ModerationLogic:
             guild_id=guild_id,
             user_id=user_id,
             user_role_ids=user_role_ids,
-            expected_status=[ProposalStatus.DISCUSSION],
+            expected_status=[ProposalStatus.DISCUSSION, ProposalStatus.UNDER_OBJECTION],
             context="proposal_execution",
-            error_message="提案当前状态不是“讨论中”，无法执行此操作。",
+            error_message="提案当前状态不是“讨论中”或“异议中”，无法执行此操作。",
             integrity_error_message="操作失败：此提案的确认流程刚刚已被另一位管理员发起。",
         )
 
@@ -203,9 +203,9 @@ class ModerationLogic:
             guild_id=guild_id,
             user_id=user_id,
             user_role_ids=user_role_ids,
-            expected_status=[ProposalStatus.DISCUSSION, ProposalStatus.EXECUTING],
+            expected_status=[ProposalStatus.DISCUSSION, ProposalStatus.EXECUTING, ProposalStatus.UNDER_OBJECTION],
             context="proposal_completion",
-            error_message="提案当前状态不是“讨论中”或“执行中”，无法完成。",
+            error_message="提案当前状态不是“讨论中”、“执行中”或“异议中”，无法完成。",
             integrity_error_message="操作失败：此提案的完成流程刚刚已被另一位管理员发起。",
         )
 
@@ -219,7 +219,7 @@ class ModerationLogic:
     ) -> Optional[ExecuteProposalResultDto]:
         """
         处理“废弃提案”命令的业务流程。
-        允许废弃 [讨论中/冻结中/执行中] 状态的帖子。
+        允许废弃 [讨论中/冻结中/执行中/异议中] 状态的帖子。
         """
         return await self._initiate_proposal_confirmation(
             channel_id=channel_id,
@@ -230,11 +230,33 @@ class ModerationLogic:
                 ProposalStatus.DISCUSSION,
                 ProposalStatus.FROZEN,
                 ProposalStatus.EXECUTING,
+                ProposalStatus.UNDER_OBJECTION
             ],
             context="proposal_abandonment",
-            error_message="提案当前状态不是“讨论中”、“冻结中”或“执行中”，无法废弃。",
+            error_message="提案当前状态不是“讨论中”、“冻结中”、“执行中”或“异议中”，无法废弃。",
             integrity_error_message="操作失败：此提案的废弃流程刚刚已被另一位管理员发起。",
             reason=reason,
+        )
+
+    async def handle_rediscuss_proposal(
+        self, channel_id: int, guild_id: int, user_id: int, user_role_ids: set[int]
+    ) -> Optional[ExecuteProposalResultDto]:
+        """处理"重新讨论"命令的业务流程。允许所有状态回退到讨论中。"""
+        all_statuses = [
+            ProposalStatus.DISCUSSION, ProposalStatus.EXECUTING,
+            ProposalStatus.FROZEN, ProposalStatus.ABANDONED,
+            ProposalStatus.REJECTED, ProposalStatus.FINISHED,
+            ProposalStatus.UNDER_OBJECTION
+        ]
+        return await self._initiate_proposal_confirmation(
+            channel_id=channel_id,
+            guild_id=guild_id,
+            user_id=user_id,
+            user_role_ids=user_role_ids,
+            expected_status=all_statuses,
+            context="proposal_rediscuss",
+            error_message="提案当前状态异常，无法重新讨论。",
+            integrity_error_message="操作失败：此提案的确认流程刚刚已被另一位管理员发起。",
         )
 
     async def _initiate_proposal_confirmation(

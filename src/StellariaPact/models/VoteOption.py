@@ -32,3 +32,9 @@ class VoteOption(BaseModel, table=True):
 
     choice_text: str = Field(description="选项文本")
     """选项文本"""
+
+    creator_id: Optional[int] = Field(default=None, description="选项创建人的 Discord ID")
+    """选项创建人的 Discord ID"""
+
+    creator_name: Optional[str] = Field(default=None, description="选项创建人的 Discord 昵称")
+    """选项创建人的 Discord 昵称"""

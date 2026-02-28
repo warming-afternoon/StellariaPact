@@ -45,7 +45,7 @@ class PaginatedManageView(discord.ui.View):
         for i, opt in enumerate(current_options):
             # 赞成按钮
             btn_app = discord.ui.Button(
-                label=f"✅ 赞成{prefix} {opt.choice_index}",
+                label=f"赞成{prefix} {opt.choice_index}",
                 style=discord.ButtonStyle.success,
                 row=i
             )
@@ -53,7 +53,7 @@ class PaginatedManageView(discord.ui.View):
 
             # 反对按钮
             btn_rej = discord.ui.Button(
-                label=f"❌ 反对{prefix} {opt.choice_index}",
+                label=f"反对{prefix} {opt.choice_index}",
                 style=discord.ButtonStyle.danger,
                 row=i
             )
@@ -61,7 +61,7 @@ class PaginatedManageView(discord.ui.View):
 
             # 弃票按钮 (删除投票记录)
             btn_abs = discord.ui.Button(
-                label=f"➖ {prefix} {opt.choice_index} 弃票",
+                label=f"{prefix} {opt.choice_index} 弃票",
                 style=discord.ButtonStyle.secondary,
                 row=i
             )

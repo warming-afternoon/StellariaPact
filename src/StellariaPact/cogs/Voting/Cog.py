@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.dto import VoteDetailDto, VoteStatusDto
+from StellariaPact.cogs.Voting.dto import VoteDetailDto
 from StellariaPact.cogs.Voting.qo import DeleteVoteQo, RecordVoteQo
 from StellariaPact.cogs.Voting.views import (
     ObjectionFormalVoteChoiceView,
@@ -61,7 +61,7 @@ class Voting(commands.Cog):
                 )
 
     @commands.Cog.listener()
-    async def on_vote_finished(self, session: "VoteSessionDto", result: "VoteStatusDto"):
+    async def on_vote_finished(self, session: "VoteSessionDto", result: "VoteDetailDto"):
         """
         监听通用投票结束事件，并发送最终结果。
         """
@@ -79,33 +79,17 @@ class Voting(commands.Cog):
 
             logger.info(f"投票会话 {session.id} 结束，生成跳转链接: {jump_url}")
 
-            # 构建主结果 Embed
-            result_embed = VoteEmbedBuilder.build_vote_result_embed(
+            # 构建主结果 Embeds (包含普通投票和异议投票结果)
+            result_embeds = VoteEmbedBuilder.build_vote_result_embeds(
                 topic, result, jump_url=jump_url
             )
 
-            all_embeds_to_send = [result_embed]
+            all_embeds_to_send = result_embeds
 
-            # 如果不是匿名投票，则构建并添加投票者名单
+            # 如果不是匿名投票，则构建并添加各选项的投票者名单
             if not result.is_anonymous and result.voters:
-                approve_voter_ids = [v.user_id for v in result.voters if v.choice == 1]
-                reject_voter_ids = [v.user_id for v in result.voters if v.choice == 0]
-
-                if approve_voter_ids:
-                    approve_embeds = VoteEmbedBuilder.build_voter_list_embeds(
-                        title="赞成票投票人",
-                        voter_ids=approve_voter_ids,
-                        color=discord.Color.green(),
-                    )
-                    all_embeds_to_send.extend(approve_embeds)
-
-                if reject_voter_ids:
-                    reject_embeds = VoteEmbedBuilder.build_voter_list_embeds(
-                        title="反对票投票人",
-                        voter_ids=reject_voter_ids,
-                        color=discord.Color.red(),
-                    )
-                    all_embeds_to_send.extend(reject_embeds)
+                voter_embeds = VoteEmbedBuilder.build_voter_list_embeds_from_details(result)
+                all_embeds_to_send.extend(voter_embeds)
 
             # 准备要@的身份组
             content_to_send = ""

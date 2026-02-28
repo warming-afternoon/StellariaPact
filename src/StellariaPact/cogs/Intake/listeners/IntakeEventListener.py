@@ -34,6 +34,7 @@ class IntakeEventListenerCog(commands.Cog):
         监听从 IntakeModal 提交的数据。
         """
         logger.info(f"接收到草案提交事件，提交人: {dto.author_id}")
+
         async with UnitOfWork(self.bot.db_handler) as uow:
             try:
                 intake = await self.intake_cog.logic.submit_intake(uow, dto)
@@ -170,3 +171,21 @@ class IntakeEventListenerCog(commands.Cog):
             except Exception as e:
                 logger.error(f"处理支持票切换时出错: {e}", exc_info=True)
                 await interaction.followup.send(f"❌ 操作失败: {str(e)}", ephemeral=True)
+
+    @commands.Cog.listener()
+    async def on_intake_edited(self, interaction: discord.Interaction, intake_id: int, dto: IntakeSubmissionDto):
+        """
+        监听草案被作者修改的事件。
+        """
+        logger.info(f"接收到草案修改事件，修改人: {interaction.user.id}, 草案ID: {intake_id}")
+        await safeDefer(interaction, ephemeral=True)
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            try:
+                await self.intake_cog.logic.edit_intake(uow, intake_id, dto)
+                await uow.commit()
+                logger.info(f"✅ 草案 (ID: {intake_id}) 已被成功修改并更新帖子内容。")
+                await interaction.followup.send("✅ 提案修改成功！审核帖子内容已更新。", ephemeral=True)
+            except Exception as e:
+                logger.error(f"处理草案修改事件时出错 (ID: {intake_id}): {e}", exc_info=True)
+                await interaction.followup.send(f"❌ 修改提案时出错: {str(e)}", ephemeral=True)

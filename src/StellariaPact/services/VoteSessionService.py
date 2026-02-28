@@ -156,13 +156,15 @@ class VoteSessionService:
 
     async def get_expired_sessions(self) -> Sequence[VoteSessionDto]:
         """
-        获取所有已到期的投票会话。
+        获取所有已到期的投票会话 (暂时仅获取1-普通投票)。
         """
+        # TODO: 后续可以根据需要扩展到其他类型的投票
         now_utc = datetime.now(timezone.utc)
         statement = (
             select(VoteSession)
             .where(VoteSession.end_time != None)  # noqa: E711
             .where(VoteSession.status == 1)  # 1 表示 "进行中"
+            .where(VoteSession.session_type == 1) # 1-"普通投票"
             .where(VoteSession.end_time <= now_utc.replace(tzinfo=None))  # type: ignore
         )
         result = await self.session.exec(statement)

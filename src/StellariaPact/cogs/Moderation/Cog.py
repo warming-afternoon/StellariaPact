@@ -13,12 +13,9 @@ from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReason
 from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
 from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalModal
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
-from StellariaPact.cogs.Moderation.views.ObjectionModal import ObjectionModal
-from StellariaPact.cogs.Moderation.views.VoteOptionsModal import VoteOptionsModal
 from StellariaPact.dto import ProposalDto
 from StellariaPact.share import StellariaPactBot, StringUtils, UnitOfWork, safeDefer
 from StellariaPact.share.auth import PermissionGuard, RoleGuard
-from StellariaPact.share.enums import VoteDuration
 
 logger = logging.getLogger(__name__)
 
@@ -151,83 +148,101 @@ class Moderation(commands.Cog):
         modal = AbandonReasonModal(self.bot, self.thread_manager, self, notify_roles)
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
-    @app_commands.command(name="发起异议", description="对一个提案发起异议")
-    async def raise_objection(self, interaction: discord.Interaction):
-        """
-        处理 /发起异议 命令，通过模态框收集信息。
-        实际处理逻辑由 on_objection_modal_submitted 监听器完成。
-
-        Args:
-            interaction (discord.Interaction): 命令交互对象。
-        """
-        modal = ObjectionModal(self.bot)
-        await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
-
     @app_commands.command(
-        name="创建提案投票",
-        description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票",
+        name="重新讨论", description="[议事督导+执行监理] 将任何状态的提案恢复为讨论中"
     )
-    @app_commands.rename(
-        duration_hours="投票持续时间",
-        anonymous="是否匿名",
-        realtime="实时票数",
-        notify="结束时通知提案委员",
-        create_in_voting_channel="创建镜像投票",
-        notify_creation_role="通知投票创建身份组",
-    )
-    @app_commands.describe(
-        duration_hours="投票持续时间（小时），默认为 72 小时",
-        anonymous="是否匿名投票，默认为 是",
-        realtime="是否实时显示票数，默认为 是",
-        notify="投票结束时是否通知提案委员，默认为 是",
-        create_in_voting_channel="是否在投票频道创建镜像投票，默认为 是",
-        notify_creation_role="是否通知“投票创建”身份组,默认否",
-    )
-    async def create_proposal_vote(
-        self,
-        interaction: discord.Interaction,
-        duration_hours: app_commands.Range[int, 1, 720] = VoteDuration.PROPOSAL_DEFAULT,
-        anonymous: bool = True,
-        realtime: bool = True,
-        notify: bool = True,
-        create_in_voting_channel: bool = True,
-        notify_creation_role: bool = False,
-    ):
-        """为当前帖子手动创建一个提案投票。
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
+    @app_commands.rename(notify_roles="通知相关方")
+    @app_commands.describe(notify_roles="是否在发起确认时通知督导和监理组 (默认为是)")
+    async def rediscuss_proposal(self, interaction: discord.Interaction, notify_roles: bool = True):
+        """
+        将提案变更为重新讨论中状态。
 
         Args:
             interaction (discord.Interaction): 命令交互对象。
-            duration_hours (app_commands.Range[int, 1, 720], optional): 投票持续时间（小时）。
-                默认为 72。
-            anonymous (bool, optional): 是否匿名投票。默认为 True
-            realtime (bool, optional): 是否实时显示票数。默认为 True
-            notify (bool, optional): 投票结束时是否通知提案委员。默认为 True
-            create_in_voting_channel (bool, optional): 是否在投票频道创建镜像投票。默认为 True
-            notify_creation_role (bool, optional): 是否通知创建身份组。默认为 False
+            notify_roles (bool): 是否通知相关方，默认为是。
         """
-
-        if not isinstance(interaction.channel, discord.Thread):
-            await interaction.response.send_message("此命令只能在提案帖子内使用。", ephemeral=True)
-            return
-
-        # 收集命令参数以便传递给 Modal
-        command_args = {
-            "duration_hours": duration_hours,
-            "anonymous": anonymous,
-            "realtime": realtime,
-            "notify": notify,
-            "create_in_voting_channel": create_in_voting_channel,
-            "notify_creation_role": notify_creation_role,
-        }
-
-        # 弹出 Modal 以收集选项
-        modal = VoteOptionsModal(
-            bot=self.bot,
-            moderation_cog=self,
-            original_interaction=interaction,
-            **command_args,
+        await self._handle_confirmation_command(
+            interaction, self.logic.handle_rediscuss_proposal, notify_roles
         )
-        await interaction.response.send_modal(modal)
+
+    # @app_commands.command(name="发起异议", description="对一个提案发起异议")
+    # async def raise_objection(self, interaction: discord.Interaction):
+    #     """
+    #     处理 /发起异议 命令，通过模态框收集信息。
+    #     实际处理逻辑由 on_objection_modal_submitted 监听器完成。
+
+    #     Args:
+    #         interaction (discord.Interaction): 命令交互对象。
+    #     """
+    #     modal = ObjectionModal(self.bot)
+    #     await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
+
+    # @app_commands.command(
+    #     name="创建提案投票",
+    #     description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票",
+    # )
+    # @app_commands.rename(
+    #     duration_hours="投票持续时间",
+    #     anonymous="是否匿名",
+    #     realtime="实时票数",
+    #     notify="结束时通知提案委员",
+    #     create_in_voting_channel="创建镜像投票",
+    #     notify_creation_role="通知投票创建身份组",
+    # )
+    # @app_commands.describe(
+    #     duration_hours="投票持续时间（小时），默认为 72 小时",
+    #     anonymous="是否匿名投票，默认为 是",
+    #     realtime="是否实时显示票数，默认为 是",
+    #     notify="投票结束时是否通知提案委员，默认为 是",
+    #     create_in_voting_channel="是否在投票频道创建镜像投票，默认为 是",
+    #     notify_creation_role="是否通知“投票创建”身份组,默认否",
+    # )
+    # async def create_proposal_vote(
+    #     self,
+    #     interaction: discord.Interaction,
+    #     duration_hours: app_commands.Range[int, 1, 720] = VoteDuration.PROPOSAL_DEFAULT,
+    #     anonymous: bool = True,
+    #     realtime: bool = True,
+    #     notify: bool = True,
+    #     create_in_voting_channel: bool = True,
+    #     notify_creation_role: bool = False,
+    # ):
+    #     """为当前帖子手动创建一个提案投票。
+
+    #     Args:
+    #         interaction (discord.Interaction): 命令交互对象。
+    #         duration_hours (app_commands.Range[int, 1, 720], optional): 投票持续时间（小时）。
+    #             默认为 72。
+    #         anonymous (bool, optional): 是否匿名投票。默认为 True
+    #         realtime (bool, optional): 是否实时显示票数。默认为 True
+    #         notify (bool, optional): 投票结束时是否通知提案委员。默认为 True
+    #         create_in_voting_channel (bool, optional): 是否在投票频道创建镜像投票。默认为 True
+    #         notify_creation_role (bool, optional): 是否通知创建身份组。默认为 False
+    #     """
+
+    #     if not isinstance(interaction.channel, discord.Thread):
+    #         await interaction.response.send_message("此命令只能在提案帖子内使用。", ephemeral=True)
+    #         return
+
+    #     # 收集命令参数以便传递给 Modal
+    #     command_args = {
+    #         "duration_hours": duration_hours,
+    #         "anonymous": anonymous,
+    #         "realtime": realtime,
+    #         "notify": notify,
+    #         "create_in_voting_channel": create_in_voting_channel,
+    #         "notify_creation_role": notify_creation_role,
+    #     }
+
+    #     # 弹出 Modal 以收集选项
+    #     modal = VoteOptionsModal(
+    #         bot=self.bot,
+    #         moderation_cog=self,
+    #         original_interaction=interaction,
+    #         **command_args,
+    #     )
+    #     await interaction.response.send_modal(modal)
 
     async def process_vote_creation(
         self,

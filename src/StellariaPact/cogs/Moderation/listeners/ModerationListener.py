@@ -503,6 +503,7 @@ class ModerationListener(commands.Cog):
                 "proposal_execution": ProposalStatus.EXECUTING,
                 "proposal_completion": ProposalStatus.FINISHED,
                 "proposal_abandonment": ProposalStatus.ABANDONED,
+                "proposal_rediscuss": ProposalStatus.DISCUSSION,
             }
             target_status = target_status_map.get(session.context)
 
@@ -544,6 +545,8 @@ class ModerationListener(commands.Cog):
                 ProposalStatus.EXECUTING: "executing",
                 ProposalStatus.FINISHED: "finished",
                 ProposalStatus.ABANDONED: "abandoned",
+                ProposalStatus.DISCUSSION: "discussion",
+                ProposalStatus.UNDER_OBJECTION: "under_objection",
             }
             status_key = status_key_map.get(target_status)
 

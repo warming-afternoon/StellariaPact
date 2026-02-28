@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -56,6 +57,7 @@ class IntakeLogic:
             implementation=dto.implementation,
             executor=dto.executor,
             status=IntakeStatus.PENDING_REVIEW,
+            required_votes =20,  # 默认需要20票支持才能立案
         )
         created_intake = await uow.intake.create_intake(intake)
         await uow.flush([created_intake])
@@ -91,7 +93,7 @@ class IntakeLogic:
         thread_with_message = await review_forum.create_thread(
             name=thread_name,
             content=content,
-            view=IntakeReviewView(self.bot),
+            view=IntakeReviewView(self.bot, created_intake),
             applied_tags=applied_tags,
         )
 
@@ -161,13 +163,50 @@ class IntakeLogic:
             session_type=VoteSessionType.INTAKE_SUPPORT,
             end_time=now + timedelta(days=3),  # 记录结束时间
         )
-        await uow.vote_session.create_vote_session(vote_qo)
+        # 并发执行以下独立操作：
+        # 1. 创建投票会话
+        # 2. 更新审核帖子消息
+        # 3. 更新审核帖子标签
+        max_retries = 3
+        retry_delay = 1.0  # 秒
 
-        # 更新审核帖首楼内容并通知提案人
-        await self._update_review_thread_message(intake, view=None, notify_proposer=True)
+        for attempt in range(max_retries):
+            try:
+                results = await asyncio.gather(
+                    uow.vote_session.create_vote_session(vote_qo),
+                    self._update_review_thread_message(intake, view=None, notify_proposer=True),
+                    self._update_review_thread_tags(intake),
+                    return_exceptions=True  # 允许单个失败不影响其他
+                )
 
-        # 更新审核帖标签
-        await self._update_review_thread_tags(intake)
+                # 检查是否有异常
+                has_critical_error = False
+                for i, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        logger.warning(f"并发操作 {i} 失败 (尝试 {attempt + 1}/{max_retries}): {result}")
+
+                        # 如果是创建投票会话失败，标记为严重错误
+                        if i == 0:
+                            has_critical_error = True
+                            if attempt < max_retries - 1:
+                                logger.info(f"等待 {retry_delay} 秒后重试...")
+                                await asyncio.sleep(retry_delay)
+                                break  # 跳出循环，进行重试
+
+                # 如果没有严重错误或者已经达到最大重试次数，继续执行
+                if not has_critical_error or attempt == max_retries - 1:
+                    # 如果有非严重错误，记录日志但不中断流程
+                    for i, result in enumerate(results):
+                        if isinstance(result, Exception) and i > 0:
+                            logger.error(f"非关键操作 {i} 最终失败: {result}")
+                    break  # 跳出重试循环
+
+            except Exception as e:
+                logger = logging.getLogger(__name__)
+                logger.error(f"并发执行失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(retry_delay)
 
         return intake
 
@@ -462,7 +501,54 @@ class IntakeLogic:
         intake.status = IntakeStatus.REJECTED
         await uow.intake.update_intake(intake)
 
-        await self._update_review_thread_message(intake, view=None, notify_proposer=True)
+        await self._update_review_thread_message(intake, view=IntakeReviewView(self.bot, intake), notify_proposer=True)
+
+        # 更新审核帖标签
+        await self._update_review_thread_tags(intake)
+
+        return intake
+
+    async def edit_intake(
+        self, uow: "UnitOfWork", intake_id: int, dto: "IntakeSubmissionDto"
+    ) -> ProposalIntake:
+        """
+        处理提案人修改草案的逻辑。
+        """
+        intake = await uow.intake.get_intake_by_id(intake_id)
+        if not intake:
+            raise ValueError("未找到对应的草案。")
+
+        # 更新提案内容
+        intake.title = dto.title
+        intake.reason = dto.reason
+        intake.motion = dto.motion
+        intake.implementation = dto.implementation
+        intake.executor = dto.executor
+
+        # 如果当前状态是“需要修改”，则重置为“待审核”以供管理组重新评审
+        if intake.status == IntakeStatus.MODIFICATION_REQUIRED:
+            intake.status = IntakeStatus.PENDING_REVIEW
+
+        await uow.intake.update_intake(intake)
+
+        # 更新审核帖首楼内容和重新渲染面板
+        await self._update_review_thread_message(
+            intake,
+            view=IntakeReviewView(self.bot, intake),
+        )
+
+        # 在审核帖下方发送变更通知 embed
+        if intake.review_thread_id:
+            thread = self.bot.get_channel(intake.review_thread_id)
+            if isinstance(thread, discord.Thread):
+                embed = discord.Embed(
+                    title="📝 提案内容已更新",
+                    description="提案人对草案内容进行了修改，请管理组重新审核。",
+                    color=discord.Color.blue(),
+                )
+                embed.add_field(name="修改时间", value=f"<t:{int(datetime.utcnow().timestamp())}:f>", inline=False)
+                embed.add_field(name="修改人", value=f"<@{intake.author_id}>", inline=False)
+                await thread.send(embed=embed)
 
         # 更新审核帖标签
         await self._update_review_thread_tags(intake)
@@ -492,7 +578,9 @@ class IntakeLogic:
         intake.status = IntakeStatus.MODIFICATION_REQUIRED
         await uow.intake.update_intake(intake)
 
-        await self._update_review_thread_message(intake, view=None, notify_proposer=True)
+        await self._update_review_thread_message(
+            intake, view=IntakeReviewView(self.bot, intake), notify_proposer=True
+        )
 
         # 更新审核帖标签
         await self._update_review_thread_tags(intake)
@@ -572,7 +660,7 @@ class IntakeLogic:
                     f"\n📝 **提案原因**\n{intake.reason}",
                     f"\n📋 **议案动议**\n{intake.motion}",
                     f"\n🔧 **执行方案**\n{intake.implementation}"
-                    f"\n👨‍💼 **议案执行人**\n{intake.executor}",
+                    f"\n\n👨‍💼 **议案执行人**\n{intake.executor}",
                     "\n---\n",
                     f"{status_emoji} **状态：** {status_text}\n",
                     f"💬 **审核意见：** {intake.review_comment or '（无）'}",

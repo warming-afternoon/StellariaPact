@@ -1,4 +1,4 @@
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 from sqlalchemy import func
 from sqlmodel import select
@@ -15,19 +15,35 @@ class VoteOptionService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create_vote_options(self, session_id: int, options: List[str], option_type: int = 0):
+    async def create_vote_options(
+        self,
+        session_id: int,
+        options: List[str],
+        option_type: int = 0,
+        creator_id: Optional[int] = None,
+        creator_name: Optional[str] = None
+    ):
         """为指定的会话创建投票选项"""
         for i, text in enumerate(options):
             new_option = VoteOption(
                 session_id=session_id,
                 option_type=option_type,
                 choice_index=i + 1,
-                choice_text=text
+                choice_text=text,
+                creator_id=creator_id,
+                creator_name=creator_name
             )
             self.session.add(new_option)
         await self.session.flush()
 
-    async def add_option(self, session_id: int, option_type: int, text: str) -> VoteOption:
+    async def add_option(
+        self,
+        session_id: int,
+        option_type: int,
+        text: str,
+        creator_id: Optional[int] = None,
+        creator_name: Optional[str] = None
+    ) -> VoteOption:
         """动态添加一个新选项，并自动计算该类型下的最新 choice_index"""
         statement = select(func.max(VoteOption.choice_index)).where(
             VoteOption.session_id == session_id,
@@ -39,7 +55,9 @@ class VoteOptionService:
             session_id=session_id,
             option_type=option_type,
             choice_index=max_index + 1,
-            choice_text=text
+            choice_text=text,
+            creator_id=creator_id,
+            creator_name=creator_name
         )
         self.session.add(new_option)
         await self.session.flush()

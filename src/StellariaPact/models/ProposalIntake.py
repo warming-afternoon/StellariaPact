@@ -33,6 +33,7 @@ class ProposalIntake(BaseModel, table=True):
 
     status: int = Field(default=IntakeStatus.PENDING_REVIEW, index=True)
     """审核状态，0=待审核，1=批准，2=拒绝，3=需要修改"""
+
     review_thread_id: Optional[int] = Field(default=None, description="审核贴ID")
     """审核贴ID"""
     discussion_thread_id: Optional[int] = Field(default=None, description="讨论帖ID")

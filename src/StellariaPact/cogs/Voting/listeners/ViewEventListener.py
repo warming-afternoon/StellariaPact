@@ -20,7 +20,6 @@ from StellariaPact.share import (
     UnitOfWork,
     safeDefer,
 )
-from StellariaPact.share.enums.ProposalStatus import ProposalStatus
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +125,7 @@ class ViewEventListener(commands.Cog):
         """镜像面板（投票频道）点击的入口"""
         try:
             thread_id, original_msg_id = await self._resolve_context(interaction, "mirror")
-            
+
             if action_name == "manage_vote":
                 await self._internal_handle_manage_vote(interaction, thread_id, original_msg_id)
             elif action_name == "manage_rules":
@@ -175,22 +174,25 @@ class ViewEventListener(commands.Cog):
             await interaction.followup.send("你没有权限管理此投票的规则。", ephemeral=True)
             return
 
-        flags = await self.logic.get_vote_flags(message_id)
+
+        vote_details = await self.logic.get_vote_details(message_id)
+        jump_url = f"https://discord.com/channels/{vote_details.guild_id}/{thread_id}/{message_id}"
+
         view = RuleManagementView(self.bot, thread_id, message_id)
-        embed = discord.Embed(title="规则管理", color=discord.Color.blue())
-        embed.add_field(name="匿名投票", value="✅ 是" if flags[0] else "❌ 否", inline=True)
-        embed.add_field(name="实时票数", value="✅ 是" if flags[1] else "❌ 否", inline=True)
-        embed.add_field(name="结束通知", value="✅ 是" if flags[2] else "❌ 否", inline=True)
+        embed = discord.Embed(title=f"对 {jump_url} 的规则管理", color=discord.Color.blue())
+        embed.add_field(name="匿名投票", value="✅ 是" if vote_details.is_anonymous else "❌ 否", inline=True)
+        embed.add_field(name="实时票数", value="✅ 是" if vote_details.realtime_flag else "❌ 否", inline=True)
+        embed.add_field(name="结束通知", value="✅ 是" if vote_details.notify_flag else "❌ 否", inline=True)
         await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
 
     async def _internal_handle_create_option(self, interaction: discord.Interaction, thread_id: int, message_id: int, option_type: int):
         """逻辑：弹出创建选项 Modal"""
-        can_manage = await PermissionGuard.can_manage_rules_or_options(interaction, thread_id)
-        if not can_manage:
+        can_create = await PermissionGuard.can_create_options(interaction, thread_id)
+        if not can_create:
             if not interaction.response.is_done():
-                await interaction.response.send_message("你没有权限为此提案创建投票选项。", ephemeral=True)
+                await interaction.response.send_message("你没有权限为此提案创建投票选项。需为提案人、管理组成员或本帖有效发言数 > 10。", ephemeral=True)
             else:
-                await interaction.followup.send("你没有权限为此提案创建投票选项。", ephemeral=True)
+                await interaction.followup.send("你没有权限为此提案创建投票选项。需为提案人、管理组成员或本帖有效发言数 > 10。", ephemeral=True)
             return
 
         modal = CreateOptionModal(self.bot, message_id, thread_id, option_type)
@@ -317,19 +319,64 @@ class ViewEventListener(commands.Cog):
         self,
         interaction: discord.Interaction,
         message_id: int,
+        thread_id: int,
         toggle_method_name: str,
         setting_name: str,
+        rule_view: RuleManagementView
     ):
         """通用处理切换设置的逻辑"""
-        await safeDefer(interaction, ephemeral=True)
         try:
-            toggle_method = getattr(self.logic, toggle_method_name)
-            await toggle_method(message_id)
+            # 获取旧状态
+            old_vote_details = await self.logic.get_vote_details(message_id)
 
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send(f"已成功切换 **{setting_name}** 状态。", ephemeral=True),
-                priority=1,
+            # 执行数据库切换操作，获得最新的 VoteDetailDto
+            toggle_method = getattr(self.logic, toggle_method_name)
+            updated_vote_details = await toggle_method(message_id)
+
+            # 构造原因字符串
+            def to_text(status: bool) -> str:
+                return "✅ 是" if status else "❌ 否"
+
+            old_status_text = "未知"
+            new_status_text = "未知"
+
+            if toggle_method_name == "toggle_anonymous":
+                old_status_text = to_text(old_vote_details.is_anonymous)
+                new_status_text = to_text(updated_vote_details.is_anonymous)
+            elif toggle_method_name == "toggle_realtime":
+                old_status_text = to_text(old_vote_details.realtime_flag)
+                new_status_text = to_text(updated_vote_details.realtime_flag)
+            elif toggle_method_name == "toggle_notify":
+                old_status_text = to_text(old_vote_details.notify_flag)
+                new_status_text = to_text(updated_vote_details.notify_flag)
+
+            reason = f"切换了 **{setting_name}** 状态：`{old_status_text}` → `{new_status_text}`"
+
+            # 派发 vote_settings_changed 事件
+            # Cog.py 监听此事件后，会自动派发 vote_details_updated (同步更新讨论帖和镜像频道的面板)，并发送变更通知 Embed
+            operator = interaction.user
+            self.bot.dispatch(
+                "vote_settings_changed",
+                thread_id,
+                message_id,
+                updated_vote_details,
+                operator,
+                reason,
+                None,  # new_end_time
+                None,  # old_end_time
             )
+
+            # 原地更新私有的 RuleManagementView 面板
+            if rule_view and rule_view.message:
+                jump_url = f"https://discord.com/channels/{updated_vote_details.guild_id}/{thread_id}/{message_id}"
+                embed = discord.Embed(title=f"对 {jump_url} 的规则管理", color=discord.Color.blue())
+                embed.add_field(name="匿名投票", value="✅ 是" if updated_vote_details.is_anonymous else "❌ 否", inline=True)
+                embed.add_field(name="实时票数", value="✅ 是" if updated_vote_details.realtime_flag else "❌ 否", inline=True)
+                embed.add_field(name="结束通知", value="✅ 是" if updated_vote_details.notify_flag else "❌ 否", inline=True)
+
+                await self.bot.api_scheduler.submit(
+                    rule_view.message.edit(embed=embed), priority=2
+                )
         except Exception as e:
             logger.error(f"处理切换 {setting_name} 时出错: {e}", exc_info=True)
             await self.bot.api_scheduler.submit(
@@ -341,21 +388,21 @@ class ViewEventListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_vote_anonymous_toggled(
-        self, *, interaction: discord.Interaction, message_id: int, thread_id: int
+        self, *, interaction: discord.Interaction, message_id: int, thread_id: int, rule_view: RuleManagementView
     ):
-        await self._handle_toggle_action(interaction, message_id, "toggle_anonymous", "匿名投票")
+        await self._handle_toggle_action(interaction, message_id, thread_id, "toggle_anonymous", "匿名投票", rule_view)
 
     @commands.Cog.listener()
     async def on_vote_realtime_toggled(
-        self, *, interaction: discord.Interaction, message_id: int, thread_id: int
+        self, *, interaction: discord.Interaction, message_id: int, thread_id: int, rule_view: RuleManagementView
     ):
-        await self._handle_toggle_action(interaction, message_id, "toggle_realtime", "实时票数")
+        await self._handle_toggle_action(interaction, message_id, thread_id, "toggle_realtime", "实时票数", rule_view)
 
     @commands.Cog.listener()
     async def on_vote_notify_toggled(
-        self, *, interaction: discord.Interaction, message_id: int, thread_id: int
+        self, *, interaction: discord.Interaction, message_id: int, thread_id: int, rule_view: RuleManagementView
     ):
-        await self._handle_toggle_action(interaction, message_id, "toggle_notify", "投票结束通知")
+        await self._handle_toggle_action(interaction, message_id, thread_id, "toggle_notify", "投票结束通知", rule_view)
 
     @commands.Cog.listener()
     async def on_panel_manage_vote_clicked(self, interaction: discord.Interaction):
@@ -407,6 +454,10 @@ class ViewEventListener(commands.Cog):
             return
 
         try:
+            # 获取创建者信息
+            creator_id = interaction.user.id
+            creator_name = interaction.user.display_name
+
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 正常的选项创建逻辑
                 vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
@@ -414,8 +465,13 @@ class ViewEventListener(commands.Cog):
                     raise ValueError("找不到对应的投票会话。")
 
                 await uow.vote_option.add_option(
-                    vote_session.id, option_type=option_type, text=text
+                    vote_session.id,
+                    option_type=option_type,
+                    text=text,
+                    creator_id=creator_id,
+                    creator_name=creator_name
                 )
+
                 all_options = await uow.vote_option.get_vote_options(vote_session.id)
                 await uow.vote_session.update_vote_session_total_choices(
                     vote_session.id, len(all_options)
@@ -429,12 +485,16 @@ class ViewEventListener(commands.Cog):
             # 更新面板
             vote_details = await self.logic.get_vote_details(message_id)
             self.bot.dispatch("vote_details_updated", vote_details)
-            
-            success_message = "已成功创建新投票选项"
-            if option_type == 1:
-                success_message += ", 并将提案标为异议中。"
-            
-            await interaction.followup.send(success_message, ephemeral=True)
+
+            # 发送新选项创建通知的 Embed
+            thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
+            if thread:
+                notification_embed = VoteEmbedBuilder.create_new_option_notification_embed(
+                    creator=interaction.user,
+                    option_type=option_type,
+                    option_text=text
+                )
+                await self.bot.api_scheduler.submit(thread.send(embed=notification_embed), priority=3)
 
         except Exception as e:
             logger.error(f"创建新选项时出错: {e}", exc_info=True)

@@ -43,6 +43,11 @@ class ModerationEmbedBuilder:
                 ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已废弃",
                 ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
             },
+            "proposal_rediscuss": {
+                ConfirmationStatus.PENDING.value: "⏳ 流程确认中：恢复为讨论中",
+                ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已恢复为讨论中",
+                ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
+            },
         }
         color_map = {
             ConfirmationStatus.PENDING.value: discord.Color.yellow(),
