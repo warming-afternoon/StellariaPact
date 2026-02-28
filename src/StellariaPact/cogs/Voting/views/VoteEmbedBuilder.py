@@ -536,7 +536,7 @@ class VoteEmbedBuilder:
                     val = ""
                 normal_embed.add_field(
                     name=f"选项 {opt.choice_index}: ",
-                    value=f"\n\n{opt.choice_text}\n\n"+val,
+                    value=f"\n\n{opt.choice_text}\n"+val+"\n",
                     inline=False,
                 )
             embeds.append(normal_embed)

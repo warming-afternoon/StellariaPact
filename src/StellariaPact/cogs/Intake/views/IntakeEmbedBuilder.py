@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Optional
 
 import discord
 
+from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.ProposalIntake import ProposalIntake
 from StellariaPact.share.enums import IntakeStatus
 
@@ -48,7 +50,7 @@ class IntakeEmbedBuilder:
         return status_map.get(IntakeStatus(status), "未知状态")
 
     @staticmethod
-    def build_review_embed(intake: ProposalIntake) -> discord.Embed:
+    def build_review_embed(intake: ProposalIntakeDto) -> discord.Embed:
         """构建审核贴的 Embed"""
         status_text = IntakeEmbedBuilder._get_review_status_text(intake.status)
         color = IntakeEmbedBuilder._get_review_color(intake.status)
@@ -77,9 +79,8 @@ class IntakeEmbedBuilder:
         return embed
 
     @staticmethod
-    def build_review_content(intake: ProposalIntake) -> str:
+    def build_review_content(intake: ProposalIntakeDto) -> str:
         """构建审核贴的纯文本内容"""
-        from datetime import datetime
 
         submitted_at = datetime.utcnow()
         submitted_timestamp = int(submitted_at.timestamp())
@@ -95,7 +96,7 @@ class IntakeEmbedBuilder:
         return content.strip()
 
     @staticmethod
-    def build_support_embed(intake: ProposalIntake, current_votes: int = 0) -> discord.Embed:
+    def build_support_embed(intake: ProposalIntakeDto, current_votes: int = 0) -> discord.Embed:
         """构建用于收集支持票的嵌入消息"""
         embed = discord.Embed(
             title=f"{intake.title}",

@@ -71,11 +71,8 @@ class IntakeModal(discord.ui.Modal, title="起草一份新的议案"):
         )
 
         await safeDefer(interaction, ephemeral=True)
-        interaction.client.dispatch("intake_submitted", interaction, dto)
+        interaction.client.dispatch("intake_submitted", dto)
 
-        await interaction.response.send_message(
-            "✅ 您的草案已成功提交，正在等待管理组审核。", ephemeral=True
-        )
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         await interaction.response.send_message("提交过程中发生错误，请稍后再试。", ephemeral=True)
