@@ -57,7 +57,7 @@ class IntakeLogic:
             implementation=dto.implementation,
             executor=dto.executor,
             status=IntakeStatus.PENDING_REVIEW,
-            required_votes =20,  # 默认需要20票支持才能立案
+            required_votes =2,  # 默认需要20票支持才能立案
         )
         created_intake = await uow.intake.create_intake(intake)
         await uow.flush([created_intake])
