@@ -12,17 +12,21 @@ from StellariaPact.cogs.Voting.views import (
     ObjectionFormalVoteChoiceView,
     ObjectionVoteEmbedBuilder,
     VoteEmbedBuilder,
+    VoteView,
 )
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import ProposalDto, VoteSessionDto
+from StellariaPact.services.VoteSessionService import VoteSessionService
 from StellariaPact.share import (
     DiscordUtils,
     MissingRole,
+    PermissionGuard,
     StellariaPactBot,
     StringUtils,
     UnitOfWork,
     safeDefer,
 )
+from StellariaPact.share.enums import VoteDuration
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +63,122 @@ class Voting(commands.Cog):
                     ),
                     priority=1,
                 )
+
+    @app_commands.command(name="刷新投票汇总面板", description="检查并修复当前帖子的投票汇总面板。若消息丢失则重新发送。")
+    @app_commands.guild_only()
+    async def refresh_vote_panel(self, interaction: discord.Interaction):
+        await safeDefer(interaction, ephemeral=True)
+
+        # 检查是否在讨论帖内
+        if not isinstance(interaction.channel, discord.Thread):
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("此命令只能在讨论帖内使用。"), priority=1
+            )
+            return
+
+        # 权限检查：限定提案人或管理组成员可以使用此命令
+        can_manage = await PermissionGuard.can_manage_vote(interaction)
+        if not can_manage:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("你没有权限执行此操作。需为提案人或管理组成员。"), priority=1
+            )
+            return
+
+        thread = interaction.channel
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 获取关联的提案
+            proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
+            if not proposal:
+                await self.bot.api_scheduler.submit(
+                    interaction.followup.send("此帖子没有关联的提案，无法处理投票面板。"), priority=1
+                )
+                return
+
+            # 查询本讨论帖对应 session_type=1 的 VoteSession 列表
+            sessions = await uow.vote_session.get_all_sessions_in_thread_with_details(thread.id)
+            type_1_sessions = [s for s in sessions if s.session_type == 1]
+
+            if not type_1_sessions:
+                # 场景 A: 本讨论帖对应 session_type=1 的 VoteSession 不存在
+                # 派发创建事件，系统将自动创建 VoteSession、发送贴内面板及频道镜像
+                proposal_dto = ProposalDto.model_validate(proposal)
+                self.bot.dispatch(
+                    "vote_session_created",
+                    proposal_dto=proposal_dto,
+                    options=[],  # 默认选项
+                    duration_hours=VoteDuration.PROPOSAL_DEFAULT,
+                    anonymous=True,
+                    realtime=True,
+                    notify=True,
+                    create_in_voting_channel=True,
+                    notify_creation_role=False,
+                    thread=thread
+                )
+                await self.bot.api_scheduler.submit(
+                    interaction.followup.send("未找到正式投票会话，正在初始化新的投票面板及镜像..."), priority=1
+                )
+                return
+
+        # 场景 B: 若有，则拿最新的一个
+        latest_session = max(type_1_sessions, key=lambda s: s.created_at)
+
+        # 查询其对应消息能否获取到
+        message_exists = False
+        if latest_session.context_message_id:
+            try:
+                await thread.fetch_message(latest_session.context_message_id)
+                message_exists = True
+            except discord.NotFound:
+                pass
+            except discord.Forbidden:
+                logger.warning(f"无法访问帖子 {thread.id} 的消息 {latest_session.context_message_id} (权限不足)")
+
+        # 场景 B-1: 查询到则不做处理
+        if message_exists:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("当前投票汇总面板消息完好，无需处理。"), priority=1
+            )
+            return
+
+        # 场景 B-2: 存在但对应消息不能获取到 (已丢失)
+        # 汇总成 VoteDetailDto
+        if latest_session.id is None:
+            logger.error(f"投票会话 {latest_session} 的 ID 为 None，无法获取投票选项")
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("投票会话数据异常，无法处理。"), priority=1
+            )
+            return
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            vote_options = await uow.vote_option.get_vote_options(latest_session.id)
+            vote_details = VoteSessionService.get_vote_details_dto(latest_session, vote_options)
+            await uow.commit()
+
+        # 发送讨论帖内新的投票面板
+        view = VoteView(self.bot)
+        embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(
+            topic=proposal.title,
+            vote_details=vote_details,
+        )
+
+        new_msg = await self.bot.api_scheduler.submit(
+            thread.send(embeds=embeds, view=view), priority=5
+        )
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 更新 VoteSession.context_message_id 并提交数据库
+            latest_session.context_message_id = new_msg.id
+            uow.session.add(latest_session)
+            await uow.commit()
+
+        # 更新 DTO，并派发刷新事件以同步镜像（若镜像存在会被刷新显示为最新数据）
+        vote_details.context_message_id = new_msg.id
+        self.bot.dispatch("vote_details_updated", vote_details)
+
+        await self.bot.api_scheduler.submit(
+            interaction.followup.send("检测到面板消息丢失，已重新发送并刷新关联的镜像。"), priority=1
+        )
 
     @commands.Cog.listener()
     async def on_vote_finished(self, session: "VoteSessionDto", result: "VoteDetailDto"):

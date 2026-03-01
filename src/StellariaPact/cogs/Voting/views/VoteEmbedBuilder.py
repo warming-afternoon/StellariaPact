@@ -603,10 +603,10 @@ class VoteEmbedBuilder:
         embed = discord.Embed(title=title, description="", color=discord.Color.blurple())
 
         # 依次显示每个选项内容
-        for i, opt in enumerate(options, 1):
+        for opt in options:
             # 显示选项标题和文本
             embed.add_field(
-                name=f"**选项 {i}** :",
+                name=f"**选项 {opt.choice_index}** :",
                 value=f"{opt.choice_text}",
                 inline=False,
             )

@@ -93,7 +93,7 @@ class ViewEventListener(commands.Cog):
         new_embed = VoteEmbedBuilder.build_paginated_manage_embed(
             jump_url=jump_url,
             option_type=view.option_type,
-            options=page_options,
+            options=all_options,
             realtime_flag=vote_details.realtime_flag,
         )
 
