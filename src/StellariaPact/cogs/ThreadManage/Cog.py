@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 import discord
@@ -67,12 +68,12 @@ class ThreadManageCog(commands.Cog):
             intake = await uow.intake.get_intake_by_discussion_thread_id(thread_id)
             intake_dto = ProposalIntakeDto.model_validate(intake) if intake else None
 
-            # 弹出 Modal，传入 proposal_id 和 intake_dto（可能为 None）
-            modal = EditProposalContentModal(
-                proposal_id=proposal_id,  # type: ignore
-                intake=intake_dto,
-            )
-            await interaction.response.send_modal(modal)
+        # 弹出 Modal，传入 proposal_id 和 intake_dto（可能为 None）
+        modal = EditProposalContentModal(
+            proposal_id=proposal_id,  # type: ignore
+            intake=intake_dto,
+        )
+        await interaction.response.send_modal(modal)
 
     @commands.Cog.listener()
     async def on_proposal_content_update_requested(
@@ -80,12 +81,44 @@ class ThreadManageCog(commands.Cog):
     ):
         """
         监听提案内容更新请求事件，执行实际的更新操作。
+        先执行数据库操作，再执行 Discord API 操作。
         """
         await safeDefer(interaction, ephemeral=True)
 
         try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                await self._handle_update_within_uow(uow, dto, interaction)
+            # 执行数据库操作（内部会创建自己的 UnitOfWork）
+            old_values, changed_fields = await self._handle_update_within_uow(dto)
+            
+            # 执行 Discord API 操作
+            thread = self.bot.get_channel(dto.thread_id)
+            if not isinstance(thread, discord.Thread):
+                raise ValueError(f"无法获取帖子 {dto.thread_id} 信息")
+
+            # 更新帖子名称并保留状态前缀
+            # 提取可能存在的状态前缀，如 "[讨论中]", "【已结束】" 等
+            import re
+            prefix_match = re.match(r"^\s*([\[【].*?[\]】])\s*", thread.name)
+            prefix = prefix_match.group(1) + " " if prefix_match else ""
+            
+            # 拼接新标题 (Discord 帖子名称限制为最多 100 字符)
+            new_thread_name = f"{prefix}{dto.title}"[:100]
+            
+            # 如果标题发生实质性变化，则更新帖子属性
+            if thread.name != new_thread_name:
+                await thread.edit(name=new_thread_name)
+
+            starter_message = await thread.fetch_message(thread.id)
+            new_content = f"{dto.format_content()}"
+            await starter_message.edit(content=new_content)
+
+            # 发送变更记录（如果有变化）
+            if changed_fields:
+                await self._send_change_embed(thread, interaction, changed_fields)
+
+            # 所有操作成功
+            await interaction.followup.send("✅ 提案内容已成功更新！", ephemeral=True)
+            logger.info(f"用户 {interaction.user.id} 更新了提案 {dto.proposal_id} 的内容")
+
         except discord.NotFound as e:
             logger.warning(f"无法在帖子中找到起始消息: {e}")
             await interaction.followup.send("⚠️ 无法找到帖子起始消息，更新已取消。", ephemeral=True)
@@ -103,80 +136,59 @@ class ThreadManageCog(commands.Cog):
 
     async def _handle_update_within_uow(
         self,
-        uow: UnitOfWork,
         dto: UpdateProposalContentDto,
-        interaction: Interaction,
-    ) -> None:
-        """在 UnitOfWork 内部处理更新逻辑。"""
-        # 获取提案记录
-        proposal = await uow.proposal.get_proposal_by_id(dto.proposal_id)
-        if not proposal:
-            await interaction.followup.send("❌ 找不到对应的提案记录。", ephemeral=True)
-            return
+    ) -> tuple[dict[str, str | None], list[tuple[str, str, str]]]:
+        """
+        处理提案更新逻辑，包括数据库更新和变更检测。
+        
+        返回: (old_values, changed_fields)
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 获取提案记录
+            proposal = await uow.proposal.get_proposal_by_id(dto.proposal_id)
+            if not proposal:
+                raise ValueError("找不到对应的提案记录")
 
-        # 获取对应的 ProposalIntake（可能不存在）
-        intake = await uow.intake.get_intake_by_discussion_thread_id(dto.thread_id)
+            # 获取对应的 ProposalIntake（可能不存在）
+            intake = await uow.intake.get_intake_by_discussion_thread_id(dto.thread_id)
 
-        # 记录旧值
-        old_values = self._collect_old_values(proposal, intake)
+            # 记录旧值
+            old_values = {
+                "标题": proposal.title or "",
+                "提案原因": intake.reason if intake else None,
+                "议案动议": intake.motion if intake else None,
+                "执行方案": intake.implementation if intake else None,
+                "议案执行人": intake.executor if intake else None,
+            }
 
-        # 更新数据库
-        self._update_database(proposal, intake, dto, uow)
+            # 更新数据库记录
+            proposal.title = dto.title
+            proposal.content = dto.format_content()
+            uow.session.add(proposal)
 
-        # 更新 Discord 帖子首楼消息
-        thread = self.bot.get_channel(dto.thread_id)
-        if not isinstance(thread, discord.Thread):
-            raise ValueError(f"无法获取帖子 {dto.thread_id} 信息")
+            if intake:
+                intake.title = dto.title
+                intake.reason = dto.reason
+                intake.motion = dto.motion
+                intake.implementation = dto.implementation
+                intake.executor = dto.executor
+                uow.session.add(intake)
 
-        starter_message = await thread.fetch_message(thread.id)
-        new_content = f"{dto.format_content()}"
-        await starter_message.edit(content=new_content)
+            # 收集新值
+            new_values = {
+                "标题": dto.title,
+                "提案原因": dto.reason,
+                "议案动议": dto.motion,
+                "执行方案": dto.implementation,
+                "议案执行人": dto.executor,
+            }
 
-        # 发送变更记录（如果有变化）
-        new_values = self._collect_new_values(dto)
-        changed_fields = self._detect_changed_fields(old_values, new_values)
-        if changed_fields:
-            await self._send_change_embed(thread, interaction, changed_fields)
+            # 检测变更字段
+            changed_fields = self._detect_changed_fields(old_values, new_values)
 
-        # 所有操作成功，UnitOfWork 退出时会自动提交
-        await interaction.followup.send("✅ 提案内容已成功更新！", ephemeral=True)
-        logger.info(f"用户 {interaction.user.id} 更新了提案 {dto.proposal_id} 的内容")
-
-    def _collect_old_values(self, proposal, intake) -> dict[str, str | None]:
-        """收集更新前的字段值。"""
-        return {
-            "标题": proposal.title or "",
-            "提案原因": intake.reason if intake else None,
-            "议案动议": intake.motion if intake else None,
-            "执行方案": intake.implementation if intake else None,
-            "议案执行人": intake.executor if intake else None,
-        }
-
-    def _update_database(
-        self, proposal, intake, dto: UpdateProposalContentDto, uow: UnitOfWork
-    ) -> None:
-        """更新数据库记录。"""
-        proposal.title = dto.title
-        proposal.content = dto.format_content()
-        uow.session.add(proposal)
-
-        if intake:
-            intake.title = dto.title
-            intake.reason = dto.reason
-            intake.motion = dto.motion
-            intake.implementation = dto.implementation
-            intake.executor = dto.executor
-            uow.session.add(intake)
-
-    def _collect_new_values(self, dto: UpdateProposalContentDto) -> dict[str, str]:
-        """收集更新后的字段值。"""
-        return {
-            "标题": dto.title,
-            "提案原因": dto.reason,
-            "议案动议": dto.motion,
-            "执行方案": dto.implementation,
-            "议案执行人": dto.executor,
-        }
+            logger.info(f"数据库更新完成：提案 {dto.proposal_id} 的内容已更新")
+            
+            return old_values, changed_fields
 
     def _detect_changed_fields(
         self, old_values: dict[str, str | None], new_values: dict[str, str]
