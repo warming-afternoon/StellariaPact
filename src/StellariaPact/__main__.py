@@ -101,7 +101,7 @@ async def main_async():
             return
 
         logger.info("开始加载所有 Cogs 模块...")
-        from StellariaPact.cogs import Intake, Moderation, Notification, ThreadManage, Voting
+        from StellariaPact.cogs import Intake, Moderation, Notification, ThreadManage, Voting, Punishment
 
         # 依次调用每个模块的 setup 函数
         module_setups = [
@@ -110,6 +110,7 @@ async def main_async():
             Notification.setup(bot),
             ThreadManage.setup(bot),
             Voting.setup(bot),
+            Punishment.setup(bot),
         ]
         try:
             await asyncio.gather(*module_setups)

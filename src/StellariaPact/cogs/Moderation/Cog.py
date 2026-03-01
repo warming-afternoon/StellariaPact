@@ -11,7 +11,6 @@ from StellariaPact.cogs.Moderation.qo import BuildConfirmationEmbedQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
 from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Moderation.views.KickProposalModal import KickProposalModal
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.dto import ProposalDto
 from StellariaPact.share import StellariaPactBot, StringUtils, UnitOfWork, safeDefer
@@ -27,73 +26,14 @@ class Moderation(commands.Cog):
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
-        self.kick_proposal_context_menu = app_commands.ContextMenu(
-            name="踢出提案", callback=self.kick_proposal, type=discord.AppCommandType.message
-        )
 
     def cog_load(self) -> None:
         """在 Cog 被添加到 Bot 后，进行依赖注入和初始化"""
         self.logic: ModerationLogic = ModerationLogic(self.bot)
         self.thread_manager = ProposalThreadManager(self.bot.config)
-        self.bot.tree.add_command(self.kick_proposal_context_menu)
 
     async def cog_unload(self):
-        self.bot.tree.remove_command(
-            self.kick_proposal_context_menu.name, type=self.kick_proposal_context_menu.type
-        )
-
-    @RoleGuard.requireRoles(
-        "councilModerator",
-    )
-    async def kick_proposal(self, interaction: discord.Interaction, message: discord.Message):
-        """
-        [议事督导] 消息右键菜单命令，用于将消息作者踢出提案。
-
-        Args:
-            interaction (discord.Interaction): 交互对象。
-            message (discord.Message): 目标消息。
-        """
-        # 确保在可以发送消息的帖子中使用
-        if not isinstance(interaction.channel, discord.Thread):
-            await self.bot.api_scheduler.submit(
-                coro=interaction.response.send_message("此命令只能在帖子内使用。", ephemeral=True),
-                priority=1,
-            )
-            return
-
-        # 类型守卫，确保 interaction.user 是 Member 类型
-        if not isinstance(interaction.user, discord.Member):
-            await self.bot.api_scheduler.submit(
-                coro=interaction.response.send_message(
-                    "无法验证您的身份，操作失败。", ephemeral=True
-                ),
-                priority=1,
-            )
-            return
-
-        # 逻辑检查：禁止对机器人消息使用
-        if message.author.bot:
-            await self.bot.api_scheduler.submit(
-                coro=interaction.response.send_message("不能对机器人执行此操作。", ephemeral=True),
-                priority=1,
-            )
-            return
-
-        # 逻辑检查：禁止对执行者本人使用
-        if interaction.user.id == message.author.id:
-            await self.bot.api_scheduler.submit(
-                coro=interaction.response.send_message("不能对自己执行此操作。", ephemeral=True),
-                priority=1,
-            )
-            return
-
-        # 创建 KickProposalModal 实例
-        modal = KickProposalModal(
-            bot=self.bot, original_interaction=interaction, target_message=message
-        )
-        await self.bot.api_scheduler.submit(
-            coro=interaction.response.send_modal(modal), priority=1
-        )
+        pass
 
     @app_commands.command(
         name="进入执行", description="[议事督导+执行监理] 将讨论中的提案变更为执行中"
