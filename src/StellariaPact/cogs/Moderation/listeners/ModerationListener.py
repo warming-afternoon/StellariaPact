@@ -507,7 +507,7 @@ class ModerationListener(commands.Cog):
             }
             target_status = target_status_map.get(session.context)
 
-            if not target_status:
+            if target_status is None:
                 logger.warning(f"未知的确认上下文: {session.context}")
                 return
 
