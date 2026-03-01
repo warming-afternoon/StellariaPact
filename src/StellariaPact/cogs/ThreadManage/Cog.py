@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from StellariaPact.cogs.ThreadManage.dto.UpdateProposalContentDto import UpdateProposalContentDto
 from StellariaPact.cogs.ThreadManage.views.EditProposalContentModal import EditProposalContentModal
+from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share import UnitOfWork, safeDefer
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 
@@ -64,11 +65,12 @@ class ThreadManageCog(commands.Cog):
 
             # 获取对应的 ProposalIntake（可能不存在）
             intake = await uow.intake.get_intake_by_discussion_thread_id(thread_id)
+            intake_dto = ProposalIntakeDto.model_validate(intake) if intake else None
 
-            # 弹出 Modal，传入 proposal_id 和 intake（可能为 None）
+            # 弹出 Modal，传入 proposal_id 和 intake_dto（可能为 None）
             modal = EditProposalContentModal(
                 proposal_id=proposal_id,  # type: ignore
-                intake=intake,
+                intake=intake_dto,
             )
             await interaction.response.send_modal(modal)
 

@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING, Optional
 
 import discord
 
+from ..dto.UpdateProposalContentDto import UpdateProposalContentDto
+
 if TYPE_CHECKING:
-    from StellariaPact.models.ProposalIntake import ProposalIntake
+    from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,7 @@ class EditProposalContentModal(discord.ui.Modal, title="修改提案内容"):
     允许 stewards 修改提案的标题、原因、动议、执行方案和执行人。
     """
 
-    def __init__(self, proposal_id: int, intake: Optional["ProposalIntake"] = None):
+    def __init__(self, proposal_id: int, intake: Optional["ProposalIntakeDto"] = None):
         super().__init__()
         self.proposal_id = proposal_id
 
@@ -73,8 +75,7 @@ class EditProposalContentModal(discord.ui.Modal, title="修改提案内容"):
         当用户提交表单时被调用。
         触发 proposal_content_update_requested 事件，由 Cog 处理实际更新逻辑。
         """
-        from ..dto.UpdateProposalContentDto import UpdateProposalContentDto
-
+        
         # 获取当前线程 ID
         thread_id = interaction.channel_id if interaction.channel_id else 0
 
