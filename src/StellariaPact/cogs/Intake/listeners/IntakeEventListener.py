@@ -28,11 +28,13 @@ class IntakeEventListenerCog(commands.Cog):
         self.intake_cog = intake_cog
 
     @commands.Cog.listener()
-    async def on_intake_submitted(self, dto: IntakeSubmissionDto):
+    async def on_intake_submitted(self, interaction: discord.Interaction, dto: IntakeSubmissionDto):
+        await safeDefer(interaction, ephemeral=True)
         logger.info(f"接收到草案提交事件，提交人: {dto.author_id}")
         try:
             intake_dto = await self.intake_cog.logic.process_submit_intake(dto)
             logger.info(f"✅ 议案草稿 (ID: {intake_dto.id}) by {dto.author_id} 已成功提交至审核通道。")
+            await interaction.followup.send("✅ 草案已提交", ephemeral=True)
         except Exception as e:
             logger.error(f"处理来自 {dto.author_id} 的草案提交时出错: {e}", exc_info=True)
 
@@ -43,7 +45,6 @@ class IntakeEventListenerCog(commands.Cog):
 
         try:
             assert interaction.channel_id is not None
-            # 调用 Logic 层，Logic 层将负责开闭数据库事务和后续 API 调用
             await self.intake_cog.logic.approve_intake(
                 interaction.channel_id, interaction.user.id, review_comment
             )

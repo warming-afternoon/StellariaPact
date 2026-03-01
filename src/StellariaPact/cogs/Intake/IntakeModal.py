@@ -71,7 +71,7 @@ class IntakeModal(discord.ui.Modal, title="起草一份新的议案"):
         )
 
         await safeDefer(interaction, ephemeral=True)
-        interaction.client.dispatch("intake_submitted", dto)
+        interaction.client.dispatch("intake_submitted", interaction, dto)
 
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:

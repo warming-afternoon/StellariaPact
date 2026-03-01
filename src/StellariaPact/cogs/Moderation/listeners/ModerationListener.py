@@ -515,7 +515,7 @@ class ModerationListener(commands.Cog):
                 session.target_id, target_status
             )
 
-            if proposal_dto and target_status and proposal_dto.discussion_thread_id:
+            if proposal_dto and target_status is not None and proposal_dto.discussion_thread_id:
                 await self._update_thread_status_after_confirmation(
                     proposal_dto.discussion_thread_id,
                     proposal_dto.title,
