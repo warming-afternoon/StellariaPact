@@ -270,12 +270,13 @@ class ModerationEventListener(commands.Cog):
                 )
                 return
 
+            session_id = session.id
             await uow.vote_session.update_voting_channel_message_id(
-                session.id, voting_channel_message.id
+                session_id, voting_channel_message.id
             )
             await uow.commit()
 
-        logger.debug(f"成功为会话 {session.id} 创建并关联了镜像投票")
+        logger.debug(f"成功为会话 {session_id} 创建并关联了镜像投票")
 
     @commands.Cog.listener()
     async def on_objection_thread_created(

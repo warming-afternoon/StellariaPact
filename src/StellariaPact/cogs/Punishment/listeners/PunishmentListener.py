@@ -35,7 +35,7 @@ class PunishmentListener(commands.Cog):
         
         async with UnitOfWork(self.bot.db_handler) as uow:
             statement = select(UserActivity).where(
-                UserActivity.mute_end_time != None, # noqa: E711
+                UserActivity.mute_end_time != None, # noqa: E711 # type: ignore
             )
             results = await uow.session.exec(statement) # type: ignore
             
