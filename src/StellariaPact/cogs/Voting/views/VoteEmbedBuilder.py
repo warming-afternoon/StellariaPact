@@ -516,7 +516,7 @@ class VoteEmbedBuilder:
             rule_embed.add_field(name="截止时间", value="手动结束", inline=False)
 
         rule_embed.set_footer(
-            text=f"投票资格 : 点击标题，在跳转到的讨论帖内有效发言数 ≥"
+            text=f"投票资格 : 在本讨论帖内有效发言数 ≥"
             f" {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
         )
         embeds.append(rule_embed)

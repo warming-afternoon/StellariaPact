@@ -724,6 +724,12 @@ class ModerationLogic:
         处理一个新发现的、未被记录的讨论区帖子<br>
         该方法会先判断帖子是提案还是异议，然后执行相应的处理
         """
+        # 检查帖子是否由 Bot 自己创建
+        # 如果是 Bot 创建的，说明是 Intake 流程自动生成的，数据库中已有记录，无需重复处理
+        if self.bot.user and thread.owner_id == self.bot.user.id:
+            logger.info(f"帖子 {thread.id} 由 Bot 创建 (Intake 流程)，跳过 Moderation 自动发现。")
+            return
+
         try:
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 检查它是否是一个已知的异议帖

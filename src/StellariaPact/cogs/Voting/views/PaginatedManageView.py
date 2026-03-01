@@ -1,3 +1,4 @@
+import logging
 import math
 from functools import partial
 
@@ -6,6 +7,8 @@ import discord
 from StellariaPact.cogs.Voting.dto import OptionResult
 from StellariaPact.share import StellariaPactBot, safeDefer
 
+logger = logging.getLogger(__name__)
+
 
 class PaginatedManageView(discord.ui.View):
     """
@@ -13,6 +16,8 @@ class PaginatedManageView(discord.ui.View):
     最多显示4个选项，每个选项有赞成、反对、弃票三个按钮
     底部有分页导航按钮
     """
+
+    message: discord.Message | discord.WebhookMessage | None = None
 
     def __init__(self, bot: StellariaPactBot, interaction: discord.Interaction,
                  thread_id: int, msg_id: int, options: list[OptionResult],
@@ -117,6 +122,22 @@ class PaginatedManageView(discord.ui.View):
             self.add_item(btn_indicator)
             self.add_item(btn_next)
             self.add_item(btn_last)
+
+    async def on_timeout(self) -> None:
+        """
+        当视图超时后自动调用此方法。
+        """
+        if self.message:
+            try:
+                await self.bot.api_scheduler.submit(
+                    self.message.delete(),
+                    priority=5,
+                )
+            except discord.NotFound:
+                # 如果消息已被用户删除，则忽略
+                pass
+            except Exception as e:
+                logger.error(f"删除超时的分页管理面板时出错: {e}")
 
     async def _change_page(self, interaction: discord.Interaction, new_page: int):
         """切换页面"""

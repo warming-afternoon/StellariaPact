@@ -77,6 +77,8 @@ class ViewEventListener(commands.Cog):
             option_type=view.option_type,
             page=page,
         )
+        if hasattr(view, "message"):
+            refreshed_view.message = view.message
 
         start_idx = page * refreshed_view.items_per_page
         page_options = all_options[start_idx : start_idx + refreshed_view.items_per_page]

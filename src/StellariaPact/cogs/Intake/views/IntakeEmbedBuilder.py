@@ -136,20 +136,26 @@ class IntakeEmbedBuilder:
             current_votes: 当前获得的票数
         """
         if success:
-            embed = discord.Embed(
-                title=f"✅ [已通过] {intake.title}",
-                description="",
-                color=discord.Color.green(),
-            )
+            # 构建跳转URL
+            thread_jump_url = None
+            if thread_id and intake.guild_id:
+                thread_jump_url = IntakeEmbedBuilder._get_jump_url(intake.guild_id, thread_id)
+            
+            # 创建embed，如果有thread_jump_url则设置url参数
+            embed_kwargs = {
+                "title": f"{intake.title}",
+                "description": "该提案已收集到足够的支持票，进入正式讨论阶段。",
+                "color": discord.Color.green(),
+            }
+            if thread_jump_url:
+                embed_kwargs["url"] = thread_jump_url
+            
+            embed = discord.Embed(**embed_kwargs)
             embed.add_field(name="发起人", value=f"<@{intake.author_id}>", inline=True)
             embed.add_field(
                 name="票数", value=f"**{current_votes}** / {intake.required_votes}", inline=True
             )
             embed.add_field(name="状态", value="✅ 已立案", inline=True)
-            if thread_id and intake.guild_id:
-                # 构建跳转到新讨论帖的链接
-                url = IntakeEmbedBuilder._get_jump_url(intake.guild_id, thread_id)
-                embed.add_field(name="正式讨论帖", value=f"👉 [点击前往讨论]({url})", inline=False)
         else:
             embed = discord.Embed(
                 title=f"❌ [收集失败] {intake.title}",

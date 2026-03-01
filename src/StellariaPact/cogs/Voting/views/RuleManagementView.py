@@ -1,9 +1,13 @@
+import logging
+
 import discord
 
 from StellariaPact.cogs.Voting.views.AdjustTimeModal import AdjustTimeModal
 from StellariaPact.cogs.Voting.views.ConfirmationView import ConfirmationView
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.share import StellariaPactBot, safeDefer
+
+logger = logging.getLogger(__name__)
 
 
 class RuleManagementView(discord.ui.View):
@@ -17,6 +21,21 @@ class RuleManagementView(discord.ui.View):
         self.bot = bot
         self.thread_id = thread_id
         self.message_id = message_id
+
+    async def on_timeout(self) -> None:
+        """
+        当视图超时后自动调用此方法。
+        """
+        if self.message:
+            try:
+                await self.bot.api_scheduler.submit(
+                    self.message.delete(),
+                    priority=5,
+                )
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                logger.error(f"删除超时的规则管理面板时出错: {e}")
 
     async def _create_and_send_confirmation(
         self,
@@ -62,7 +81,7 @@ class RuleManagementView(discord.ui.View):
     async def toggle_notify(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._create_and_send_confirmation(interaction, "结束投票时通知提案组", "vote_notify_toggled")
 
-    @discord.ui.button(label="调整时间", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="调整时间", style=discord.ButtonStyle.primary, row=1)
     async def adjust_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = AdjustTimeModal(self.bot, self.thread_id, self.message_id)
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)

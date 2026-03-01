@@ -115,8 +115,9 @@ class IntakeLogic:
                         raise ValueError(f"草案不存在，ID={intake_dto.id}")
                     intake.review_thread_id = thread_with_message.thread.id
                     await uow.intake.update_intake(intake)
+                    intake_dto = ProposalIntakeDto.model_validate(intake)
                     await uow.commit()
-                    return ProposalIntakeDto.model_validate(intake)
+                    return intake_dto
             except Exception as e:
                 if "database is locked" in str(e).lower() and attempt < max_retries - 1:
                     logger.warning(f"回写审核帖ID遇到数据库锁，正在重试 ({attempt + 1}/{max_retries})")
@@ -788,7 +789,8 @@ class IntakeLogic:
             int(IntakeStatus.REJECTED): "rejected",
             int(IntakeStatus.MODIFICATION_REQUIRED): "modification_required",
         }
-        return status_tag_map.get(status)
+        # 强制转换为 int 确保匹配
+        return status_tag_map.get(int(status))
 
     def _get_title_prefix_for_status(self, status: int) -> str | None:
         """根据状态获取审核帖标题前缀"""
@@ -799,7 +801,8 @@ class IntakeLogic:
             int(IntakeStatus.REJECTED): "[未通过]",
             int(IntakeStatus.MODIFICATION_REQUIRED): "[需要修改]",
         }
-        return status_prefix_map.get(status)
+        # 强制转换为 int 确保匹配
+        return status_prefix_map.get(int(status))
 
     def _resolve_forum_tag(
         self, forum: discord.ForumChannel, raw_tag_id: int | str | None, tag_key: str
