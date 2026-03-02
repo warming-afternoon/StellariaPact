@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING
 
 import discord
@@ -88,7 +87,7 @@ class ThreadManageCog(commands.Cog):
         try:
             # 执行数据库操作（内部会创建自己的 UnitOfWork）
             old_values, changed_fields = await self._handle_update_within_uow(dto)
-            
+
             # 执行 Discord API 操作
             thread = self.bot.get_channel(dto.thread_id)
             if not isinstance(thread, discord.Thread):
@@ -99,10 +98,10 @@ class ThreadManageCog(commands.Cog):
             import re
             prefix_match = re.match(r"^\s*([\[【].*?[\]】])\s*", thread.name)
             prefix = prefix_match.group(1) + " " if prefix_match else ""
-            
+
             # 拼接新标题 (Discord 帖子名称限制为最多 100 字符)
             new_thread_name = f"{prefix}{dto.title}"[:100]
-            
+
             # 如果标题发生实质性变化，则更新帖子属性
             if thread.name != new_thread_name:
                 await thread.edit(name=new_thread_name)
@@ -187,7 +186,7 @@ class ThreadManageCog(commands.Cog):
             changed_fields = self._detect_changed_fields(old_values, new_values)
 
             logger.info(f"数据库更新完成：提案 {dto.proposal_id} 的内容已更新")
-            
+
             return old_values, changed_fields
 
     def _detect_changed_fields(

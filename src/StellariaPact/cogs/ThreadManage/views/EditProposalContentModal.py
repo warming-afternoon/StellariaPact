@@ -75,7 +75,7 @@ class EditProposalContentModal(discord.ui.Modal, title="修改提案内容"):
         当用户提交表单时被调用。
         触发 proposal_content_update_requested 事件，由 Cog 处理实际更新逻辑。
         """
-        
+
         # 获取当前线程 ID
         thread_id = interaction.channel_id if interaction.channel_id else 0
 

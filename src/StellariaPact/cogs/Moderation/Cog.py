@@ -106,18 +106,6 @@ class Moderation(commands.Cog):
             interaction, self.logic.handle_rediscuss_proposal, notify_roles
         )
 
-    # @app_commands.command(name="发起异议", description="对一个提案发起异议")
-    # async def raise_objection(self, interaction: discord.Interaction):
-    #     """
-    #     处理 /发起异议 命令，通过模态框收集信息。
-    #     实际处理逻辑由 on_objection_modal_submitted 监听器完成。
-
-    #     Args:
-    #         interaction (discord.Interaction): 命令交互对象。
-    #     """
-    #     modal = ObjectionModal(self.bot)
-    #     await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
-
     # @app_commands.command(
     #     name="创建提案投票",
     #     description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票",

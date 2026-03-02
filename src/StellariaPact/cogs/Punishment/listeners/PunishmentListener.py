@@ -6,8 +6,8 @@ import discord
 from discord.ext import commands, tasks
 from sqlalchemy import select, update
 
-from StellariaPact.share import StellariaPactBot, UnitOfWork
 from StellariaPact.models.UserActivity import UserActivity
+from StellariaPact.share import StellariaPactBot, UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +32,13 @@ class PunishmentListener(commands.Cog):
         logger.info("Punishment: 正在加载有效的禁言记录到缓存...")
         self.active_mutes.clear()
         now = datetime.now(timezone.utc)
-        
+
         async with UnitOfWork(self.bot.db_handler) as uow:
             statement = select(UserActivity).where(
                 UserActivity.mute_end_time != None, # noqa: E711 # type: ignore
             )
             results = await uow.session.exec(statement) # type: ignore
-            
+
             for activity in results.all():
                 if not activity.mute_end_time:
                     continue

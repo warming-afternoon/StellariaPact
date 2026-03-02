@@ -146,7 +146,7 @@ class IntakeLogic:
             intake.review_comment = review_comment
             intake.status = IntakeStatus.SUPPORT_COLLECTING
             await uow.intake.update_intake(intake)
-            
+
             # 序列化为 DTO
             intake_dto = ProposalIntakeDto.model_validate(intake)
             await uow.commit()
@@ -172,7 +172,7 @@ class IntakeLogic:
             intake = await uow.intake.get_intake_by_id(intake_dto.id, for_update=True)
             if not intake:
                 raise ValueError("在创建投票会话时找不到草案。")
-                
+
             intake.voting_message_id = vote_msg.id
             await uow.intake.update_intake(intake)
 
@@ -180,7 +180,7 @@ class IntakeLogic:
             # 确保 review_thread_id 不为 None
             if not intake.review_thread_id:
                 raise ValueError("草案缺少审核帖子ID，无法创建投票会话。")
-                
+
             vote_qo = CreateVoteSessionQo(
                 guild_id=vote_msg.guild.id if vote_msg.guild else 0,
                 thread_id=intake.review_thread_id,
@@ -190,7 +190,7 @@ class IntakeLogic:
                 end_time=now + timedelta(days=3),
             )
             await uow.vote_session.create_vote_session(vote_qo)
-            
+
             # 更新最终 DTO 用于后续更新帖子
             intake_dto = ProposalIntakeDto.model_validate(intake)
             await uow.commit()
@@ -212,7 +212,7 @@ class IntakeLogic:
                 raise ValueError("草案不存在。")
             if intake.status != IntakeStatus.APPROVED:
                 raise ValueError("草案状态不正确，无法立案。")
-            
+
             intake_dto = ProposalIntakeDto.model_validate(intake)
             required_votes = intake.required_votes
 
@@ -268,13 +268,13 @@ class IntakeLogic:
                 status=ProposalStatus.DISCUSSION,
             )
             created_proposal = await uow.proposal.add_proposal(new_proposal)
-            
+
             # 重新获取 intake 更新以防并发版本冲突
             intake_to_update = await uow.intake.get_intake_by_id(intake_id)
             if intake_to_update:
                 intake_to_update.discussion_thread_id = discussion_thread_id
                 await uow.intake.update_intake(intake_to_update)
-            
+
             proposal_dto = ProposalDto.model_validate(created_proposal)
             await uow.commit()
 
@@ -531,7 +531,7 @@ class IntakeLogic:
             # 更新草案状态为已拒绝
             intake.status = IntakeStatus.REJECTED
             await uow.intake.update_intake(intake)
-            
+
             # 关闭关联的投票会话
             await uow.session.execute(
                 update(VoteSession)
@@ -539,7 +539,7 @@ class IntakeLogic:
                 .where(VoteSession.session_type == VoteSessionType.INTAKE_SUPPORT)  # type: ignore
                 .values(status=0)
             )
-            
+
             intake_dto = ProposalIntakeDto.model_validate(intake)
             voting_message_id = intake.voting_message_id
             fail_embed = None
@@ -585,7 +585,7 @@ class IntakeLogic:
             intake.review_comment = review_comment
             intake.status = IntakeStatus.REJECTED
             await uow.intake.update_intake(intake)
-            
+
             intake_dto = ProposalIntakeDto.model_validate(intake)
             await uow.commit()
 
@@ -617,7 +617,7 @@ class IntakeLogic:
                 intake.status = IntakeStatus.PENDING_REVIEW
 
             await uow.intake.update_intake(intake)
-            
+
             intake_dto = ProposalIntakeDto.model_validate(intake)
             await uow.commit()
 

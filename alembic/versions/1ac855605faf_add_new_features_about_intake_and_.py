@@ -7,10 +7,8 @@ Create Date: 2026-03-02 10:08:00.439157
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-import sqlmodel
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '1ac855605faf'
@@ -102,7 +100,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column('intake_id', sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column('start_time', sa.DateTime(), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False))
         batch_op.alter_column('guild_id', nullable=False, existing_type=sa.Integer())
-        
+
         # 索引重命名 (先尝试删除旧约束，再创建新索引)
         old_indexes = ['ix_votesession_contextMessageId', 'ix_votesession_contextThreadId', 'ix_votesession_status', 'ix_votesession_votingChannelMessageId']
         for idx in old_indexes:
@@ -110,7 +108,7 @@ def upgrade() -> None:
                 batch_op.drop_index(idx)
             except:
                 pass
-        
+
         batch_op.create_index(op.f('ix_vote_session_context_message_id'), ['context_message_id'], unique=False)
         batch_op.create_index(op.f('ix_vote_session_context_thread_id'), ['context_thread_id'], unique=False)
         batch_op.create_index(op.f('ix_vote_session_guild_id'), ['guild_id'], unique=False)

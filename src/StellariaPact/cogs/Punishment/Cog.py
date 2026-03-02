@@ -1,10 +1,12 @@
 import logging
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from StellariaPact.share import StellariaPactBot, UnitOfWork
 from StellariaPact.share.auth import RoleGuard
+
 from .views.PunishmentModal import PunishmentModal
 
 logger = logging.getLogger(__name__)
@@ -16,7 +18,7 @@ class PunishmentCog(commands.Cog):
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
-        
+
         # 消息右键菜单：踢出提案 (针对特定发言)
         self.kick_proposal_ctx = app_commands.ContextMenu(
             name="踢出提案", callback=self.kick_proposal_message, type=discord.AppCommandType.message
@@ -42,8 +44,8 @@ class PunishmentCog(commands.Cog):
 
         # 对于新触发的处罚，不查询历史，直接弹出默认表单
         modal = PunishmentModal(
-            bot=self.bot, 
-            target_user=message.author, 
+            bot=self.bot,
+            target_user=message.author,
             target_message=message
         )
         await self.bot.api_scheduler.submit(coro=interaction.response.send_modal(modal), priority=1)
@@ -61,9 +63,9 @@ class PunishmentCog(commands.Cog):
 
         # 将已有的记录传入 Modal，实现数据预填
         modal = PunishmentModal(
-            bot=self.bot, 
-            target_user=member, 
-            target_message=None, 
+            bot=self.bot,
+            target_user=member,
+            target_message=None,
             existing_activity=activity
         )
         await self.bot.api_scheduler.submit(coro=interaction.response.send_modal(modal), priority=1)
@@ -73,7 +75,7 @@ class PunishmentCog(commands.Cog):
         if not isinstance(interaction.channel, discord.Thread):
             await self.bot.api_scheduler.submit(interaction.response.send_message("此命令只能在提案帖子内使用。", ephemeral=True), 1)
             return False
-            
+
         if target_user.bot:
             await self.bot.api_scheduler.submit(interaction.response.send_message("不能对机器人执行此操作。", ephemeral=True), 1)
             return False
@@ -81,5 +83,5 @@ class PunishmentCog(commands.Cog):
         if interaction.user.id == target_user.id:
             await self.bot.api_scheduler.submit(interaction.response.send_message("不能对自己执行此操作。", ephemeral=True), 1)
             return False
-            
+
         return True

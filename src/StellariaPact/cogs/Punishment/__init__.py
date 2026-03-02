@@ -1,5 +1,7 @@
 import logging
+
 from StellariaPact.share import StellariaPactBot
+
 from .Cog import PunishmentCog
 from .listeners.PunishmentListener import PunishmentListener
 

@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Optional
+
 import discord
+
 
 class PunishmentEmbedBuilder:
     @staticmethod
@@ -12,7 +14,7 @@ class PunishmentEmbedBuilder:
         is_voting_allowed: bool,
         mute_end_time: Optional[datetime] = None,
     ) -> discord.Embed:
-        
+
         description_lines = [f"**目标用户**: {target_user.mention}"]
 
         if is_voting_allowed:
@@ -35,9 +37,9 @@ class PunishmentEmbedBuilder:
             timestamp=discord.utils.utcnow(),
         )
         embed.add_field(name="处理理由", value=reason, inline=False)
-        
+
         if target_message:
             embed.add_field(name="触发消息", value=f"[点击跳转]({target_message.jump_url})", inline=True)
-            
+
         embed.add_field(name="操作人员", value=moderator.mention, inline=True)
         return embed

@@ -1,19 +1,12 @@
 import logging
 from datetime import datetime
-from functools import partial
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from StellariaPact.cogs.Voting.dto import VoteDetailDto
-from StellariaPact.cogs.Voting.qo import DeleteVoteQo, RecordVoteQo
-from StellariaPact.cogs.Voting.views import (
-    ObjectionFormalVoteChoiceView,
-    ObjectionVoteEmbedBuilder,
-    VoteEmbedBuilder,
-    VoteView,
-)
+from StellariaPact.cogs.Voting.views import VoteEmbedBuilder, VoteView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import ProposalDto, VoteSessionDto
 from StellariaPact.services.VoteSessionService import VoteSessionService
@@ -283,7 +276,7 @@ class Voting(commands.Cog):
             )
 
     # -------------------------
-    # 异议-正式投票 监听器
+    # 私有辅助方法
     # -------------------------
 
     async def _update_private_management_panel(
@@ -346,201 +339,6 @@ class Voting(commands.Cog):
         except Exception as e:
             logger.error(f"更新投票面板时出错: {e}", exc_info=True)
 
-    async def _dispatch_formal_vote_event(
-        self,
-        interaction: discord.Interaction,
-        original_message_id: int,
-        thread_id: int,
-        event_name: str,
-        choice: int | None = None,
-        choice_index: int | None = None,
-    ):
-        """
-        异步辅助方法，用于分发正式投票事件。
-        现在它是一个真正的协程，符合 View 回调的类型期望。
-        """
-        # self.bot.dispatch 是同步的，但我们在一个 async 方法中调用它，
-        # 以便返回一个协程，满足 View 的回调类型要求。
-        if event_name == "objection_formal_vote_abstain":
-            self.bot.dispatch(
-                event_name, interaction, original_message_id, thread_id, choice_index
-            )
-        else:
-            self.bot.dispatch(event_name, interaction, original_message_id, choice, thread_id)
-
-    @commands.Cog.listener()
-    async def on_objection_formal_vote_manage(self, interaction: discord.Interaction):
-        """
-        处理用户在“正式异议投票”中点击“管理投票”按钮的事件。
-        """
-        if not interaction.channel or not isinstance(
-            interaction.channel, (discord.Thread, discord.TextChannel)
-        ):
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("此功能仅在异议帖子内可用。", ephemeral=True), 1
-            )
-            return
-
-        if not interaction.message:
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("无法找到原始投票消息，请重试。", ephemeral=True), 1
-            )
-            return
-
-        original_message_id = interaction.message.id
-        thread_id = interaction.channel.id
-
-        try:
-            panel_data = await self.logic.prepare_voting_choice_data(
-                user_id=interaction.user.id,
-                thread_id=thread_id,
-                message_id=original_message_id,
-            )
-
-            jump_url = f"https://discord.com/channels/{panel_data.guild_id}/{panel_data.thread_id}/{panel_data.message_id}"
-            embed = VoteEmbedBuilder.create_management_panel_embed(
-                jump_url=jump_url,
-                panel_data=panel_data,
-                base_title="异议投票管理",
-                approve_text="✅ 同意异议",
-                reject_text="❌ 反对异议",
-            )
-
-            # 使用 functools.partial 来创建回调，避免类型问题和 lambda 的复杂性
-            on_agree_callback = partial(
-                self._dispatch_formal_vote_event,
-                original_message_id=original_message_id,
-                thread_id=thread_id,
-                event_name="objection_formal_vote_record",
-                choice=1,
-            )
-            on_disagree_callback = partial(
-                self._dispatch_formal_vote_event,
-                original_message_id=original_message_id,
-                thread_id=thread_id,
-                event_name="objection_formal_vote_record",
-                choice=0,
-            )
-            on_abstain_callback = partial(
-                self._dispatch_formal_vote_event,
-                original_message_id=original_message_id,
-                thread_id=thread_id,
-                event_name="objection_formal_vote_abstain",
-                choice_index=1,
-            )
-
-            choice_view = ObjectionFormalVoteChoiceView(
-                bot=self.bot,
-                is_eligible=panel_data.is_eligible,
-                on_agree=on_agree_callback,
-                on_disagree=on_disagree_callback,
-                on_abstain=on_abstain_callback,
-            )
-            await DiscordUtils.send_private_panel(
-                self.bot, interaction, embed=embed, view=choice_view
-            )
-
-        except ValueError as e:
-            logger.warning(f"处理正式异议管理投票时发生错误: {e}")
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send(f"发生错误: {e}", ephemeral=True), 1
-            )
-        except Exception as e:
-            logger.error(f"处理正式异议管理投票时发生未知错误: {e}", exc_info=True)
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
-            )
-
-    @commands.Cog.listener()
-    async def on_objection_formal_vote_record(
-        self,
-        interaction: discord.Interaction,
-        original_message_id: int,
-        choice: int,
-        thread_id: int,
-    ):
-        """
-        处理用户从私有面板发起的投票（同意/反对）动作。
-        """
-        await safeDefer(interaction)
-
-        try:
-            vote_details = await self.logic.record_vote_and_get_details(
-                RecordVoteQo(
-                    user_id=interaction.user.id,
-                    message_id=original_message_id,
-                    thread_id=thread_id,
-                    choice=choice,
-                    option_type=1,
-                    choice_index=1,
-                )
-            )
-
-            # 更新私有面板
-            if vote_details:
-                await self._update_private_management_panel(
-                    interaction,
-                    thread_id,
-                    original_message_id,
-                    base_title="异议投票管理",
-                    approve_text="✅ 同意异议",
-                    reject_text="❌ 反对异议",
-                )
-
-            # 派发通用事件，让中央监听器处理所有公开面板的更新
-            self.bot.dispatch("vote_details_updated", vote_details)
-
-        except Exception as e:
-            logger.error(f"记录投票时出错: {e}", exc_info=True)
-            if not interaction.response.is_done():
-                await interaction.followup.send("记录投票时出错。", ephemeral=True)
-
-    @commands.Cog.listener()
-    async def on_objection_formal_vote_abstain(
-        self,
-        interaction: discord.Interaction,
-        original_message_id: int,
-        thread_id: int,
-        choice_index: int,
-    ):
-        """
-        处理用户从私有面板发起的弃权
-        """
-        await safeDefer(interaction)
-
-        try:
-            vote_details = await self.logic.delete_vote_and_get_details(
-                DeleteVoteQo(
-                    user_id=interaction.user.id,
-                    message_id=original_message_id,
-                    option_type=1,
-                    choice_index=choice_index,
-                )
-            )
-
-            # 更新私有面板
-            if vote_details:
-                await self._update_private_management_panel(
-                    interaction,
-                    thread_id,
-                    original_message_id,
-                    base_title="异议投票管理",
-                    approve_text="✅ 同意异议",
-                    reject_text="❌ 反对异议",
-                )
-
-            # 派发通用事件
-            self.bot.dispatch("vote_details_updated", vote_details)
-
-        except Exception as e:
-            logger.error(f"弃权时发生错误: {e}", exc_info=True)
-            if not interaction.response.is_done():
-                await interaction.followup.send("弃权时发生错误。", ephemeral=True)
-
-    # -------------------------
-    # 投票频道与同步监听器
-    # -------------------------
-
     async def _update_thread_panel(self, thread: discord.Thread, vote_details: VoteDetailDto):
         """辅助方法：更新帖子内的投票面板。"""
         if not vote_details.context_message_id:
@@ -548,23 +346,12 @@ class Voting(commands.Cog):
 
         try:
             message = await thread.fetch_message(vote_details.context_message_id)
-            new_embed = None
 
-            if vote_details.objection_id:
-                async with UnitOfWork(self.bot.db_handler) as uow:
-                    objection_details = await uow.objection.get_objection_details_by_id(
-                        vote_details.objection_id
-                    )
-                    if objection_details:
-                        new_embed = ObjectionVoteEmbedBuilder.create_formal_embed(
-                            objection_dto=objection_details, vote_details=vote_details
-                        )
-            else:
-                clean_topic = StringUtils.clean_title(thread.name)
-                new_embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(
-                    topic=clean_topic,
-                    vote_details=vote_details,
-                )
+            clean_topic = StringUtils.clean_title(thread.name)
+            new_embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(
+                topic=clean_topic,
+                vote_details=vote_details,
+            )
 
             if new_embeds:
                 await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds), priority=2)

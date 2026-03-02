@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 class VotingMessageListener(commands.Cog):
+    """
+    监听讨论频道帖子中的发言数变更，以判断用户是否有投票资格
+    """
     def __init__(self, bot: StellariaPactBot, voting_cog: Voting):
         self.bot = bot
         self.voting_cog = voting_cog

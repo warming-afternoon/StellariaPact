@@ -9,8 +9,6 @@ from .listeners.ModerationEventListener import ModerationEventListener
 from .listeners.ViewEventListener import ViewEventListener
 from .listeners.VotingMessageListener import VotingMessageListener
 from .tasks.VoteCloser import VoteCloser
-from .views import ObjectionCreationVoteView
-from .views.ObjectionFormalVoteView import ObjectionFormalVoteView
 from .views.VoteView import VoteView
 from .views.VotingChannelView import VotingChannelView
 from .VotingLogic import VotingLogic
@@ -23,7 +21,6 @@ __all__ = [
     "ViewEventListener",
     "VotingMessageListener",
     "VoteCloser",
-    "ObjectionFormalVoteView",
     "VoteView",
     "VotingChannelView",
 ]
@@ -37,9 +34,7 @@ async def setup(bot: StellariaPactBot):
     """
     # 注册持久化视图
     bot.add_view(VoteView(bot))
-    bot.add_view(ObjectionFormalVoteView(bot))
     bot.add_view(VotingChannelView(bot))
-    bot.add_view(ObjectionCreationVoteView(bot))
     # 实例化核心 Cog
     voting_cog = Voting(bot)
 

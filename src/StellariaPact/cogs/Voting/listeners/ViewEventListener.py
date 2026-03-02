@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 class ViewEventListener(commands.Cog):
     """
-    专门监听由 Views, Modals, 等UI组件派发的自定义事件。
+    监听 Voting 模块内部派发的自定义事件
     """
 
     def __init__(self, bot: StellariaPactBot):

@@ -7,7 +7,7 @@ from .Cog import Moderation
 from .listeners import ModerationListener, NotificationEventListener, VotingEventListener
 from .ModerationLogic import ModerationLogic
 from .tasks import ThreadReconciliation
-from .views import ConfirmationView, ObjectionManageView
+from .views import ConfirmationView
 
 __all__ = [
     "Moderation",
@@ -17,7 +17,6 @@ __all__ = [
     "VotingEventListener",
     "ThreadReconciliation",
     "ConfirmationView",
-    "ObjectionManageView",
 ]
 
 logger = logging.getLogger(__name__)
@@ -29,7 +28,6 @@ async def setup(bot: StellariaPactBot):
     """
     # 为持久化视图注册
     bot.add_view(ConfirmationView(bot))
-    bot.add_view(ObjectionManageView(bot))
 
     cogs_to_load = [
         Moderation(bot),

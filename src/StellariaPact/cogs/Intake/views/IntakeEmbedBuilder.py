@@ -140,7 +140,7 @@ class IntakeEmbedBuilder:
             thread_jump_url = None
             if thread_id and intake.guild_id:
                 thread_jump_url = IntakeEmbedBuilder._get_jump_url(intake.guild_id, thread_id)
-            
+
             # 创建embed，如果有thread_jump_url则设置url参数
             embed_kwargs = {
                 "title": f"{intake.title}",
@@ -149,7 +149,7 @@ class IntakeEmbedBuilder:
             }
             if thread_jump_url:
                 embed_kwargs["url"] = thread_jump_url
-            
+
             embed = discord.Embed(**embed_kwargs)
             embed.add_field(name="发起人", value=f"<@{intake.author_id}>", inline=True)
             embed.add_field(

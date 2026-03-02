@@ -4,8 +4,9 @@ from typing import Optional
 
 import discord
 
-from StellariaPact.share import StellariaPactBot, UnitOfWork, safeDefer
 from StellariaPact.models.UserActivity import UserActivity
+from StellariaPact.share import StellariaPactBot, UnitOfWork, safeDefer
+
 from .PunishmentEmbedBuilder import PunishmentEmbedBuilder
 
 logger = logging.getLogger(__name__)
@@ -24,15 +25,15 @@ class PunishmentModal(discord.ui.Modal):
     ):
         is_edit = existing_activity is not None
         super().__init__(title="修改处罚设置" if is_edit else "踢出/处罚提案成员", timeout=1700)
-        
+
         self.bot = bot
         self.target_user = target_user
         self.target_message = target_message
-        
+
         # 计算预填数据
         default_voting = "是"
         default_mute_minutes = "0"
-        
+
         if existing_activity:
             default_voting = "是" if existing_activity.validation == 1 else "否"
             if existing_activity.mute_end_time:
@@ -40,7 +41,7 @@ class PunishmentModal(discord.ui.Modal):
                 mute_end = existing_activity.mute_end_time
                 if mute_end.tzinfo is None:
                     mute_end = mute_end.replace(tzinfo=timezone.utc)
-                
+
                 now = datetime.now(timezone.utc)
                 if mute_end > now:
                     delta_minutes = int((mute_end - now).total_seconds() / 60)
@@ -94,7 +95,7 @@ class PunishmentModal(discord.ui.Modal):
             reason = self.reason_input.value
             thread = interaction.channel
             moderator = interaction.user
-            
+
             if not isinstance(thread, discord.Thread) or not isinstance(moderator, discord.Member):
                 return
 

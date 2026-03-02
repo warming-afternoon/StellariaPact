@@ -78,37 +78,6 @@ class VoteEmbedBuilder:
             )
 
     @staticmethod
-    def create_vote_panel_embed(
-        topic: str,
-        anonymous_flag: bool,
-        realtime_flag: bool,
-        notify_flag: bool,
-        end_time: Optional[datetime],
-        vote_details: VoteDetailDto,
-    ) -> discord.Embed:
-        """
-        构建主投票面板 Embed
-        """
-        description = "点击下方按钮，对本提案进行投票。"
-        embed = discord.Embed(
-            title=f"议题：{topic}",
-            description=description,
-            color=discord.Color.blue(),
-        )
-        embed.add_field(name="是否匿名", value="✅ 是" if anonymous_flag else "❌ 否", inline=True)
-        embed.add_field(name="实时票数", value="✅ 是" if realtime_flag else "❌ 否", inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
-
-        VoteEmbedBuilder._add_vote_options_fields(embed, vote_details)
-        VoteEmbedBuilder._add_end_time_field(embed, end_time)
-
-        embed.set_footer(
-            text=f"投票资格 : 在本帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
-            f"有效发言 : 去除表情后, 长度 ≥ 5"
-        )
-        return embed
-
-    @staticmethod
     def create_confirmation_embed(title: str, description: str) -> discord.Embed:
         """创建一个通用的、用于二次确认的 Embed。"""
         return discord.Embed(
