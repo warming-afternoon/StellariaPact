@@ -54,6 +54,7 @@ class ModerationLogic:
             context="proposal_execution",
             error_message="提案当前状态不是“讨论中”或“异议中”，无法执行此操作。",
             integrity_error_message="操作失败：此提案的确认流程刚刚已被另一位管理员发起。",
+            check_24h=True,
         )
 
     async def handle_complete_proposal(
@@ -75,6 +76,7 @@ class ModerationLogic:
             context="proposal_completion",
             error_message="提案当前状态不是“讨论中”、“执行中”或“异议中”，无法完成。",
             integrity_error_message="操作失败：此提案的完成流程刚刚已被另一位管理员发起。",
+            check_24h=True,
         )
 
     async def handle_abandon_proposal(
@@ -104,6 +106,7 @@ class ModerationLogic:
             error_message="提案当前状态不是“讨论中”、“冻结中”、“执行中”或“异议中”，无法废弃。",
             integrity_error_message="操作失败：此提案的废弃流程刚刚已被另一位管理员发起。",
             reason=reason,
+            check_24h=True,
         )
 
     async def handle_rediscuss_proposal(
@@ -138,6 +141,7 @@ class ModerationLogic:
         error_message: str,
         integrity_error_message: str,
         reason: str | None = None,
+        check_24h: bool = False,
     ) -> Optional[ExecuteProposalResultDto]:
         """
         发起提案确认流程的通用私有方法。
@@ -150,6 +154,12 @@ class ModerationLogic:
                 proposal = await uow.proposal.get_proposal_by_thread_id(channel_id)
                 if not proposal:
                     raise ValueError("未找到关连的提案。")
+
+                # 如果要求判断提案生命周期，校验提案创建是否已超过24小时
+                if check_24h:
+                    now = datetime.now(timezone.utc).replace(tzinfo=None)
+                    if now - proposal.created_at < timedelta(hours=24):
+                        raise ValueError("提案讨论时间不足 24 小时，暂无法发起此操作。")
 
                 # 帖子状态验证
                 if proposal.status not in expected_status:
