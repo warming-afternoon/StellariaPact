@@ -1,6 +1,7 @@
+from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, text
 from sqlmodel import Field
 
 from StellariaPact.models.BaseModel import BaseModel
@@ -15,7 +16,7 @@ class VoteOption(BaseModel, table=True):
 
     # 唯一约束：会话ID + 选项类型 + 排序索引 必须唯一
     __table_args__ = (
-        UniqueConstraint("session_id", "option_type", "choice_index", name="uk_voteoption_session_type_choice"),
+        UniqueConstraint("session_id", "option_type", "choice_index", name="uk_vote_option_session_type_choice"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -38,3 +39,13 @@ class VoteOption(BaseModel, table=True):
 
     creator_name: Optional[str] = Field(default=None, description="选项创建人的 Discord 昵称")
     """选项创建人的 Discord 昵称"""
+
+    data_status: int = Field(default=1, index=True, description="数据状态: 0-已删除, 1-正常")
+    """数据状态: 0-已删除, 1-正常"""
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
+        description="创建时间",
+    )
+    """创建时间"""

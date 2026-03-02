@@ -16,7 +16,7 @@ class Announcement(BaseModel, table=True):
 
     __tablename__ = "announcement"  # type: ignore
 
-    discussion_thread_id: int = Field(unique=True, description="关联的Discord讨论帖ID")
+    discussion_thread_id: int = Field(description="关联的Discord讨论帖ID")
     """关联的Discord讨论帖ID"""
 
     announcer_id: int = Field(description="公示发起人的Discord ID")

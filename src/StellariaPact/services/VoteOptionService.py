@@ -31,7 +31,8 @@ class VoteOptionService:
                 choice_index=i + 1,
                 choice_text=text,
                 creator_id=creator_id,
-                creator_name=creator_name
+                creator_name=creator_name,
+                data_status=1
             )
             self.session.add(new_option)
         await self.session.flush()
@@ -57,26 +58,39 @@ class VoteOptionService:
             choice_index=max_index + 1,
             choice_text=text,
             creator_id=creator_id,
-            creator_name=creator_name
+            creator_name=creator_name,
+            data_status=1
         )
         self.session.add(new_option)
         await self.session.flush()
         return new_option
 
     async def get_vote_options(self, session_id: int) -> Sequence[VoteOption]:
-        """获取指定会话的所有投票选项"""
+        """获取指定会话的所有投票选项（仅限正常状态）"""
         statement = (
             select(VoteOption)
-            .where(VoteOption.session_id == session_id)  # type: ignore
+            .where(
+                VoteOption.session_id == session_id,
+                VoteOption.data_status == 1  # 过滤逻辑删除
+            )
             .order_by(VoteOption.option_type, VoteOption.choice_index)  # type: ignore
         )
         result = await self.session.exec(statement)
         return result.all()
 
     async def get_options_by_type(self, session_id: int, option_type: int) -> Sequence[VoteOption]:
-        """获取指定会话和类型的投票选项"""
+        """获取指定类型且未删除的投票选项"""
         statement = select(VoteOption).where(
             VoteOption.session_id == session_id,
-            VoteOption.option_type == option_type
+            VoteOption.option_type == option_type,
+            VoteOption.data_status == 1  # 过滤逻辑删除
         ).order_by(VoteOption.choice_index) # type: ignore
         return (await self.session.exec(statement)).all()
+
+    async def delete_option(self, option_id: int):
+        """逻辑删除特定选项"""
+        option = await self.session.get(VoteOption, option_id)
+        if option:
+            option.data_status = 0
+            self.session.add(option)
+            await self.session.flush()
