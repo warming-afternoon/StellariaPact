@@ -59,7 +59,7 @@ class IntakeLogic:
                         implementation=dto.implementation,
                         executor=dto.executor,
                         status=IntakeStatus.PENDING_REVIEW,
-                        required_votes=2,
+                        required_votes=20,
                     )
                     created = await uow.intake.create_intake(new_intake)
                     intake_dto = ProposalIntakeDto.model_validate(created)
