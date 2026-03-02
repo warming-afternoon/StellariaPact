@@ -54,7 +54,10 @@ class VoteDetailDto(BaseModel):
     total_votes: int = Field(default=0, description="总票数")
     """所有选项累计总投票数。"""
 
-    options: List[OptionResult] = Field(default_factory=list, description="所有选项及其结果 (兼容旧处理)")
+    options: List[OptionResult] = Field(
+        default_factory=list,
+        description="所有选项及其结果 (兼容旧处理)",
+    )
     """兼容旧逻辑的扁平化选项结果集合。"""
 
     normal_options: List[OptionResult] = Field(default_factory=list, description="普通投票选项")

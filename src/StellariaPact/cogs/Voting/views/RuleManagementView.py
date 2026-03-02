@@ -2,9 +2,7 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Voting.views.AdjustTimeModal import AdjustTimeModal
-from StellariaPact.cogs.Voting.views.ConfirmationView import ConfirmationView
-from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
+from StellariaPact.cogs.Voting.views import AdjustTimeModal, ConfirmationView, VoteEmbedBuilder
 from StellariaPact.share import StellariaPactBot, safeDefer
 
 logger = logging.getLogger(__name__)
@@ -79,7 +77,11 @@ class RuleManagementView(discord.ui.View):
 
     @discord.ui.button(label="结束投票时通知提案组", style=discord.ButtonStyle.primary, row=0)
     async def toggle_notify(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._create_and_send_confirmation(interaction, "结束投票时通知提案组", "vote_notify_toggled")
+        await self._create_and_send_confirmation(
+            interaction,
+            "结束投票时通知提案组",
+            "vote_notify_toggled",
+        )
 
     @discord.ui.button(label="调整时间", style=discord.ButtonStyle.primary, row=1)
     async def adjust_time(self, interaction: discord.Interaction, button: discord.ui.Button):

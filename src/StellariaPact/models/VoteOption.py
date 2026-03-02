@@ -16,7 +16,12 @@ class VoteOption(BaseModel, table=True):
 
     # 唯一约束：会话ID + 选项类型 + 排序索引 必须唯一
     __table_args__ = (
-        UniqueConstraint("session_id", "option_type", "choice_index", name="uk_vote_option_session_type_choice"),
+        UniqueConstraint(
+            "session_id",
+            "option_type",
+            "choice_index",
+            name="uk_vote_option_session_type_choice",
+        ),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)

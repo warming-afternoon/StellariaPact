@@ -19,9 +19,16 @@ class PaginatedManageView(discord.ui.View):
 
     message: discord.Message | discord.WebhookMessage | None = None
 
-    def __init__(self, bot: StellariaPactBot, interaction: discord.Interaction,
-                 thread_id: int, msg_id: int, options: list[OptionResult],
-                 option_type: int, page: int = 0):
+    def __init__(
+        self,
+        bot: StellariaPactBot,
+        interaction: discord.Interaction,
+        thread_id: int,
+        msg_id: int,
+        options: list[OptionResult],
+        option_type: int,
+        page: int = 0,
+    ):
         super().__init__(timeout=900)  # 15分钟超时
         self.bot = bot
         self.interaction = interaction
@@ -145,7 +152,12 @@ class PaginatedManageView(discord.ui.View):
         self._build_ui()
         await interaction.response.edit_message(view=self)
 
-    async def _cast_vote(self, interaction: discord.Interaction, choice: int | None, choice_index: int):
+    async def _cast_vote(
+        self,
+        interaction: discord.Interaction,
+        choice: int | None,
+        choice_index: int,
+    ):
         """处理投票操作"""
         await safeDefer(interaction)
         # 派发统一下层逻辑，附带 option_type

@@ -63,7 +63,8 @@ class ModerationEventListener(commands.Cog):
             )
         except Exception as e:
             logger.error(
-                f"为上下文消息 {vote_details.context_message_id} 创建镜像投票时发生非致命错误: {e}",
+                f"为上下文消息 {vote_details.context_message_id} "
+                f"创建镜像投票时发生非致命错误: {e}",
                 exc_info=True,
             )
 
@@ -226,10 +227,13 @@ class ModerationEventListener(commands.Cog):
                 logger.warning("vote_details 缺少 context_message_id，跳过创建镜像投票。")
                 return
 
-            session = await uow.vote_session.get_vote_session_by_context_message_id(context_message_id)
+            session = await uow.vote_session.get_vote_session_by_context_message_id(
+                context_message_id
+            )
             if not session:
                 logger.warning(
-                    f"未找到 context_message_id={context_message_id} 对应的投票会话，跳过创建镜像投票。"
+                    f"未找到 context_message_id={context_message_id} "
+                    "对应的投票会话，跳过创建镜像投票。"
                 )
                 return
 
@@ -247,7 +251,11 @@ class ModerationEventListener(commands.Cog):
                     content_to_send = f"<@&{role_id}>"
 
             voting_channel_message = await self.bot.api_scheduler.submit(
-                voting_channel.send(content=content_to_send, embeds=channel_embeds, view=channel_view),
+                voting_channel.send(
+                    content=content_to_send,
+                    embeds=channel_embeds,
+                    view=channel_view,
+                ),
                 priority=4,
             )
 

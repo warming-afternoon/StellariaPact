@@ -83,14 +83,20 @@ class PunishmentModal(discord.ui.Modal):
             elif allow_voting_str == "否":
                 is_voting_allowed = False
             else:
-                return await interaction.followup.send("“是否保留投票权”字段必须输入“是”或“否”。", ephemeral=True)
+                return await interaction.followup.send(
+                    "“是否保留投票权”字段必须输入“是”或“否”。",
+                    ephemeral=True,
+                )
 
             try:
                 mute_minutes = int(self.mute_duration_input.value)
                 if mute_minutes < 0:
                     raise ValueError()
             except ValueError:
-                return await interaction.followup.send("禁言时长必须是一个有效的非负整数。", ephemeral=True)
+                return await interaction.followup.send(
+                    "禁言时长必须是一个有效的非负整数。",
+                    ephemeral=True,
+                )
 
             reason = self.reason_input.value
             thread = interaction.channel
@@ -102,7 +108,9 @@ class PunishmentModal(discord.ui.Modal):
             # 计算截止时间 (存入DB的应当是 UTC naive datetime)
             mute_end_time = None
             if mute_minutes > 0:
-                mute_end_time = (datetime.now(timezone.utc) + timedelta(minutes=mute_minutes)).replace(tzinfo=None)
+                mute_end_time = (
+                    datetime.now(timezone.utc) + timedelta(minutes=mute_minutes)
+                ).replace(tzinfo=None)
 
             # 2. 数据库操作 (覆盖更新)
             async with UnitOfWork(self.bot.db_handler) as uow:
@@ -116,8 +124,17 @@ class PunishmentModal(discord.ui.Modal):
 
             # 3. 派发事件更新内存缓存
             # 注意：派发给缓存的最好带上 timezone，方便计算
-            aware_mute_end = mute_end_time.replace(tzinfo=timezone.utc) if mute_end_time else None
-            self.bot.dispatch("thread_mute_updated", thread.id, self.target_user.id, aware_mute_end)
+            aware_mute_end = (
+                mute_end_time.replace(tzinfo=timezone.utc)
+                if mute_end_time
+                else None
+            )
+            self.bot.dispatch(
+                "thread_mute_updated",
+                thread.id,
+                self.target_user.id,
+                aware_mute_end,
+            )
 
             # 4. 发送公示
             embed = PunishmentEmbedBuilder.create_punishment_embed(

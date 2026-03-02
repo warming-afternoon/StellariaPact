@@ -14,11 +14,11 @@ class PermissionGuard:
         1. 用户是管理员 (councilModerator, executionAuditor, stewards)。
         2. 用户是当前帖子关联提案的发起人。
         """
-        # 1. 检查是否为管理员 (静态角色权限)
+        # 检查是否为管理员 (静态角色权限)
         if RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor", "stewards"):
             return True
 
-        # 2. 检查是否为提案人 (动态所有权权限)
+        # 检查是否为提案人 (动态所有权权限)
         if not isinstance(interaction.channel, discord.Thread):
             return False
 
@@ -31,7 +31,9 @@ class PermissionGuard:
         return False
 
     @staticmethod
-    async def can_manage_rules_or_options(interaction: discord.Interaction, thread_id: int | None = None) -> bool:
+    async def can_manage_rules_or_options(
+        interaction: discord.Interaction, thread_id: int | None = None
+    ) -> bool:
         """
         检查用户是否可以管理投票规则或创建投票选项。
         满足以下任一条件即可：
@@ -57,7 +59,9 @@ class PermissionGuard:
         return False
 
     @staticmethod
-    async def can_create_options(interaction: discord.Interaction, thread_id: int | None = None) -> bool:
+    async def can_create_options(
+        interaction: discord.Interaction, thread_id: int | None = None
+    ) -> bool:
         """
         检查用户是否可以创建投票选项/异议。
         满足以下任一条件即可：
@@ -83,7 +87,9 @@ class PermissionGuard:
                 return True
 
             # 检查有效发言数是否大于 10
-            activity = await uow.user_activity.get_user_activity(interaction.user.id, target_thread_id)
+            activity = await uow.user_activity.get_user_activity(
+                interaction.user.id, target_thread_id
+            )
             if activity and activity.message_count > 10:
                 return True
 

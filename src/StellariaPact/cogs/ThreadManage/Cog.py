@@ -139,7 +139,7 @@ class ThreadManageCog(commands.Cog):
     ) -> tuple[dict[str, str | None], list[tuple[str, str, str]]]:
         """
         处理提案更新逻辑，包括数据库更新和变更检测。
-        
+
         返回: (old_values, changed_fields)
         """
         async with UnitOfWork(self.bot.db_handler) as uow:

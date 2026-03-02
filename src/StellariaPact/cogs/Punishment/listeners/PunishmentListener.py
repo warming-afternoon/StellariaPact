@@ -84,14 +84,22 @@ class PunishmentListener(commands.Cog):
             logger.info(f"Punishment: 已自动清理 {len(expired)} 条过期的禁言记录。")
 
     @commands.Cog.listener()
-    async def on_thread_mute_updated(self, thread_id: int, user_id: int, mute_end_time: Optional[datetime]):
+    async def on_thread_mute_updated(
+        self,
+        thread_id: int,
+        user_id: int,
+        mute_end_time: Optional[datetime],
+    ):
         """监听配置更新，实时同步缓存"""
         if thread_id not in self.active_mutes:
             self.active_mutes[thread_id] = {}
 
         if mute_end_time and mute_end_time > datetime.now(timezone.utc):
             self.active_mutes[thread_id][user_id] = mute_end_time
-            logger.debug(f"Punishment: 缓存更新 -> 用户 {user_id} 在帖子 {thread_id} 禁言至 {mute_end_time}")
+            logger.debug(
+                f"Punishment: 缓存更新 -> 用户 {user_id} "
+                f"在帖子 {thread_id} 禁言至 {mute_end_time}"
+            )
         elif user_id in self.active_mutes[thread_id]:
             del self.active_mutes[thread_id][user_id]
             logger.debug(f"Punishment: 缓存更新 -> 用户 {user_id} 在帖子 {thread_id} 禁言已解除")
@@ -99,7 +107,11 @@ class PunishmentListener(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """物理删除被禁言用户的消息"""
-        if message.author.bot or not isinstance(message.channel, discord.Thread) or not message.guild:
+        if (
+            message.author.bot
+            or not isinstance(message.channel, discord.Thread)
+            or not message.guild
+        ):
             return
 
         thread_mutes = self.active_mutes.get(message.channel.id)
@@ -113,8 +125,14 @@ class PunishmentListener(commands.Cog):
         if datetime.now(timezone.utc) < mute_end_time:
             try:
                 await message.delete()
-                logger.info(f"Punishment: 已拦截并删除用户 {message.author.id} 在帖子 {message.channel.id} 中的违规发言。")
+                logger.info(
+                    f"Punishment: 已拦截并删除用户 {message.author.id} "
+                    f"在帖子 {message.channel.id} 中的违规发言。"
+                )
             except discord.Forbidden:
-                logger.warning(f"Punishment: 机器人缺少管理消息权限，无法删除用户 {message.author.id} 的消息。")
+                logger.warning(
+                    f"Punishment: 机器人缺少管理消息权限，"
+                    f"无法删除用户 {message.author.id} 的消息。"
+                )
             except discord.NotFound:
                 pass

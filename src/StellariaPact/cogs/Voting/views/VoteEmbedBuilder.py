@@ -182,9 +182,15 @@ class VoteEmbedBuilder:
                     value="",
                     inline=False,
                 )
-                objection_embed.add_field(name="赞成异议", value=str(option.approve_votes), inline=True)
-                objection_embed.add_field(name="反对异议", value=str(option.reject_votes), inline=True)
-                objection_embed.add_field(name="总票数", value=str(option.total_votes), inline=True)
+                objection_embed.add_field(
+                    name="赞成异议", value=str(option.approve_votes), inline=True
+                )
+                objection_embed.add_field(
+                    name="反对异议", value=str(option.reject_votes), inline=True
+                )
+                objection_embed.add_field(
+                    name="总票数", value=str(option.total_votes), inline=True
+                )
 
             embeds.append(objection_embed)
 
@@ -235,7 +241,11 @@ class VoteEmbedBuilder:
             for i in range(0, len(user_ids), chunk_size):
                 chunk = user_ids[i : i + chunk_size]
                 description = "\n".join(f"<@{user_id}>" for user_id in chunk)
-                page_title = title if len(user_ids) <= chunk_size else f"{title} ({i + 1} - {i + len(chunk)})"
+                page_title = (
+                    title
+                    if len(user_ids) <= chunk_size
+                    else f"{title} ({i + 1} - {i + len(chunk)})"
+                )
 
                 embed = discord.Embed(
                     title=page_title,
@@ -377,7 +387,9 @@ class VoteEmbedBuilder:
 
         # --- 提案内容 Embed---
         description = (
-            (proposal.content[:600] + "\n\n...\n\n") if len(proposal.content) > 600 else proposal.content
+            (proposal.content[:600] + "\n\n...\n\n")
+            if len(proposal.content) > 600
+            else proposal.content
         )
         proposal_embed = discord.Embed(
             title=f"{proposal.title}",
@@ -470,8 +482,16 @@ class VoteEmbedBuilder:
             description="",
             color=discord.Color.blue(),
         )
-        rule_embed.add_field(name="是否匿名", value="✅ 是" if vote_details.is_anonymous else "❌ 否", inline=True)
-        rule_embed.add_field(name="实时票数", value="✅ 是" if vote_details.realtime_flag else "❌ 否", inline=True)
+        rule_embed.add_field(
+            name="是否匿名",
+            value="✅ 是" if vote_details.is_anonymous else "❌ 否",
+            inline=True,
+        )
+        rule_embed.add_field(
+            name="实时票数",
+            value="✅ 是" if vote_details.realtime_flag else "❌ 否",
+            inline=True,
+        )
         rule_embed.add_field(name="\u200b", value="\u200b", inline=True)  # 占位
 
         if vote_details.end_time:
@@ -492,7 +512,11 @@ class VoteEmbedBuilder:
 
         # --- 普通投票 Embed ---
         # 普通选项来源：优先使用 normal_options，回退到 options
-        normal_options = vote_details.normal_options if vote_details.normal_options else vote_details.options
+        normal_options = (
+            vote_details.normal_options
+            if vote_details.normal_options
+            else vote_details.options
+        )
         if normal_options:
             normal_embed = discord.Embed(
                 title="普通投票",

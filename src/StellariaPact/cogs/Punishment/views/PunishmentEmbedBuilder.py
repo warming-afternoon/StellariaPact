@@ -39,7 +39,11 @@ class PunishmentEmbedBuilder:
         embed.add_field(name="处理理由", value=reason, inline=False)
 
         if target_message:
-            embed.add_field(name="触发消息", value=f"[点击跳转]({target_message.jump_url})", inline=True)
+            embed.add_field(
+                name="触发消息",
+                value=f"[点击跳转]({target_message.jump_url})",
+                inline=True,
+            )
 
         embed.add_field(name="操作人员", value=moderator.mention, inline=True)
         return embed

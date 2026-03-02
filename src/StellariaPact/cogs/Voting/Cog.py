@@ -57,7 +57,10 @@ class Voting(commands.Cog):
                     priority=1,
                 )
 
-    @app_commands.command(name="刷新投票汇总面板", description="检查并修复当前帖子的投票汇总面板。若消息丢失则重新发送。")
+    @app_commands.command(
+        name="刷新投票汇总面板",
+        description="检查并修复当前帖子的投票汇总面板。若消息丢失则重新发送。",
+    )
     @app_commands.guild_only()
     async def refresh_vote_panel(self, interaction: discord.Interaction):
         await safeDefer(interaction, ephemeral=True)
@@ -73,7 +76,10 @@ class Voting(commands.Cog):
         can_manage = await PermissionGuard.can_manage_vote(interaction)
         if not can_manage:
             await self.bot.api_scheduler.submit(
-                interaction.followup.send("你没有权限执行此操作。需为提案人或管理组成员。"), priority=1
+                interaction.followup.send(
+                    "你没有权限执行此操作。需为提案人或管理组成员。"
+                ),
+                priority=1,
             )
             return
 
@@ -84,7 +90,10 @@ class Voting(commands.Cog):
             proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
             if not proposal:
                 await self.bot.api_scheduler.submit(
-                    interaction.followup.send("此帖子没有关联的提案，无法处理投票面板。"), priority=1
+                    interaction.followup.send(
+                        "此帖子没有关联的提案，无法处理投票面板。"
+                    ),
+                    priority=1,
                 )
                 return
 
@@ -109,7 +118,10 @@ class Voting(commands.Cog):
                     thread=thread
                 )
                 await self.bot.api_scheduler.submit(
-                    interaction.followup.send("未找到正式投票会话，正在初始化新的投票面板及镜像..."), priority=1
+                    interaction.followup.send(
+                        "未找到正式投票会话，正在初始化新的投票面板及镜像..."
+                    ),
+                    priority=1,
                 )
                 return
 
@@ -125,7 +137,10 @@ class Voting(commands.Cog):
             except discord.NotFound:
                 pass
             except discord.Forbidden:
-                logger.warning(f"无法访问帖子 {thread.id} 的消息 {latest_session.context_message_id} (权限不足)")
+                logger.warning(
+                    f"无法访问帖子 {thread.id} 的消息 "
+                    f"{latest_session.context_message_id} (权限不足)"
+                )
 
         # 场景 B-1: 查询到则不做处理
         if message_exists:
@@ -170,7 +185,8 @@ class Voting(commands.Cog):
         self.bot.dispatch("vote_details_updated", vote_details)
 
         await self.bot.api_scheduler.submit(
-            interaction.followup.send("检测到面板消息丢失，已重新发送并刷新关联的镜像。"), priority=1
+            interaction.followup.send("检测到面板消息丢失，已重新发送并刷新关联的镜像。"),
+            priority=1,
         )
 
     @commands.Cog.listener()
