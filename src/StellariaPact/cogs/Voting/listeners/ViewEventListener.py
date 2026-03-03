@@ -20,6 +20,7 @@ from StellariaPact.share import (
     UnitOfWork,
     safeDefer,
 )
+from StellariaPact.share.enums import ProposalStatus
 
 logger = logging.getLogger(__name__)
 
@@ -597,8 +598,20 @@ class ViewEventListener(commands.Cog):
             creator_id = interaction.user.id
             creator_name = interaction.user.display_name
 
+            # 如果是异议类型，先检查提案状态是否允许创建异议
+            if option_type == 1:
+                async with UnitOfWork(self.bot.db_handler) as uow:
+                    proposal = await uow.proposal.get_proposal_by_thread_id(thread_id)
+                    status = proposal.status if proposal else None
+                if status and status == ProposalStatus.EXECUTING:
+                    await interaction.followup.send(
+                        "❌ 操作失败：该提案已进入**执行阶段**，根据议事规则，此时无法再发起新的异议。", 
+                        ephemeral=True
+                    )
+                    return
+
             async with UnitOfWork(self.bot.db_handler) as uow:
-                # 正常的选项创建逻辑
+                # 创建选项
                 vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
                 if not vote_session or not vote_session.id:
                     raise ValueError("找不到对应的投票会话。")
@@ -617,9 +630,14 @@ class ViewEventListener(commands.Cog):
                 )
                 await uow.commit()
 
-            # 如果是异议类型，调用 Logic 层进行 UI 同步
+            # 创建异议投票时，派发事件让 Moderation 模块处理状态变更
             if option_type == 1:
-                await self.logic.set_proposal_under_objection(thread_id)
+                self.bot.dispatch(
+                    "proposal_under_objection_requested",
+                    thread_id=thread_id,
+                    trigger_user_id=interaction.user.id,
+                    source="voting_new_option",
+                )
 
             # 更新面板
             vote_details = await self.logic.get_vote_details(message_id)

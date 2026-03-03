@@ -32,9 +32,9 @@ class Proposal(BaseModel, table=True):
     status: int = Field(
         default=ProposalStatus.DISCUSSION,
         index=True,
-        description="提案当前状态: 0-讨论中, 1-执行中, 2-冻结中, 3-已废弃, 4-已否决, 5-已结束",
+        description="提案当前状态: 0-讨论中, 1-执行中, 2-冻结中, 3-已废弃, 4-已否决, 5-已结束, 6-异议中",
     )
-    """提案当前状态: 0-讨论中, 1-执行中, 2-冻结中, 3-已废弃, 4-已否决, 5-已结束"""
+    """提案当前状态: 0-讨论中, 1-执行中, 2-冻结中, 3-已废弃, 4-已否决, 5-已结束, 6-异议中"""
 
     created_at: datetime = Field(
         default_factory=datetime.utcnow,

@@ -19,7 +19,7 @@ from StellariaPact.dto import (
     ProposalDto,
 )
 from StellariaPact.models import Announcement
-from StellariaPact.share import StellariaPactBot, StringUtils, UnitOfWork
+from StellariaPact.share import DiscordUtils, StellariaPactBot, StringUtils, UnitOfWork
 from StellariaPact.share.enums import ObjectionStatus, ProposalStatus, VoteDuration
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ class ModerationLogic:
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
+        self.thread_manager = ProposalThreadManager(bot.config)
 
     async def handle_execute_proposal(
         self,
@@ -314,6 +315,36 @@ class ModerationLogic:
                 f"处理新讨论帖 {thread.id} 时发生错误: {e}",
                 exc_info=True,
             )
+
+    async def mark_proposal_under_objection(self, thread_id: int) -> None:
+        """
+        将提案标记为“异议中”，并更新帖子外观
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.proposal.get_proposal_by_thread_id(thread_id)
+            if not proposal:
+                logger.warning(f"未找到与帖子 {thread_id} 关联的提案，跳过状态更新。")
+                return
+
+            if proposal.status == ProposalStatus.UNDER_OBJECTION:
+                logger.debug(f"提案帖子 {thread_id} 已是异议中，跳过重复更新。")
+                return
+
+            proposal.status = ProposalStatus.UNDER_OBJECTION
+            uow.session.add(proposal)
+            await uow.commit()
+
+        try:
+            thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
+            if not isinstance(thread, discord.Thread):
+                logger.warning(f"频道 {thread_id} 不是帖子类型，跳过外观同步。")
+                return
+            await self.thread_manager.update_status(thread, "under_objection")
+        except Exception as e:
+            logger.error(f"提案帖子 {thread_id} 状态已入库，但更新 Discord UI 失败: {e}", exc_info=True)
+            return
+
+        logger.info(f"提案帖子 {thread_id} 已更新为异议中。")
 
     async def proposal_status_change(
         self, proposal_id: int, new_status: ProposalStatus
