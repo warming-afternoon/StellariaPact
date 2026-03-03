@@ -38,9 +38,8 @@ class AbandonReasonModal(discord.ui.Modal):
         await safeDefer(interaction, ephemeral=True)
 
         if not isinstance(interaction.channel, discord.Thread):
-            return await self.bot.api_scheduler.submit(
-                interaction.followup.send("此命令只能在帖子内使用。", ephemeral=True), 1
-            )
+            await interaction.followup.send("此命令只能在帖子内使用。", ephemeral=True)
+            return
 
         await self.cog._initiate_abandon_confirmation(
             interaction, self.reason.value, self.notify_roles

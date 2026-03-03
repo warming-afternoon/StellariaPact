@@ -272,9 +272,7 @@ class Moderation(commands.Cog):
             ): 要调用的具体逻辑处理函数。
             notify_roles (bool): 是否在发起确认时通知相关方。
         """
-        await self.bot.api_scheduler.submit(
-            interaction.response.defer(ephemeral=True, thinking=True), 1
-        )
+        await safeDefer(interaction, ephemeral=True)
 
         if not isinstance(interaction.channel, discord.Thread) or not interaction.guild:
             return await self.bot.api_scheduler.submit(

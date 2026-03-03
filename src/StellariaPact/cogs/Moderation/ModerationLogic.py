@@ -164,33 +164,33 @@ class ModerationLogic:
             session_map = {s.id: s for s in sessions if s.id is not None}
             now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-        for option in objection_options:
-            session = session_map.get(option.session_id)
-            if not session:
-                continue
+            for option in objection_options:
+                session = session_map.get(option.session_id)
+                if not session:
+                    continue
 
-            created_at = option.created_at.replace(tzinfo=None)
-            if now - created_at < timedelta(hours=12):
-                raise ValueError(f"无法操作：异议「{option.choice_text}」发布未满 12 小时。")
+                created_at = option.created_at.replace(tzinfo=None)
+                if now - created_at < timedelta(hours=12):
+                    raise ValueError(f"无法操作：异议「{option.choice_text}」发布未满 12 小时。")
 
-            approve_votes = sum(
-                1
-                for vote in session.userVotes
-                if vote.option_type == 1
-                and vote.choice_index == option.choice_index
-                and vote.choice == 1
-            )
-            reject_votes = sum(
-                1
-                for vote in session.userVotes
-                if vote.option_type == 1
-                and vote.choice_index == option.choice_index
-                and vote.choice == 0
-            )
-            if approve_votes > reject_votes:
-                raise ValueError(
-                    f"无法操作：异议「{option.choice_text}」目前赞成票居多 ({approve_votes} vs {reject_votes})。"
+                approve_votes = sum(
+                    1
+                    for vote in session.userVotes
+                    if vote.option_type == 1
+                    and vote.choice_index == option.choice_index
+                    and vote.choice == 1
                 )
+                reject_votes = sum(
+                    1
+                    for vote in session.userVotes
+                    if vote.option_type == 1
+                    and vote.choice_index == option.choice_index
+                    and vote.choice == 0
+                )
+                if approve_votes > reject_votes:
+                    raise ValueError(
+                        f"无法操作：异议「{option.choice_text}」目前赞成票居多 ({approve_votes} vs {reject_votes})。"
+                    )
 
     async def _initiate_proposal_confirmation(
         self,

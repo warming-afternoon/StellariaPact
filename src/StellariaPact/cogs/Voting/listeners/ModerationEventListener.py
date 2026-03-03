@@ -174,7 +174,7 @@ class ModerationEventListener(commands.Cog):
                 voters=[],
             )
 
-            view = VoteView(self.bot)
+            view = VoteView(self.bot, vote_details=initial_vote_details)
             embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(
                 topic=proposal_dto.title,
                 vote_details=initial_vote_details,
@@ -237,7 +237,7 @@ class ModerationEventListener(commands.Cog):
                 )
                 return
 
-            channel_view = VotingChannelView(self.bot)
+            channel_view = VotingChannelView(self.bot, vote_details=vote_details)
             channel_embeds = VoteEmbedBuilder.build_voting_channel_embed(
                 proposal=proposal_dto,
                 vote_details=vote_details,

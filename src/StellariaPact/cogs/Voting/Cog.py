@@ -6,7 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from StellariaPact.cogs.Voting.dto import VoteDetailDto
-from StellariaPact.cogs.Voting.views import VoteEmbedBuilder, VoteView
+from StellariaPact.cogs.Voting.views import VoteEmbedBuilder, VoteView, VotingChannelView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import ProposalDto, VoteSessionDto
 from StellariaPact.services.VoteSessionService import VoteSessionService
@@ -164,7 +164,7 @@ class Voting(commands.Cog):
             await uow.commit()
 
         # 发送讨论帖内新的投票面板
-        view = VoteView(self.bot)
+        view = VoteView(self.bot, vote_details=vote_details)
         embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(
             topic=proposal.title,
             vote_details=vote_details,
@@ -368,9 +368,11 @@ class Voting(commands.Cog):
                 topic=clean_topic,
                 vote_details=vote_details,
             )
+            
+            view = VoteView(self.bot, vote_details=vote_details)
 
             if new_embeds:
-                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds), priority=2)
+                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds, view=view), priority=2)
         except discord.NotFound:
             logger.warning(f"找不到帖子内投票消息 {vote_details.context_message_id}，跳过更新。")
         except Exception as e:
@@ -413,10 +415,12 @@ class Voting(commands.Cog):
                             proposal_dto, vote_details, thread.jump_url
                         )
 
+            view = VotingChannelView(self.bot, vote_details=vote_details)
+
             if new_embeds:
-                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds), priority=2)
+                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds, view=view), priority=2)
             elif new_embed:
-                await self.bot.api_scheduler.submit(message.edit(embed=new_embed), priority=2)
+                await self.bot.api_scheduler.submit(message.edit(embed=new_embed, view=view), priority=2)
         except discord.NotFound:
             logger.warning(
                 f"找不到投票频道内消息 {vote_details.voting_channel_message_id}，跳过更新。"

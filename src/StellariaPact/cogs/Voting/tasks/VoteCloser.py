@@ -66,6 +66,9 @@ class VoteCloser(commands.Cog):
             logger.debug(f"提案投票 {session_dto.id} 已结束。分派 'vote_finished' 事件")
             self.bot.dispatch("vote_finished", session_dto, result_dto)
 
+        # 派发更新事件使投票面板（帖子内、频道镜像等）同步其已结束的状态并禁用按钮
+        self.bot.dispatch("vote_details_updated", result_dto)
+
     @close_expired_votes.before_loop
     async def before_close_expired_votes(self):
         await self.bot.wait_until_ready()

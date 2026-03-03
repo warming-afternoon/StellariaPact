@@ -1,8 +1,8 @@
 import logging
 
 import discord
-
-from StellariaPact.cogs.Voting.views import AdjustTimeModal, ConfirmationView, VoteEmbedBuilder
+from StellariaPact.cogs.Voting.views import AdjustTimeModal, ConfirmationView
+from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.share import StellariaPactBot, safeDefer
 
 logger = logging.getLogger(__name__)
