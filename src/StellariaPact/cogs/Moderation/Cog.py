@@ -72,7 +72,7 @@ class Moderation(commands.Cog):
         )
 
     @app_commands.command(
-        name="废弃", description="[议事督导+执行监理] 将讨论中、冻结中或执行中的提案废弃"
+        name="废弃", description="[议事督导+执行监理] 将讨论中/执行中/异议中的提案废弃"
     )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     @app_commands.rename(notify_roles="通知相关方")

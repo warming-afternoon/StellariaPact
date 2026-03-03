@@ -50,9 +50,9 @@ class ModerationLogic:
             guild_id=guild_id,
             user_id=user_id,
             user_role_ids=user_role_ids,
-            expected_status=[ProposalStatus.DISCUSSION, ProposalStatus.UNDER_OBJECTION],
+            expected_status=[ProposalStatus.DISCUSSION],
             context="proposal_execution",
-            error_message="提案当前状态不是“讨论中”或“异议中”，无法执行此操作。",
+            error_message="提案当前状态不是“讨论中”，无法执行此操作。",
             integrity_error_message="操作失败：此提案的确认流程刚刚已被另一位管理员发起。",
             check_24h=True,
         )
@@ -72,9 +72,9 @@ class ModerationLogic:
             guild_id=guild_id,
             user_id=user_id,
             user_role_ids=user_role_ids,
-            expected_status=[ProposalStatus.DISCUSSION, ProposalStatus.EXECUTING, ProposalStatus.UNDER_OBJECTION],
+            expected_status=[ProposalStatus.DISCUSSION, ProposalStatus.EXECUTING],
             context="proposal_completion",
-            error_message="提案当前状态不是“讨论中”、“执行中”或“异议中”，无法完成。",
+            error_message="提案当前状态不是“讨论中”或“执行中”，无法完成。",
             integrity_error_message="操作失败：此提案的完成流程刚刚已被另一位管理员发起。",
             check_24h=True,
         )
