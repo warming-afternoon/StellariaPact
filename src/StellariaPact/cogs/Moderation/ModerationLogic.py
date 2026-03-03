@@ -19,6 +19,7 @@ from StellariaPact.dto import (
     ProposalDto,
 )
 from StellariaPact.models import Announcement
+from StellariaPact.services.VoteSessionService import VoteSessionService
 from StellariaPact.share import DiscordUtils, StellariaPactBot, StringUtils, UnitOfWork
 from StellariaPact.share.enums import ObjectionStatus, ProposalStatus, VoteDuration
 
@@ -113,12 +114,28 @@ class ModerationLogic:
     async def handle_rediscuss_proposal(
         self, channel_id: int, guild_id: int, user_id: int, user_role_ids: set[int]
     ) -> Optional[ExecuteProposalResultDto]:
-        """处理"重新讨论"命令的业务流程。允许所有状态回退到讨论中。"""
+        """处理"重新讨论"命令的业务流程。"""
+
+        # 获取基础状态信息（短事务）
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.proposal.get_proposal_by_thread_id(channel_id)
+            if not proposal:
+                raise ValueError("未找到关连的提案。")
+            current_status = ProposalStatus(proposal.status)
+
+        # 若当前为“异议中”，先执行阻断校验
+        if current_status == ProposalStatus.UNDER_OBJECTION:
+            await self._verify_objection_blockers(channel_id)
+
+        # 发起通用确认流程
         all_statuses = [
-            ProposalStatus.DISCUSSION, ProposalStatus.EXECUTING,
-            ProposalStatus.FROZEN, ProposalStatus.ABANDONED,
-            ProposalStatus.REJECTED, ProposalStatus.FINISHED,
-            ProposalStatus.UNDER_OBJECTION
+            ProposalStatus.DISCUSSION,
+            ProposalStatus.EXECUTING,
+            ProposalStatus.FROZEN,
+            ProposalStatus.ABANDONED,
+            ProposalStatus.REJECTED,
+            ProposalStatus.FINISHED,
+            ProposalStatus.UNDER_OBJECTION,
         ]
         return await self._initiate_proposal_confirmation(
             channel_id=channel_id,
@@ -130,6 +147,50 @@ class ModerationLogic:
             error_message="提案当前状态异常，无法重新讨论。",
             integrity_error_message="操作失败：此提案的确认流程刚刚已被另一位管理员发起。",
         )
+
+    async def _verify_objection_blockers(self, thread_id: int):
+        """校验是否存在阻碍提案恢复讨论的异议。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 获取该讨论区下的所有投票会话，筛选出其中的异议会话和选项，并统计投票结果
+            sessions = await uow.vote_session.get_all_sessions_in_thread_with_details(thread_id)
+            if not sessions:
+                return
+
+            session_ids = [s.id for s in sessions if s.id is not None]
+            objection_options = await uow.vote_option.get_options_by_session_ids(session_ids, 1)
+            if not objection_options:
+                return
+
+            session_map = {s.id: s for s in sessions if s.id is not None}
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        for option in objection_options:
+            session = session_map.get(option.session_id)
+            if not session:
+                continue
+
+            created_at = option.created_at.replace(tzinfo=None)
+            if now - created_at < timedelta(hours=12):
+                raise ValueError(f"无法操作：异议「{option.choice_text}」发布未满 12 小时。")
+
+            approve_votes = sum(
+                1
+                for vote in session.userVotes
+                if vote.option_type == 1
+                and vote.choice_index == option.choice_index
+                and vote.choice == 1
+            )
+            reject_votes = sum(
+                1
+                for vote in session.userVotes
+                if vote.option_type == 1
+                and vote.choice_index == option.choice_index
+                and vote.choice == 0
+            )
+            if approve_votes > reject_votes:
+                raise ValueError(
+                    f"无法操作：异议「{option.choice_text}」目前赞成票居多 ({approve_votes} vs {reject_votes})。"
+                )
 
     async def _initiate_proposal_confirmation(
         self,
@@ -352,6 +413,9 @@ class ModerationLogic:
         """
         通用方法：处理提案状态变更的确认事件。
         """
+        session_message_ids_to_refresh: list[int] = []
+
+        # 更新提案状态；必要时清理异议选项
         async with UnitOfWork(self.bot.db_handler) as uow:
             proposal = await uow.proposal.get_proposal_by_id(proposal_id)
             if not proposal:
@@ -360,9 +424,49 @@ class ModerationLogic:
                 )
                 return None
 
+            # 清理异议选项的条件：当前状态为“异议中”，且目标状态为“讨论中”
+            needs_objection_cleanup = (
+                proposal.status == ProposalStatus.UNDER_OBJECTION
+                and new_status == ProposalStatus.DISCUSSION
+            )
+
+            if needs_objection_cleanup:
+                sessions = await uow.vote_session.get_all_sessions_in_thread_with_details(
+                    proposal.discussion_thread_id
+                )
+                session_ids = [s.id for s in sessions if s.id is not None]
+                objection_options = await uow.vote_option.get_options_by_session_ids(session_ids, 1)
+
+                for option in objection_options:
+                    assert option.id is not None
+                    await uow.vote_option.delete_option(option.id)
+
+                session_message_ids_to_refresh = [
+                    s.context_message_id for s in sessions if s.context_message_id is not None
+                ]
+
             proposal.status = new_status
+            result = ProposalDto.model_validate(proposal)
             uow.session.add(proposal)
             await uow.commit()
-            await uow.session.refresh(proposal)
 
-            return ProposalDto.model_validate(proposal)
+        # 刷新受影响的投票详情面板（存在时）
+        for message_id in session_message_ids_to_refresh:
+            try:
+                async with UnitOfWork(self.bot.db_handler) as uow:
+                    vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
+                    if not vote_session:
+                        logger.warning(f"找不到与消息 ID {message_id} 关联的投票会话，跳过面板刷新。")
+                        continue
+
+                    vote_options = None
+                    if vote_session.id:
+                        vote_options = await uow.vote_option.get_vote_options(vote_session.id)
+
+                    vote_details = VoteSessionService.get_vote_details_dto(vote_session, vote_options)
+
+                self.bot.dispatch("vote_details_updated", vote_details)
+            except Exception as e:
+                logger.error(f"刷新投票面板失败 message_id={message_id}: {e}", exc_info=True)
+
+        return result
