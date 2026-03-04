@@ -1,7 +1,8 @@
 import logging
 
 import discord
-from StellariaPact.cogs.Voting.views import AdjustTimeModal, ConfirmationView
+from StellariaPact.cogs.Voting.dto import VoteDetailDto
+from StellariaPact.cogs.Voting.views import AdjustTimeModal, ConfirmationView, ReopenVoteModal
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.share import StellariaPactBot, safeDefer
 
@@ -14,11 +15,82 @@ class RuleManagementView(discord.ui.View):
     # 用于记录自身的 message 实例，方便后续原地更新 Embed
     message: discord.Message | None = None
 
-    def __init__(self, bot: StellariaPactBot, thread_id: int, message_id: int):
+    def __init__(self, bot: StellariaPactBot, vote_details: VoteDetailDto):
         super().__init__(timeout=900)
         self.bot = bot
-        self.thread_id = thread_id
-        self.message_id = message_id
+        self.vote_details = vote_details
+        self.thread_id = vote_details.context_thread_id
+        # 确保 message_id 不为 None
+        self.message_id = vote_details.context_message_id or 0
+        self._build_ui(vote_details)
+
+    def _build_ui(self, vote_details: VoteDetailDto):
+        """根据投票状态创建按钮。"""
+        self.clear_items()
+
+        is_closed = (vote_details.status == 0)
+
+        # 第一行
+        btn_anonymous = discord.ui.Button(
+            label="匿名投票",
+            style=discord.ButtonStyle.primary,
+            row=0,
+            custom_id="rule_manage_anonymous",
+            disabled=is_closed,
+        )
+        btn_anonymous.callback = self.toggle_anonymous
+        self.add_item(btn_anonymous)
+
+        btn_realtime = discord.ui.Button(
+            label="实时票数",
+            style=discord.ButtonStyle.primary,
+            row=0,
+            custom_id="rule_manage_realtime",
+            disabled=is_closed,
+        )
+        btn_realtime.callback = self.toggle_realtime
+        self.add_item(btn_realtime)
+
+        btn_notify = discord.ui.Button(
+            label="结束投票时通知提案组",
+            style=discord.ButtonStyle.primary,
+            row=0,
+            custom_id="rule_manage_notify",
+            disabled=is_closed,
+        )
+        btn_notify.callback = self.toggle_notify
+        self.add_item(btn_notify)
+
+        # 第二行
+        btn_adjust_time = discord.ui.Button(
+            label="调整时间",
+            style=discord.ButtonStyle.primary,
+            row=1,
+            custom_id="rule_manage_adjust_time",
+            disabled=is_closed,
+        )
+        btn_adjust_time.callback = self.adjust_time
+        self.add_item(btn_adjust_time)
+
+        # 第三行：仅在已结束时出现
+        if is_closed:
+            reopen_btn = discord.ui.Button(
+                label="重新开启投票",
+                style=discord.ButtonStyle.danger,
+                row=2,
+                custom_id="rule_manage_reopen_vote",
+            )
+            reopen_btn.callback = self.reopen_vote_callback
+            self.add_item(reopen_btn)
+
+    async def reopen_vote_callback(self, interaction: discord.Interaction):
+        """重新开启投票按钮的回调"""
+        modal = ReopenVoteModal(
+            bot=self.bot,
+            thread_id=self.thread_id,
+            message_id=self.message_id,
+        )
+        await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
 
     async def on_timeout(self) -> None:
         """
@@ -67,23 +139,19 @@ class RuleManagementView(discord.ui.View):
         )
         view.message = message
 
-    @discord.ui.button(label="匿名投票", style=discord.ButtonStyle.primary, row=0)
-    async def toggle_anonymous(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def toggle_anonymous(self, interaction: discord.Interaction):
         await self._create_and_send_confirmation(interaction, "匿名投票", "vote_anonymous_toggled")
 
-    @discord.ui.button(label="实时票数", style=discord.ButtonStyle.primary, row=0)
-    async def toggle_realtime(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def toggle_realtime(self, interaction: discord.Interaction):
         await self._create_and_send_confirmation(interaction, "实时票数", "vote_realtime_toggled")
 
-    @discord.ui.button(label="结束投票时通知提案组", style=discord.ButtonStyle.primary, row=0)
-    async def toggle_notify(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def toggle_notify(self, interaction: discord.Interaction):
         await self._create_and_send_confirmation(
             interaction,
             "结束投票时通知提案组",
             "vote_notify_toggled",
         )
 
-    @discord.ui.button(label="调整时间", style=discord.ButtonStyle.primary, row=1)
-    async def adjust_time(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def adjust_time(self, interaction: discord.Interaction):
         modal = AdjustTimeModal(self.bot, self.thread_id, self.message_id)
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)

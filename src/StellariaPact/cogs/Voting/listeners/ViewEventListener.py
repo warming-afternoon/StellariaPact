@@ -231,7 +231,7 @@ class ViewEventListener(commands.Cog):
         vote_details = await self.logic.get_vote_details(message_id)
         jump_url = f"https://discord.com/channels/{vote_details.guild_id}/{thread_id}/{message_id}"
 
-        view = RuleManagementView(self.bot, thread_id, message_id)
+        view = RuleManagementView(self.bot, vote_details)
         embed = discord.Embed(title=f"对 {jump_url} 的规则管理", color=discord.Color.blue())
         embed.add_field(
             name="匿名投票",
