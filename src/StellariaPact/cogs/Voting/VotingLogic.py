@@ -433,5 +433,37 @@ class VotingLogic:
             if vote_session_model.id:
                 vote_options = await uow.vote_option.get_vote_options(vote_session_model.id)
 
-            return VoteSessionService.get_vote_details_dto(vote_session_model, vote_options)
+            return uow.vote_session.get_vote_details_dto(vote_session_model, vote_options)
+
+    async def delete_vote_option(self, message_id: int, option_id: int) -> VoteDetailDto:
+        """
+        逻辑删除一个投票选项，并更新投票详情的选项总数。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 获取所属的会话
+            vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
+            if not vote_session or not vote_session.id:
+                raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
+
+            # 获取当前所有选项（包括即将被删除的）
+            all_options = await uow.vote_option.get_vote_options(vote_session.id)
+            
+            # 逻辑删除指定选项
+            await uow.vote_option.delete_option(option_id)
+
+            # 过滤掉被删除的选项（data_status == 0）
+            remaining_options = [opt for opt in all_options if opt.data_status == 1]
+            remaining_options = [opt for opt in remaining_options if opt.id != option_id]
+            
+            # 更新会话的选项总数
+            await uow.vote_session.update_vote_session_total_choices(
+                vote_session.id, len(remaining_options)
+            )
+            
+            # 构建 DTO 
+            vote_details_dto = uow.vote_session.get_vote_details_dto(vote_session, remaining_options)
+            await uow.commit()
+
+            # 返回最新的 DTO
+            return vote_details_dto
 

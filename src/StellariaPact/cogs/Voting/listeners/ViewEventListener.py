@@ -701,3 +701,47 @@ class ViewEventListener(commands.Cog):
         except Exception as e:
             logger.error(f"提交分页管理投票时出错: {e}", exc_info=True)
             await interaction.followup.send("提交投票时发生错误。", ephemeral=True)
+
+    @commands.Cog.listener()
+    async def on_vote_option_deleted_submitted(
+        self,
+        *,
+        interaction: discord.Interaction,
+        message_id: int,
+        thread_id: int,
+        option_id: int,
+        option_type: int,
+        choice_index: int,
+        option_text: str,
+        reason: str,
+        view: PaginatedManageView
+    ):
+        """处理选项创建人提出的选项删除请求。"""
+        try:
+            # 在数据库中软删除并获取更新后的 DTO
+            vote_details = await self.logic.delete_vote_option(message_id, option_id)
+
+            # 派发事件更新所有公共 UI (讨论贴及镜像通道)
+            self.bot.dispatch("vote_details_updated", vote_details)
+
+            # 刷新用户的私有管理面板
+            await self._refresh_paginated_manage_panel(interaction, vote_details, view)
+
+            # 向原帖发送一条公开的通知
+            thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
+            if thread:
+                notification_embed = VoteEmbedBuilder.create_delete_option_notification_embed(
+                    operator=interaction.user,
+                    option_type=option_type,
+                    choice_index=choice_index,
+                    option_text=option_text,
+                    reason=reason
+                )
+                await self.bot.api_scheduler.submit(
+                    thread.send(embed=notification_embed),
+                    priority=3,
+                )
+
+        except Exception as e:
+            logger.error(f"删除投票选项时出错: {e}", exc_info=True)
+            await interaction.followup.send("删除选项时发生内部错误。", ephemeral=True)

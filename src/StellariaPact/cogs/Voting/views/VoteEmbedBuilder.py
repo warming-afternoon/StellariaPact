@@ -341,6 +341,26 @@ class VoteEmbedBuilder:
         return embed
 
     @staticmethod
+    def create_delete_option_notification_embed(
+        operator: discord.User | discord.Member,
+        option_type: int,
+        choice_index: int,
+        option_text: str,
+        reason: str
+    ) -> discord.Embed:
+        """创建一个通知贴内选项被原作者删除的 Embed。"""
+        option_type_name = "普通投票选项" if option_type == 0 else "异议"
+        
+        embed = discord.Embed(
+            title=f"🗑️ {option_type_name} 已删除",
+            description=f"{operator.mention} 撤销了其创建的{option_type_name}。\n\n"
+                        f"> **选项 {choice_index}:** {option_text}\n\n"
+                        f"**删除理由:** {reason}",
+            color=discord.Color.red(),
+        )
+        return embed
+
+    @staticmethod
     def build_objection_voting_channel_embed(
         objection: ObjectionDetailsDto, vote_details: VoteDetailDto, thread_jump_url: str
     ) -> discord.Embed:
@@ -419,7 +439,7 @@ class VoteEmbedBuilder:
                 if vote_details.realtime_flag:
                     value = f"✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}"
                 else:
-                    value = "隐藏"
+                    value = ""
                 normal_embed.add_field(
                     name=f"选项 {opt.choice_index}: \n{opt.choice_text}\n",
                     value=value,
@@ -569,7 +589,7 @@ class VoteEmbedBuilder:
                 if vote_details.realtime_flag:
                     val = f"✅ 赞成异议: {opt.approve_votes} | ❌ 反对异议: {opt.reject_votes}"
                 else:
-                    val = "隐藏"
+                    val = ""
                 objection_embed.add_field(
                     name=f"异议 {opt.choice_index}: {opt.choice_text}",
                     value=val,

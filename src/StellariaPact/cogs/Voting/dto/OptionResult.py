@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, Field
 
 
@@ -6,6 +7,8 @@ class OptionResult(BaseModel):
     单个投票选项的结果
     """
 
+    option_id: Optional[int] = Field(default=None, description="选项的数据库主键ID")
+    creator_id: Optional[int] = Field(default=None, description="选项的创建人ID")
     choice_index: int = Field(..., description="选项的索引")
     choice_text: str = Field(..., description="选项的显示文本")
     approve_votes: int = Field(..., description="赞成票数")

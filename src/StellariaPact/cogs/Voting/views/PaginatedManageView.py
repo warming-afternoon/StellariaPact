@@ -5,6 +5,7 @@ from functools import partial
 import discord
 
 from StellariaPact.cogs.Voting.dto import OptionResult
+from StellariaPact.cogs.Voting.views import DeleteOptionModal
 from StellariaPact.share import StellariaPactBot, safeDefer
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,16 @@ class PaginatedManageView(discord.ui.View):
             self.add_item(btn_app)
             self.add_item(btn_rej)
             self.add_item(btn_abs)
+            
+            # 如果是该选项的创建人，则增加删除按钮
+            if opt.creator_id == self.interaction.user.id and opt.option_id is not None:
+                btn_del = discord.ui.Button(
+                    label=f"删除{prefix}",
+                    style=discord.ButtonStyle.danger,
+                    row=i
+                )
+                btn_del.callback = partial(self._delete_option, opt=opt)
+                self.add_item(btn_del)
 
         # 在选项数 > 4 时生成底部分页按钮 (行 4)
         if len(self.options) > self.items_per_page:
@@ -171,3 +182,22 @@ class PaginatedManageView(discord.ui.View):
             choice,
             self,
         )
+
+    async def _delete_option(self, interaction: discord.Interaction, opt: OptionResult):
+        """弹出删除确认理由模态框"""
+        
+        if opt.option_id is None:
+            await interaction.response.send_message("发生错误：无法获取选项 ID。", ephemeral=True)
+            return
+
+        modal = DeleteOptionModal(
+            bot=self.bot,
+            message_id=self.msg_id,
+            thread_id=self.thread_id,
+            option_id=opt.option_id,
+            option_type=self.option_type,
+            choice_index=opt.choice_index,
+            option_text=opt.choice_text,
+            manage_view=self
+        )
+        await interaction.response.send_modal(modal)

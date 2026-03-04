@@ -314,6 +314,8 @@ class VoteSessionService:
                 )
 
                 option_result = OptionResult(
+                    option_id=option_model.id,
+                    creator_id=option_model.creator_id,
                     choice_index=option_model.choice_index,  # type: ignore
                     choice_text=option_model.choice_text,  # type: ignore
                     approve_votes=approve,
