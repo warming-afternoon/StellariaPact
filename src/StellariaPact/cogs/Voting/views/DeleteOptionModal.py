@@ -1,4 +1,5 @@
 import discord
+
 from StellariaPact.share import StellariaPactBot, safeDefer
 
 
@@ -38,7 +39,7 @@ class DeleteOptionModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         await safeDefer(interaction, ephemeral=True)
         reason_text = str(self.reason.value).strip()
-        
+
         self.bot.dispatch(
             "vote_option_deleted_submitted",
             interaction=interaction,

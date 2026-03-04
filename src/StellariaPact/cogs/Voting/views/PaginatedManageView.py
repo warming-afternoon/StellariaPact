@@ -83,7 +83,7 @@ class PaginatedManageView(discord.ui.View):
             self.add_item(btn_app)
             self.add_item(btn_rej)
             self.add_item(btn_abs)
-            
+
             # 如果是该选项的创建人，则增加删除按钮
             if opt.creator_id == self.interaction.user.id and opt.option_id is not None:
                 btn_del = discord.ui.Button(
@@ -185,7 +185,7 @@ class PaginatedManageView(discord.ui.View):
 
     async def _delete_option(self, interaction: discord.Interaction, opt: OptionResult):
         """弹出删除确认理由模态框"""
-        
+
         if opt.option_id is None:
             await interaction.response.send_message("发生错误：无法获取选项 ID。", ephemeral=True)
             return

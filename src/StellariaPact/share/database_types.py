@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import timezone
 from typing import Any
 
 from sqlalchemy import TEXT, DateTime, TypeDecorator

@@ -444,20 +444,20 @@ class VotingLogic:
 
             # 获取当前所有选项（包括即将被删除的）
             all_options = await uow.vote_option.get_vote_options(vote_session.id)
-            
+
             # 逻辑删除指定选项
             await uow.vote_option.delete_option(option_id)
 
             # 过滤掉被删除的选项（data_status == 0）
             remaining_options = [opt for opt in all_options if opt.data_status == 1]
             remaining_options = [opt for opt in remaining_options if opt.id != option_id]
-            
+
             # 更新会话的选项总数
             await uow.vote_session.update_vote_session_total_choices(
                 vote_session.id, len(remaining_options)
             )
-            
-            # 构建 DTO 
+
+            # 构建 DTO
             vote_details_dto = uow.vote_session.get_vote_details_dto(vote_session, remaining_options)
             await uow.commit()
 

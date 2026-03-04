@@ -5,23 +5,19 @@ from typing import Optional
 import discord
 from sqlalchemy.exc import IntegrityError
 
-from StellariaPact.cogs.Moderation.dto import ExecuteProposalResultDto, SubsequentObjectionDto
+from StellariaPact.cogs.Moderation.dto import ExecuteProposalResultDto
 from StellariaPact.cogs.Moderation.qo import (
     CreateConfirmationSessionQo,
-    CreateObjectionAndVoteSessionShellQo,
-    CreateObjectionQo,
 )
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.dto import (
     ConfirmationSessionDto,
-    ObjectionDetailsDto,
-    ObjectionVotePanelDto,
     ProposalDto,
 )
 from StellariaPact.models import Announcement
 from StellariaPact.services.VoteSessionService import VoteSessionService
 from StellariaPact.share import DiscordUtils, StellariaPactBot, StringUtils, UnitOfWork
-from StellariaPact.share.enums import ObjectionStatus, ProposalStatus, VoteDuration
+from StellariaPact.share.enums import ProposalStatus, VoteDuration
 
 logger = logging.getLogger(__name__)
 

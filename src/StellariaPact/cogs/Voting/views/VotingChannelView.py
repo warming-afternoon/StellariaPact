@@ -15,7 +15,7 @@ class VotingChannelView(discord.ui.View):
 
     def _build_ui(self, vote_details: VoteDetailDto | None):
         self.clear_items()
-        
+
         is_active = vote_details.status == 1 if vote_details else True
 
         # --- 第一行 ---

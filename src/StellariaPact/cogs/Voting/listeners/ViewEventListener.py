@@ -575,7 +575,7 @@ class ViewEventListener(commands.Cog):
                     status = proposal.status if proposal else None
                 if status and status == ProposalStatus.EXECUTING:
                     await interaction.followup.send(
-                        "❌ 操作失败：该提案已进入**执行阶段**，根据议事规则，此时无法再发起新的异议。", 
+                        "❌ 操作失败：该提案已进入**执行阶段**，根据议事规则，此时无法再发起新的异议。",
                         ephemeral=True
                     )
                     return

@@ -377,7 +377,7 @@ class VoteEmbedBuilder:
     ) -> discord.Embed:
         """创建一个通知贴内选项被原作者删除的 Embed。"""
         option_type_name = "普通投票选项" if option_type == 0 else "异议"
-        
+
         embed = discord.Embed(
             title=f"🗑️ {option_type_name} 已删除",
             description=f"{operator.mention} 撤销了其创建的{option_type_name}。\n\n"

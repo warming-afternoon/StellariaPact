@@ -368,7 +368,7 @@ class Voting(commands.Cog):
                 topic=clean_topic,
                 vote_details=vote_details,
             )
-            
+
             view = VoteView(self.bot, vote_details=vote_details)
 
             if new_embeds:
