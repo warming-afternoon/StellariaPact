@@ -691,6 +691,15 @@ class ViewEventListener(commands.Cog):
             # 在数据库中软删除并获取更新后的 DTO
             vote_details = await self.logic.delete_vote_option(message_id, option_id)
 
+            # 若删除的是异议选项，且当前已无任何异议选项，则派发事件恢复提案到 "讨论中"
+            if option_type == 1 and not vote_details.objection_options:
+                self.bot.dispatch(
+                    "proposal_objection_cleared",
+                    thread_id=thread_id,
+                    trigger_user_id=interaction.user.id,
+                    source="voting_option_deleted"
+                )
+
             # 派发事件更新所有公共 UI (讨论贴及镜像通道)
             self.bot.dispatch("vote_details_updated", vote_details)
 

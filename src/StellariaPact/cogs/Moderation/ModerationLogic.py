@@ -6,14 +6,9 @@ import discord
 from sqlalchemy.exc import IntegrityError
 
 from StellariaPact.cogs.Moderation.dto import ExecuteProposalResultDto
-from StellariaPact.cogs.Moderation.qo import (
-    CreateConfirmationSessionQo,
-)
+from StellariaPact.cogs.Moderation.qo import CreateConfirmationSessionQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
-from StellariaPact.dto import (
-    ConfirmationSessionDto,
-    ProposalDto,
-)
+from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 from StellariaPact.models import Announcement
 from StellariaPact.services.VoteSessionService import VoteSessionService
 from StellariaPact.share import DiscordUtils, StellariaPactBot, StringUtils, UnitOfWork
@@ -402,6 +397,36 @@ class ModerationLogic:
             return
 
         logger.info(f"提案帖子 {thread_id} 已更新为异议中。")
+
+    async def clear_proposal_objection_status(self, thread_id: int) -> None:
+        """
+        （当异议被清空时）将提案标记为"讨论中"，并更新帖子外观
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.proposal.get_proposal_by_thread_id(thread_id)
+            if not proposal:
+                logger.warning(f"未找到与帖子 {thread_id} 关联的提案，跳过状态更新。")
+                return
+
+            if proposal.status != ProposalStatus.UNDER_OBJECTION:
+                logger.debug(f"提案帖子 {thread_id} 当前不是异议中状态，无需恢复讨论中。")
+                return
+
+            proposal.status = ProposalStatus.DISCUSSION
+            uow.session.add(proposal)
+            await uow.commit()
+
+        try:
+            thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
+            if not isinstance(thread, discord.Thread):
+                logger.warning(f"频道 {thread_id} 不是帖子类型，跳过外观同步。")
+                return
+            await self.thread_manager.update_status(thread, "discussion")
+        except Exception as e:
+            logger.error(f"提案帖子 {thread_id} 状态已入库，但更新 Discord UI 失败: {e}", exc_info=True)
+            return
+
+        logger.info(f"提案帖子 {thread_id} 的异议已清空，已恢复为讨论中。")
 
     async def proposal_status_change(
         self, proposal_id: int, new_status: ProposalStatus

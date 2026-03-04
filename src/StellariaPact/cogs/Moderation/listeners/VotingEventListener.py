@@ -41,3 +41,25 @@ class VotingEventListener(commands.Cog):
                 f"thread_id={thread_id}, trigger_user_id={trigger_user_id}, source={source}, error={e}",
                 exc_info=True,
             )
+
+    @commands.Cog.listener()
+    async def on_proposal_objection_cleared(
+        self,
+        *,
+        thread_id: int,
+        trigger_user_id: int | None = None,
+        source: str = "unknown",
+    ):
+        """处理"提案异议清空，恢复为讨论中"请求。"""
+        try:
+            await self.logic.clear_proposal_objection_status(thread_id)
+            logger.info(
+                "已处理'提案异议清空'请求: "
+                f"thread_id={thread_id}, trigger_user_id={trigger_user_id}, source={source}"
+            )
+        except Exception as e:
+            logger.error(
+                "处理'提案异议清空'请求失败: "
+                f"thread_id={thread_id}, trigger_user_id={trigger_user_id}, source={source}, error={e}",
+                exc_info=True,
+            )
