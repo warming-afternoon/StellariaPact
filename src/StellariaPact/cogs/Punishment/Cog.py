@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.share import StellariaPactBot, UnitOfWork
+from StellariaPact.share import StellariaPactBot
 from StellariaPact.share.auth import RoleGuard
 
 from .views.PunishmentModal import PunishmentModal
@@ -25,26 +25,26 @@ class PunishmentCog(commands.Cog):
             callback=self.kick_proposal_message,
             type=discord.AppCommandType.message,
         )
-        # 用户右键菜单：管理处罚 (针对特定用户)
-        self.manage_punishment_ctx = app_commands.ContextMenu(
-            name="管理处罚",
-            callback=self.manage_punishment_user,
-            type=discord.AppCommandType.user,
-        )
+        # # 用户右键菜单：管理处罚 (针对特定用户)
+        # self.manage_punishment_ctx = app_commands.ContextMenu(
+        #     name="管理处罚",
+        #     callback=self.manage_punishment_user,
+        #     type=discord.AppCommandType.user,
+        # )
 
     def cog_load(self) -> None:
         self.bot.tree.add_command(self.kick_proposal_ctx)
-        self.bot.tree.add_command(self.manage_punishment_ctx)
+        # self.bot.tree.add_command(self.manage_punishment_ctx)
 
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command(
             self.kick_proposal_ctx.name,
             type=self.kick_proposal_ctx.type,
         )
-        self.bot.tree.remove_command(
-            self.manage_punishment_ctx.name,
-            type=self.manage_punishment_ctx.type,
-        )
+        # self.bot.tree.remove_command(
+        #     self.manage_punishment_ctx.name,
+        #     type=self.manage_punishment_ctx.type,
+        # )
 
     @RoleGuard.requireRoles("councilModerator")
     async def kick_proposal_message(
@@ -67,39 +67,39 @@ class PunishmentCog(commands.Cog):
             priority=1,
         )
 
-    @RoleGuard.requireRoles("councilModerator")
-    async def manage_punishment_user(
-        self,
-        interaction: discord.Interaction,
-        member: discord.Member,
-    ):
-        """[议事督导] 用户右键：管理该用户在当前帖子的处罚状态"""
-        if not await self._validate_context(interaction, member):
-            return
+    # @RoleGuard.requireRoles("councilModerator")
+    # async def manage_punishment_user(
+    #     self,
+    #     interaction: discord.Interaction,
+    #     member: discord.Member,
+    # ):
+    #     """[议事督导] 用户右键：管理该用户在当前帖子的处罚状态"""
+    #     if not await self._validate_context(interaction, member):
+    #         return
 
-        activity = None
-        thread = interaction.channel
-        if not isinstance(thread, discord.Thread):
-            return
+    #     activity = None
+    #     thread = interaction.channel
+    #     if not isinstance(thread, discord.Thread):
+    #         return
 
-        # 查询该用户在当前帖子是否已有记录
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            activity = await uow.user_activity.get_user_activity(  # type: ignore
-                member.id,
-                thread.id,
-            )
+    #     # 查询该用户在当前帖子是否已有记录
+    #     async with UnitOfWork(self.bot.db_handler) as uow:
+    #         activity = await uow.user_activity.get_user_activity(  # type: ignore
+    #             member.id,
+    #             thread.id,
+    #         )
 
-        # 将已有的记录传入 Modal，实现数据预填
-        modal = PunishmentModal(
-            bot=self.bot,
-            target_user=member,
-            target_message=None,
-            existing_activity=activity,
-        )
-        await self.bot.api_scheduler.submit(
-            coro=interaction.response.send_modal(modal),
-            priority=1,
-        )
+    #     # 将已有的记录传入 Modal，实现数据预填
+    #     modal = PunishmentModal(
+    #         bot=self.bot,
+    #         target_user=member,
+    #         target_message=None,
+    #         existing_activity=activity,
+    #     )
+    #     await self.bot.api_scheduler.submit(
+    #         coro=interaction.response.send_modal(modal),
+    #         priority=1,
+    #     )
 
     async def _validate_context(
         self,

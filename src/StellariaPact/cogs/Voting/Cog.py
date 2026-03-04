@@ -88,14 +88,80 @@ class Voting(commands.Cog):
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 获取关联的提案
             proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
+
+            # 如果没有关联的提案，进行创建
             if not proposal:
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send(
-                        "此帖子没有关联的提案，无法处理投票面板。"
-                    ),
-                    priority=1,
-                )
-                return
+                # 检查当前帖子是否属于配置中的讨论频道
+                discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
+                try:
+                    discussion_channel_id = int(discussion_channel_id_str) if discussion_channel_id_str else None
+                except ValueError:
+                    discussion_channel_id = None
+
+                if not discussion_channel_id or thread.parent_id != discussion_channel_id:
+                    await self.bot.api_scheduler.submit(
+                        interaction.followup.send(
+                            "此帖子没有关联的提案，且不在配置的讨论频道内，无法刷新投票面板。"
+                        ),
+                        priority=1,
+                    )
+                    return
+
+                logger.info(f"帖子 {thread.id} 缺失 Proposal，开始尝试自动补全...")
+
+                # 尝试获取 Intake 记录
+                intake = await uow.intake.get_intake_by_discussion_thread_id(thread.id)
+                if intake:
+                    # 根据 Intake 生成 Proposal 内容
+                    content = (
+                        f"**提案原因:**\n{intake.reason}\n\n"
+                        f"**议案动议:**\n{intake.motion}\n\n"
+                        f"**执行方案:**\n{intake.implementation}\n\n"
+                        f"**执行人:**\n{intake.executor}"
+                    )
+                    proposal = await uow.proposal.create_proposal(
+                        thread_id=thread.id,
+                        proposer_id=intake.author_id,
+                        title=intake.title,
+                        content=content
+                    )
+                    logger.info(f"根据 Intake (ID: {intake.id}) 为帖子 {thread.id} 补全了 Proposal。")
+                else:
+                    # 回退方案：通过获取首楼内容并使用 StringUtils 解析创建 Proposal
+                    starter_content = await StringUtils.extract_starter_content(thread)
+                    if not starter_content:
+                        await self.bot.api_scheduler.submit(
+                            interaction.followup.send("无法获取该帖子的首楼内容，自动生成提案记录失败。"), priority=1
+                        )
+                        return
+
+                    proposer_id = StringUtils.extract_proposer_id_from_content(starter_content)
+                    if not proposer_id:
+                        # 降级：如果首楼未提取到发起人ID，默认将帖子创建者作为发起人
+                        proposer_id = thread.owner_id
+
+                    if proposer_id is None:
+                        await self.bot.api_scheduler.submit(
+                            interaction.followup.send("无法识别帖子的发起人信息，操作终止。"), priority=1
+                        )
+                        return
+
+                    clean_title = StringUtils.clean_title(thread.name)
+                    clean_content = StringUtils.clean_proposal_content(starter_content)
+
+                    proposal = await uow.proposal.create_proposal(
+                        thread_id=thread.id,
+                        proposer_id=proposer_id,
+                        title=clean_title,
+                        content=clean_content
+                    )
+                    logger.info(f"根据首楼解析为帖子 {thread.id} 补全了 Proposal。")
+
+                if not proposal:
+                    await self.bot.api_scheduler.submit(
+                        interaction.followup.send("尝试自动生成提案记录失败，可能是数据产生冲突，请联系技术员。"), priority=1
+                    )
+                    return
 
             # 查询本讨论帖对应 session_type=1 的 VoteSession 列表
             sessions = await uow.vote_session.get_all_sessions_in_thread_with_details(thread.id)
