@@ -164,8 +164,8 @@ class VoteSessionService:
             select(VoteSession)
             .where(VoteSession.end_time != None)  # noqa: E711
             .where(VoteSession.status == 1)  # 1 表示 "进行中"
-            .where(VoteSession.session_type == 1) # 1-"普通投票"
-            .where(VoteSession.end_time <= now_utc.replace(tzinfo=None))  # type: ignore
+            .where(VoteSession.session_type == 1)  # 1-"普通投票"
+            .where(VoteSession.end_time <= now_utc)  # type: ignore
         )
         result = await self.session.exec(statement)
         sessions = result.all()
@@ -203,7 +203,7 @@ class VoteSessionService:
         old_end_time = base_time
         new_end_time = old_end_time + timedelta(hours=qo.hours_to_adjust)
 
-        vote_session.end_time = new_end_time.replace(tzinfo=None)
+        vote_session.end_time = new_end_time
         await self.session.flush()
 
         return AdjustVoteTimeDto(

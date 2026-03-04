@@ -37,11 +37,7 @@ class PunishmentModal(discord.ui.Modal):
         if existing_activity:
             default_voting = "是" if existing_activity.validation == 1 else "否"
             if existing_activity.mute_end_time:
-                # 数据库中的时间可能是 naive UTC，加上时区以便计算
                 mute_end = existing_activity.mute_end_time
-                if mute_end.tzinfo is None:
-                    mute_end = mute_end.replace(tzinfo=timezone.utc)
-
                 now = datetime.now(timezone.utc)
                 if mute_end > now:
                     delta_minutes = int((mute_end - now).total_seconds() / 60)
@@ -76,7 +72,7 @@ class PunishmentModal(discord.ui.Modal):
         await safeDefer(interaction, ephemeral=True)
 
         try:
-            # 1. 解析数据
+            # 解析数据
             allow_voting_str = self.allow_voting_input.value.strip()
             if allow_voting_str == "是":
                 is_voting_allowed = True
@@ -105,14 +101,12 @@ class PunishmentModal(discord.ui.Modal):
             if not isinstance(thread, discord.Thread) or not isinstance(moderator, discord.Member):
                 return
 
-            # 计算截止时间 (存入DB的应当是 UTC naive datetime)
+            # 计算截止时间（UTC aware datetime）
             mute_end_time = None
             if mute_minutes > 0:
-                mute_end_time = (
-                    datetime.now(timezone.utc) + timedelta(minutes=mute_minutes)
-                ).replace(tzinfo=None)
+                mute_end_time = datetime.now(timezone.utc) + timedelta(minutes=mute_minutes)
 
-            # 2. 数据库操作 (覆盖更新)
+            # 数据库操作 (覆盖更新)
             async with UnitOfWork(self.bot.db_handler) as uow:
                 await uow.user_activity.update_user_validation_status(
                     user_id=self.target_user.id,
@@ -122,28 +116,22 @@ class PunishmentModal(discord.ui.Modal):
                 )
                 await uow.commit()
 
-            # 3. 派发事件更新内存缓存
-            # 注意：派发给缓存的最好带上 timezone，方便计算
-            aware_mute_end = (
-                mute_end_time.replace(tzinfo=timezone.utc)
-                if mute_end_time
-                else None
-            )
+            # 派发事件更新内存缓存
             self.bot.dispatch(
                 "thread_mute_updated",
                 thread.id,
                 self.target_user.id,
-                aware_mute_end,
+                mute_end_time,
             )
 
-            # 4. 发送公示
+            # 发送公示
             embed = PunishmentEmbedBuilder.create_punishment_embed(
                 moderator=moderator,
                 target_user=self.target_user,
                 reason=reason,
                 target_message=self.target_message,
                 is_voting_allowed=is_voting_allowed,
-                mute_end_time=aware_mute_end,
+                mute_end_time=mute_end_time,
             )
             await self.bot.api_scheduler.submit(thread.send(embed=embed), priority=5)
             await interaction.followup.send("处罚配置已成功更新并公示。", ephemeral=True)

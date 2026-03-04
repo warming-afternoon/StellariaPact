@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 
 from sqlalchemy import Column, Index, text
 from sqlmodel import Field
 
 from StellariaPact.models.BaseModel import BaseModel
-from StellariaPact.share.database_types import JSON_TYPE
+from StellariaPact.share.database_types import JSON_TYPE, UTCDateTime
 from StellariaPact.share.enums.ConfirmationStatus import ConfirmationStatus
 
 
@@ -49,14 +49,16 @@ class ConfirmationSession(BaseModel, table=True):
     """执行此操作的原因"""
 
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=UTCDateTime,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
         description="创建时间",
     )
     """创建时间"""
 
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=UTCDateTime,
         sa_column_kwargs={
             "server_default": text("CURRENT_TIMESTAMP"),
             "onupdate": text("CURRENT_TIMESTAMP"),

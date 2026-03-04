@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import UniqueConstraint
@@ -6,6 +6,7 @@ from sqlalchemy.ext.declarative import declared_attr
 from sqlmodel import Field, Relationship, text
 
 from StellariaPact.models.BaseModel import BaseModel
+from StellariaPact.share.database_types import UTCDateTime
 
 if TYPE_CHECKING:
     from StellariaPact.models.VoteSession import VoteSession
@@ -36,7 +37,8 @@ class UserVote(BaseModel, table=True):
     """在此类型下的选项索引"""
 
     voted_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=UTCDateTime,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
         description="投票时间",
     )

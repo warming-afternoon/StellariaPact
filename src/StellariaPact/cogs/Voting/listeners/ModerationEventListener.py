@@ -108,14 +108,11 @@ class ModerationEventListener(commands.Cog):
             return None
 
         end_time = TimeUtils.parse_discord_timestamp(starter_message.content)
-        if end_time and end_time < datetime.now(timezone.utc).replace(tzinfo=None):
+        if end_time and end_time < datetime.now(timezone.utc):
             end_time = None
 
         if end_time is None:
-            target_tz = self.bot.config.get("timezone", "UTC")
-            end_time = TimeUtils.get_utc_end_time(
-                duration_hours=duration_hours, target_tz=target_tz
-            )
+            end_time = TimeUtils.get_utc_end_time(duration_hours=duration_hours)
 
         # 初始选项规则：若用户未传入 options，则使用默认项“支持提案”；否则使用用户传入项
         all_option_texts = options if options else ["支持提案"]

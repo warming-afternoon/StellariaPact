@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List, Optional
 
 from sqlmodel import Field, Relationship, text
 
 from StellariaPact.models.BaseModel import BaseModel
 from StellariaPact.models.Objection import Objection
+from StellariaPact.share.database_types import UTCDateTime
 
 if TYPE_CHECKING:
     from StellariaPact.models.UserVote import UserVote
@@ -63,17 +64,23 @@ class VoteSession(BaseModel, table=True):
     """投票状态: 0-已结束, 1-进行中"""
 
     start_time: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=UTCDateTime,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
         description="投票开始时间",
     )
     """投票开始时间"""
 
-    end_time: Optional[datetime] = Field(default=None, description="投票截止时间")
+    end_time: Optional[datetime] = Field(
+        default=None,
+        sa_type=UTCDateTime,
+        description="投票截止时间",
+    )
     """投票截止时间"""
 
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=UTCDateTime,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
         description="创建时间",
     )

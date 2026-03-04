@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import discord
@@ -82,7 +82,7 @@ class IntakeEmbedBuilder:
     def build_review_content(intake: ProposalIntakeDto) -> str:
         """构建审核贴的纯文本内容"""
 
-        submitted_at = datetime.utcnow()
+        submitted_at = datetime.now(timezone.utc)
         submitted_timestamp = int(submitted_at.timestamp())
 
         status_text = IntakeEmbedBuilder._get_review_status_text(intake.status)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import discord
@@ -142,7 +142,7 @@ class IntakeLogic:
                 raise ValueError("草案缺少审核帖子ID，无法继续。")
 
             intake.reviewer_id = reviewer_id
-            intake.reviewed_at = datetime.utcnow()
+            intake.reviewed_at = datetime.now(timezone.utc)
             intake.review_comment = review_comment
             intake.status = IntakeStatus.SUPPORT_COLLECTING
             await uow.intake.update_intake(intake)
@@ -176,7 +176,7 @@ class IntakeLogic:
             intake.voting_message_id = vote_msg.id
             await uow.intake.update_intake(intake)
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             # 确保 review_thread_id 不为 None
             if not intake.review_thread_id:
                 raise ValueError("草案缺少审核帖子ID，无法创建投票会话。")
@@ -234,7 +234,7 @@ class IntakeLogic:
         if not isinstance(discussion_forum, discord.ForumChannel):
             raise TypeError("议案讨论区类型不正确。")
 
-        created_ts = int(datetime.utcnow().timestamp())
+        created_ts = int(datetime.now(timezone.utc).timestamp())
         discussion_content = (
             f"***提案人: <@{intake_dto.author_id}>***\n\n"
             f"> ## 提案原因\n{intake_dto.reason}\n\n"
@@ -581,7 +581,7 @@ class IntakeLogic:
                 raise ValueError("未找到对应的草案。")
 
             intake.reviewer_id = reviewer_id
-            intake.reviewed_at = datetime.utcnow()
+            intake.reviewed_at = datetime.now(timezone.utc)
             intake.review_comment = review_comment
             intake.status = IntakeStatus.REJECTED
             await uow.intake.update_intake(intake)
@@ -633,7 +633,11 @@ class IntakeLogic:
                     description="提案人对草案内容进行了修改，请管理组重新审核。",
                     color=discord.Color.blue(),
                 )
-                embed.add_field(name="修改时间", value=f"<t:{int(datetime.utcnow().timestamp())}:f>", inline=False)
+                embed.add_field(
+                    name="修改时间",
+                    value=f"<t:{int(datetime.now(timezone.utc).timestamp())}:f>",
+                    inline=False,
+                )
                 embed.add_field(name="修改人", value=f"<@{intake_dto.author_id}>", inline=False)
                 await thread.send(embed=embed)
 
@@ -650,7 +654,7 @@ class IntakeLogic:
                 raise ValueError("未找到对应的草案。")
 
             intake.reviewer_id = reviewer_id
-            intake.reviewed_at = datetime.utcnow()
+            intake.reviewed_at = datetime.now(timezone.utc)
             intake.review_comment = review_comment
             intake.status = IntakeStatus.MODIFICATION_REQUIRED
             await uow.intake.update_intake(intake)

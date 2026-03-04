@@ -5,6 +5,7 @@ from sqlalchemy import UniqueConstraint, text
 from sqlmodel import Field
 
 from StellariaPact.models.BaseModel import BaseModel
+from StellariaPact.share.database_types import UTCDateTime
 
 
 class VoteOption(BaseModel, table=True):
@@ -50,6 +51,7 @@ class VoteOption(BaseModel, table=True):
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=UTCDateTime,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
         description="创建时间",
     )

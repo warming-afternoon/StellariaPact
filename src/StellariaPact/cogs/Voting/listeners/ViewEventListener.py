@@ -232,22 +232,7 @@ class ViewEventListener(commands.Cog):
         jump_url = f"https://discord.com/channels/{vote_details.guild_id}/{thread_id}/{message_id}"
 
         view = RuleManagementView(self.bot, vote_details)
-        embed = discord.Embed(title=f"对 {jump_url} 的规则管理", color=discord.Color.blue())
-        embed.add_field(
-            name="匿名投票",
-            value="✅ 是" if vote_details.is_anonymous else "❌ 否",
-            inline=True,
-        )
-        embed.add_field(
-            name="实时票数",
-            value="✅ 是" if vote_details.realtime_flag else "❌ 否",
-            inline=True,
-        )
-        embed.add_field(
-            name="结束通知",
-            value="✅ 是" if vote_details.notify_flag else "❌ 否",
-            inline=True,
-        )
+        embed = VoteEmbedBuilder.create_rule_management_embed(jump_url, vote_details)
         await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
 
     async def _internal_handle_create_option(
@@ -454,24 +439,9 @@ class ViewEventListener(commands.Cog):
                     f"https://discord.com/channels/{updated_vote_details.guild_id}/"
                     f"{thread_id}/{message_id}"
                 )
-                embed = discord.Embed(
-                    title=f"对 {jump_url} 的规则管理",
-                    color=discord.Color.blue(),
-                )
-                embed.add_field(
-                    name="匿名投票",
-                    value="✅ 是" if updated_vote_details.is_anonymous else "❌ 否",
-                    inline=True,
-                )
-                embed.add_field(
-                    name="实时票数",
-                    value="✅ 是" if updated_vote_details.realtime_flag else "❌ 否",
-                    inline=True,
-                )
-                embed.add_field(
-                    name="结束通知",
-                    value="✅ 是" if updated_vote_details.notify_flag else "❌ 否",
-                    inline=True,
+                embed = VoteEmbedBuilder.create_rule_management_embed(
+                    jump_url,
+                    updated_vote_details,
                 )
 
                 await self.bot.api_scheduler.submit(

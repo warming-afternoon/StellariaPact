@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 import discord
 
@@ -70,7 +69,7 @@ class VoteEmbedBuilder:
         向 Embed 添加截止时间字段。
         """
         if end_time:
-            end_time_ts = int(end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
+            end_time_ts = int(end_time.timestamp())
             embed.add_field(
                 name="截止时间",
                 value=f"<t:{end_time_ts}:F> (<t:{end_time_ts}:R>)",
@@ -115,16 +114,12 @@ class VoteEmbedBuilder:
         )
 
         if old_end_time:
-            if old_end_time.tzinfo is None:
-                old_end_time = old_end_time.replace(tzinfo=ZoneInfo("UTC"))
             old_ts = int(old_end_time.timestamp())
             embed.add_field(
                 name="原截止时间", value=f"<t:{old_ts}:F> (<t:{old_ts}:R>)", inline=False
             )
 
         if new_end_time:
-            if new_end_time.tzinfo is None:
-                new_end_time = new_end_time.replace(tzinfo=ZoneInfo("UTC"))
             new_ts = int(new_end_time.timestamp())
             embed.add_field(
                 name="新的截止时间", value=f"<t:{new_ts}:F> (<t:{new_ts}:R>)", inline=False
@@ -321,6 +316,38 @@ class VoteEmbedBuilder:
             embed.add_field(name="投票状态", value="**已结束**", inline=False)
             embed.color = discord.Color.dark_grey()
 
+        return embed
+
+    @staticmethod
+    def create_rule_management_embed(
+        jump_url: str,
+        vote_details: VoteDetailDto,
+    ) -> discord.Embed:
+        """创建规则管理面板的 Embed。"""
+        embed = discord.Embed(title=f"对 {jump_url} 的规则管理", color=discord.Color.blue())
+        embed.add_field(
+            name="匿名投票",
+            value="✅ 是" if vote_details.is_anonymous else "❌ 否",
+            inline=True,
+        )
+        embed.add_field(
+            name="实时票数",
+            value="✅ 是" if vote_details.realtime_flag else "❌ 否",
+            inline=True,
+        )
+        embed.add_field(
+            name="结束通知",
+            value="✅ 是" if vote_details.notify_flag else "❌ 否",
+            inline=True,
+        )
+
+        if vote_details.end_time:
+            end_ts = int(vote_details.end_time.timestamp())
+            end_time_value = f"<t:{end_ts}:F> (<t:{end_ts}:R>)"
+        else:
+            end_time_value = "手动结束"
+
+        embed.add_field(name="投票截止时间", value=end_time_value, inline=False)
         return embed
 
     @staticmethod

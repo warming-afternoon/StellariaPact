@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -63,7 +63,7 @@ class AnnouncementService:
         Returns:
             已到期的公示ORM对象列表。
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         result = await self.session.exec(
             select(Announcement).where(Announcement.end_time <= now, Announcement.status == 1)
         )

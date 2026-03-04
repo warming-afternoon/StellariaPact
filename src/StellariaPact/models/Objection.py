@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, text
 
 from StellariaPact.models.BaseModel import BaseModel
 from StellariaPact.models.Proposal import Proposal
+from StellariaPact.share.database_types import UTCDateTime
 from StellariaPact.share.enums.ObjectionStatus import ObjectionStatus
 
 if TYPE_CHECKING:
@@ -49,7 +50,8 @@ class Objection(BaseModel, table=True):
     """触发投票所需的反对票数"""
 
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=UTCDateTime,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
         description="创建时间",
     )

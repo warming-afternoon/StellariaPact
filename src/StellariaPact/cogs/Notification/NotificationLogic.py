@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 import discord
 
@@ -71,10 +70,8 @@ class NotificationLogic:
             # 构建并发送消息
             logger.debug(f"正在为监控器 {monitor.id} 构建并发送 embed...")
             thread_url = f"https://discord.com/channels/{self.bot.config['guild_id']}/{announcement.discussion_thread_id}"
-            utc_end_time = announcement.end_time.replace(tzinfo=ZoneInfo("UTC"))
-            discord_timestamp = (
-                f"<t:{int(utc_end_time.timestamp())}:F> (<t:{int(utc_end_time.timestamp())}:R>)"
-            )
+            end_ts = int(announcement.end_time.timestamp())
+            discord_timestamp = f"<t:{end_ts}:F> (<t:{end_ts}:R>)"
 
             embed = AnnouncementEmbedBuilder.create_announcement_embed(
                 title=announcement.title,
@@ -82,7 +79,7 @@ class NotificationLogic:
                 thread_url=thread_url,
                 discord_timestamp=discord_timestamp,
                 author=author,
-                start_time_utc=announcement.created_at.replace(tzinfo=ZoneInfo("UTC")),
+                start_time_utc=announcement.created_at,
                 is_repost=True,
             )
 

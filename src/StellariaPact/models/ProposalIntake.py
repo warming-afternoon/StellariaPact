@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlmodel import Field
 
 from StellariaPact.models.BaseModel import BaseModel
+from StellariaPact.share.database_types import UTCDateTime
 from StellariaPact.share.enums import IntakeStatus
 
 
@@ -46,7 +47,11 @@ class ProposalIntake(BaseModel, table=True):
     # 审核相关字段
     reviewer_id: Optional[int] = Field(default=None, description="审核人用户ID")
     """审核人用户ID"""
-    reviewed_at: Optional[datetime] = Field(default=None, description="审核时间")
+    reviewed_at: Optional[datetime] = Field(
+        default=None,
+        sa_type=UTCDateTime,
+        description="审核时间",
+    )
     """审核时间"""
     review_comment: Optional[str] = Field(default=None, description="审核意见")
     """审核意见"""

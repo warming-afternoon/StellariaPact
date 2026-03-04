@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import random
-from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
@@ -178,10 +177,8 @@ class BackgroundTasks(commands.Cog):
                 description=embed_description,
                 color=color,
             )
-            utc_end_time = announcement_dto.end_time.replace(tzinfo=ZoneInfo("UTC"))
-            discord_timestamp = (
-                f"<t:{int(utc_end_time.timestamp())}:F>(<t:{int(utc_end_time.timestamp())}:R>)"
-            )
+            end_ts = int(announcement_dto.end_time.timestamp())
+            discord_timestamp = f"<t:{end_ts}:F>(<t:{end_ts}:R>)"
             embed.add_field(name="公示截止时间", value=discord_timestamp)
 
             # content = f"<@&{self.stewards_role_id}>"

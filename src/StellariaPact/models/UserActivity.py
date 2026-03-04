@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import UniqueConstraint
@@ -6,6 +6,7 @@ from sqlalchemy.ext.declarative import declared_attr
 from sqlmodel import Field, text
 
 from StellariaPact.models.BaseModel import BaseModel
+from StellariaPact.share.database_types import UTCDateTime
 
 
 class UserActivity(BaseModel, table=True):
@@ -27,11 +28,16 @@ class UserActivity(BaseModel, table=True):
     validation: int = Field(default=1, description="用户投票是否有效: 0-无效, 1-有效")
     """用户投票是否有效: 0-无效, 1-有效"""
 
-    mute_end_time: Optional[datetime] = Field(default=None, description="禁言截止的UTC时间")
+    mute_end_time: Optional[datetime] = Field(
+        default=None,
+        sa_type=UTCDateTime,
+        description="禁言截止的UTC时间",
+    )
     """禁言截止的UTC时间"""
 
     last_updated: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=UTCDateTime,
         sa_column_kwargs={
             "server_default": text("CURRENT_TIMESTAMP"),
             "onupdate": text("CURRENT_TIMESTAMP"),

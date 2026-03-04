@@ -42,8 +42,7 @@ class PunishmentListener(commands.Cog):
             for activity in results.all():
                 if not activity.mute_end_time:
                     continue
-                # DB 中是 naive UTC，转换为 aware UTC
-                mute_end = activity.mute_end_time.replace(tzinfo=timezone.utc)
+                mute_end = activity.mute_end_time
                 if mute_end > now:
                     if activity.context_thread_id not in self.active_mutes:
                         self.active_mutes[activity.context_thread_id] = {}

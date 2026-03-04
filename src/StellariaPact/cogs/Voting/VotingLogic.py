@@ -339,10 +339,7 @@ class VotingLogic:
                 raise RuntimeError(f"无法为消息 {message_id} 找到投票会话或其结束时间。")
             old_end_time = current_session.end_time
 
-            target_tz = self.bot.config.get("timezone", "UTC")
-            new_end_time = TimeUtils.get_utc_end_time(
-                duration_hours=hours_to_add, target_tz=target_tz
-            )
+            new_end_time = TimeUtils.get_utc_end_time(duration_hours=hours_to_add)
 
             reopened_session = await uow.vote_session.reopen_vote_session(message_id, new_end_time)
             if not reopened_session:

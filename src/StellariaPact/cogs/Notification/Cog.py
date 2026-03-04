@@ -1,9 +1,8 @@
 import asyncio
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional
-from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
@@ -128,13 +127,11 @@ class Notification(commands.Cog):
         thread = None
         try:
             # --- 计算时间 ---
-            start_time_utc = datetime.now(ZoneInfo("UTC"))
-            timezone = self.bot.config.get("timezone", "UTC")
+            start_time_utc = datetime.now(timezone.utc)
             end_time = self.bot.time_utils.get_utc_end_time(
-                duration_hours, timezone, start_time=start_time_utc
+                duration_hours, start_time=start_time_utc
             )
-            utc_aware_end_time = end_time.replace(tzinfo=ZoneInfo("UTC"))
-            end_time_timestamp = int(utc_aware_end_time.timestamp())
+            end_time_timestamp = int(end_time.timestamp())
             discord_timestamp = f"<t:{end_time_timestamp}:F> (<t:{end_time_timestamp}:R>)"
 
             # --- 步骤 1: 获取或创建讨论帖 ---
@@ -276,7 +273,7 @@ class Notification(commands.Cog):
             if not result:
                 return
 
-            new_ts_timestamp = int(result.new_end_time.replace(tzinfo=ZoneInfo("UTC")).timestamp())
+            new_ts_timestamp = int(result.new_end_time.timestamp())
             new_ts_string = f"<t:{new_ts_timestamp}:F> (<t:{new_ts_timestamp}:R>)"
 
             await self._update_starter_message_timestamp(interaction.channel, new_ts_string)
@@ -351,13 +348,11 @@ class Notification(commands.Cog):
                 )
                 return None
 
-            old_end_time_utc = announcement.end_time.replace(tzinfo=ZoneInfo("UTC"))
-            new_end_time = TimeUtils.get_utc_end_time(
+            old_end_time_utc = announcement.end_time
+            new_end_time_utc = TimeUtils.get_utc_end_time(
                 time_change_hours,
-                self.bot.config.get("timezone", "UTC"),
                 start_time=old_end_time_utc,
             )
-            new_end_time_utc = new_end_time.replace(tzinfo=ZoneInfo("UTC"))
 
             await uow.announcements.update_end_time(announcement.id, new_end_time_utc)
             adjustTimeDto = AdjustTimeDto(

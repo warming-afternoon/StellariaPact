@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from discord.ext import tasks
@@ -41,7 +41,7 @@ class IntakeCloser:
                 .join(VoteSession, VoteSession.intake_id == ProposalIntake.id)
                 .where(ProposalIntake.status == IntakeStatus.SUPPORT_COLLECTING)
                 .where(VoteSession.session_type == VoteSessionType.INTAKE_SUPPORT)
-                .where(VoteSession.end_time <= datetime.utcnow())  # type: ignore
+                .where(VoteSession.end_time <= datetime.now(timezone.utc))  # type: ignore
             )
 
             result = await uow.session.execute(stmt)

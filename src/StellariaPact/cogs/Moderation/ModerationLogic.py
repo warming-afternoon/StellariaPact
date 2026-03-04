@@ -162,14 +162,14 @@ class ModerationLogic:
                 return
 
             session_map = {s.id: s for s in sessions if s.id is not None}
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = datetime.now(timezone.utc)
 
             for option in objection_options:
                 session = session_map.get(option.session_id)
                 if not session:
                     continue
 
-                created_at = option.created_at.replace(tzinfo=None)
+                created_at = option.created_at
                 if now - created_at < timedelta(hours=12):
                     raise ValueError(f"无法操作：异议「{option.choice_text}」发布未满 12 小时。")
 
@@ -219,7 +219,7 @@ class ModerationLogic:
 
                 # 如果要求判断提案生命周期，校验提案创建是否已超过24小时
                 if check_24h:
-                    now = datetime.now(timezone.utc).replace(tzinfo=None)
+                    now = datetime.now(timezone.utc)
                     if now - proposal.created_at < timedelta(hours=24):
                         raise ValueError("提案讨论时间不足 24 小时，暂无法发起此操作。")
 
