@@ -107,3 +107,31 @@ class UserActivityService:
         self.session.add(user_activity)
         await self.session.flush()
         return user_activity
+
+    async def clear_punishment(self, user_id: int, thread_id: int) -> UserActivity | None:
+        """
+        解除用户在特定帖子中的处罚（恢复投票权并清除禁言时间）
+        """
+        user_activity = await self.get_user_activity(user_id, thread_id)
+        if user_activity:
+            user_activity.validation = 1        # 恢复投票权
+            user_activity.mute_end_time = None  # 解除禁言
+            self.session.add(user_activity)
+            await self.session.flush()
+        return user_activity
+
+    async def batch_clear_expired_mutes(self, expired_list: list[tuple[int, int]]):
+        """
+        批量清理过期的禁言记录（供 Task 调用）。
+        """
+        from sqlalchemy import update
+        for user_id, thread_id in expired_list:
+            stmt = (
+                update(UserActivity)
+                .where(
+                    UserActivity.user_id == user_id, # type: ignore
+                    UserActivity.context_thread_id == thread_id, # type: ignore
+                )
+                .values(mute_end_time=None)
+            )
+            await self.session.execute(stmt)
