@@ -47,3 +47,20 @@ class PunishmentEmbedBuilder:
 
         embed.add_field(name="操作人员", value=moderator.mention, inline=True)
         return embed
+
+    @staticmethod
+    def create_unpunish_embed(
+        moderator: discord.Member,
+        target_user: discord.User | discord.Member,
+        reason: str,
+    ) -> discord.Embed:
+        """创建解除处罚的公示 Embed"""
+        embed = discord.Embed(
+            title="议事成员处罚解除公示",
+            description=f"**目标用户**: {target_user.mention}\n**处理方式**: 恢复本帖投票资格，并解除禁言限制。",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(name="解除理由", value=reason, inline=False)
+        embed.add_field(name="操作人员", value=moderator.mention, inline=True)
+        return embed

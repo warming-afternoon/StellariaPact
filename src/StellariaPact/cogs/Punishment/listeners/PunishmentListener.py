@@ -4,10 +4,12 @@ from typing import Dict, Optional
 
 import discord
 from discord.ext import commands, tasks
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.share import StellariaPactBot, UnitOfWork
+
+from ..logic.PunishmentLogic import PunishmentLogic
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,7 @@ class PunishmentListener(commands.Cog):
         self.bot = bot
         # 缓存结构: {thread_id: {user_id: mute_end_time (aware datetime)}}
         self.active_mutes: Dict[int, Dict[int, datetime]] = {}
+        self.logic = PunishmentLogic(bot) # 初始化逻辑层
         self.clear_expired_mutes.start()
 
     def cog_unload(self):
@@ -56,8 +59,6 @@ class PunishmentListener(commands.Cog):
         """清理已过期的禁言记录"""
         now = datetime.now(timezone.utc)
         expired = []
-
-        # 清理内存
         for thread_id, users in list(self.active_mutes.items()):
             for user_id, end_time in list(users.items()):
                 if now >= end_time:
@@ -66,21 +67,18 @@ class PunishmentListener(commands.Cog):
             if not self.active_mutes[thread_id]:
                 del self.active_mutes[thread_id]
 
-        # 清理数据库
         if expired:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                for user_id, thread_id in expired:
-                    stmt = (
-                        update(UserActivity)
-                        .where(
-                            UserActivity.user_id == user_id,
-                            UserActivity.context_thread_id == thread_id,
-                        )
-                        .values(mute_end_time=None)
-                    )
-                    await uow.session.execute(stmt)
+                await uow.user_activity.batch_clear_expired_mutes(expired)
                 await uow.commit()
             logger.info(f"Punishment: 已自动清理 {len(expired)} 条过期的禁言记录。")
+
+    @commands.Cog.listener()
+    async def on_punishment_remove_request(
+        self, interaction, thread, moderator, target_user, reason
+    ):
+        """解除提案处罚"""
+        await self.logic.handle_remove_punishment(interaction, thread, moderator, target_user, reason)
 
     @commands.Cog.listener()
     async def on_thread_mute_updated(

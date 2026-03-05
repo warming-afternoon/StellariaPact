@@ -8,6 +8,7 @@ from StellariaPact.share import StellariaPactBot
 from StellariaPact.share.auth import RoleGuard
 
 from .views.PunishmentModal import PunishmentModal
+from .views.RemovePunishmentModal import RemovePunishmentModal
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +33,15 @@ class PunishmentCog(commands.Cog):
         #     type=discord.AppCommandType.user,
         # )
 
+        self.remove_punishment_ctx = app_commands.ContextMenu(
+            name="解除提案处罚",
+            callback=self.remove_punishment_user,
+            type=discord.AppCommandType.user, # 用户头像右键
+        )
+
     def cog_load(self) -> None:
         self.bot.tree.add_command(self.kick_proposal_ctx)
+        self.bot.tree.add_command(self.remove_punishment_ctx)
         # self.bot.tree.add_command(self.manage_punishment_ctx)
 
     async def cog_unload(self) -> None:
@@ -41,10 +49,26 @@ class PunishmentCog(commands.Cog):
             self.kick_proposal_ctx.name,
             type=self.kick_proposal_ctx.type,
         )
+        self.bot.tree.remove_command(
+            self.remove_punishment_ctx.name,
+            type=self.remove_punishment_ctx.type,
+        )
         # self.bot.tree.remove_command(
         #     self.manage_punishment_ctx.name,
         #     type=self.manage_punishment_ctx.type,
         # )
+
+    @RoleGuard.requireRoles("councilModerator")
+    async def remove_punishment_user(self, interaction: discord.Interaction, member: discord.Member):
+        """[议事督导] 用户右键：解除该用户在当前帖子的处罚"""
+        if not await self._validate_context(interaction, member):
+            return
+
+        modal = RemovePunishmentModal(self.bot, member)
+        await self.bot.api_scheduler.submit(
+            interaction.response.send_modal(modal),
+            priority=1
+        )
 
     @RoleGuard.requireRoles("councilModerator")
     async def kick_proposal_message(
