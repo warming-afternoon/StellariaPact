@@ -15,6 +15,7 @@ from StellariaPact.share.auth.RoleGuard import RoleGuard
 
 from .IntakeCloser import IntakeCloser
 from .IntakeLogic import IntakeLogic
+from .IntakeModal import IntakeModal
 
 if TYPE_CHECKING:
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -37,6 +38,14 @@ class IntakeCog(commands.Cog):
     def cog_unload(self):
         """当 Cog 被卸载时停止定时任务"""
         self.closer.stop()
+
+    @app_commands.command(name="提交草案", description="提交一份新的提案草案")
+    async def submit_intake_draft(self, interaction: Interaction):
+        """
+        使用指令直接弹出提案提交流程的表单。
+        """
+        modal = IntakeModal()
+        await interaction.response.send_modal(modal)
 
     @app_commands.command(name="设置提交入口", description="[管理组]设置提案提交面板")
     @RoleGuard.requireRoles("stewards")

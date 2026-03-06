@@ -1,8 +1,6 @@
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-import discord
 from discord.ext import commands
 
 from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic

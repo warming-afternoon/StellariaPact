@@ -19,11 +19,11 @@ class RemovePunishmentModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         await safeDefer(interaction, ephemeral=True)
-        
+
         # 派发事件，由监听器捕获并处理业务
         self.bot.dispatch(
             "punishment_remove_request",
-            interaction,         
+            interaction,
             interaction.channel,     # thread
             interaction.user,        # moderator
             self.target_user,
