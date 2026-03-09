@@ -60,6 +60,7 @@ class IntakeModal(discord.ui.Modal, title="起草一份新的议案"):
         """
         当用户提交表单时被调用。
         """
+        await safeDefer(interaction, ephemeral=True)
         dto = IntakeSubmissionDto(
             author_id=interaction.user.id,
             guild_id=interaction.guild_id or 0,
@@ -69,11 +70,11 @@ class IntakeModal(discord.ui.Modal, title="起草一份新的议案"):
             implementation=self.implementation_input.value,
             executor=self.executor_input.value,
         )
-
-        await safeDefer(interaction, ephemeral=True)
         interaction.client.dispatch("intake_submitted", interaction, dto)
 
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
-        await interaction.followup.send("提交过程中发生错误，请稍后再试。", ephemeral=True)
         logger.error(f"提案提交过程中发生错误 {interaction.user.id}: {error}")
+        await safeDefer(interaction, ephemeral=True)
+        error_msg = f"提交过程中发生错误，请稍后再试。\n{error}"
+        await interaction.followup.send(error_msg, ephemeral=True)

@@ -12,16 +12,16 @@ class IntakeSubmissionDto(BaseModel):
     guild_id: int = Field(..., description="服务器ID")
     """服务器ID"""
 
-    title: str = Field(..., max_length=100, description="提案标题")
+    title: str = Field(..., description="提案标题")
     """提案标题"""
 
-    reason: str = Field(..., max_length=1000, description="提案原因")
+    reason: str = Field(..., description="提案原因")
     """提案原因"""
 
-    motion: str = Field(..., max_length=500, description="动议内容")
+    motion: str = Field(..., description="动议内容")
     """动议内容"""
 
-    implementation: str = Field(..., max_length=1000, description="实施方案")
+    implementation: str = Field(..., description="实施方案")
     """实施方案"""
 
     executor: str = Field(..., max_length=100, description="执行人")

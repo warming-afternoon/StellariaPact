@@ -7,6 +7,7 @@ import discord
 from discord.ui import Modal, TextInput
 
 from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import IntakeSubmissionDto
+from StellariaPact.share.SafeDefer import safeDefer
 
 if TYPE_CHECKING:
     from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
@@ -48,6 +49,7 @@ class IntakeEditModal(Modal):
         self.add_item(self.executor_input)
 
     async def on_submit(self, interaction: discord.Interaction):
+        await safeDefer(interaction, ephemeral=True)
         # 组装 DTO
         dto = IntakeSubmissionDto(
             author_id=interaction.user.id,
@@ -63,5 +65,7 @@ class IntakeEditModal(Modal):
         self.bot.dispatch("intake_edited", interaction, self.intake_id, dto)
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
-        await interaction.response.send_message("提交修改时发生错误，请稍后再试。", ephemeral=True)
         logger.error(f"提案修改过程中发生错误 {interaction.user.id}: {error}")
+        await safeDefer(interaction, ephemeral=True)
+        error_msg = f"提交修改时发生错误，请稍后再试。\n{error}"
+        await interaction.followup.send(error_msg, ephemeral=True)
