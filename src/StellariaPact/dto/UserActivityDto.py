@@ -1,7 +1,10 @@
 from pydantic import BaseModel
 
+from datetime import datetime
+from typing import Optional
+from StellariaPact.share.BaseDto import BaseDto
 
-class UserActivityDto(BaseModel):
+class UserActivityDto(BaseDto):
     """
     用户活动的数据传输对象。
     """
@@ -18,8 +21,8 @@ class UserActivityDto(BaseModel):
     message_count: int
     """该用户在帖子中的有效发言次数"""
 
-    validation: bool
+    validation: int
     """用户投票是否有效: 0-无效, 1-有效"""
 
-    class Config:
-        from_attributes = True
+    mute_end_time: Optional[datetime] = None
+    """禁言截止时间"""

@@ -35,8 +35,8 @@ class PunishmentCog(commands.Cog):
 
         self.remove_punishment_ctx = app_commands.ContextMenu(
             name="解除提案处罚",
-            callback=self.remove_punishment_user,
-            type=discord.AppCommandType.user, # 用户头像右键
+            callback=self.remove_punishment_message,
+            type=discord.AppCommandType.message, # 消息右键
         )
 
     def cog_load(self) -> None:
@@ -58,25 +58,29 @@ class PunishmentCog(commands.Cog):
         #     type=self.manage_punishment_ctx.type,
         # )
 
-    @RoleGuard.requireRoles("councilModerator")
-    async def remove_punishment_user(self, interaction: discord.Interaction, member: discord.Member):
-        """[议事督导] 用户右键：解除该用户在当前帖子的处罚"""
-        if not await self._validate_context(interaction, member):
+    @RoleGuard.requireRoles("councilModerator", "stewards")
+    async def remove_punishment_message(self, interaction: discord.Interaction, message: discord.Message):
+        """[议事督导/管理组] 解除该消息作者在当前帖子的处罚"""
+        # 目标用户是消息的作者
+        target_member = message.author
+        
+        if not await self._validate_context(interaction, target_member):
             return
 
-        modal = RemovePunishmentModal(self.bot, member)
+        # 弹出 Modal，传入目标作者
+        modal = RemovePunishmentModal(self.bot, target_member)
         await self.bot.api_scheduler.submit(
             interaction.response.send_modal(modal),
             priority=1
         )
 
-    @RoleGuard.requireRoles("councilModerator")
+    @RoleGuard.requireRoles("councilModerator", "stewards")
     async def kick_proposal_message(
         self,
         interaction: discord.Interaction,
         message: discord.Message,
     ):
-        """[议事督导] 消息右键：将发送该消息的用户处罚"""
+        """[议事督导/管理组] 处罚发送该消息的用户"""
         if not await self._validate_context(interaction, message.author):
             return
 

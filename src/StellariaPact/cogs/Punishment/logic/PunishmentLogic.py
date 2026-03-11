@@ -38,7 +38,7 @@ class PunishmentLogic:
                 activity_dto = UserActivityDto.model_validate(activity)
 
             # 检查是否有处罚（validation=0 或 mute_end_time 不为空）
-            has_punishment = (activity_dto.validation == 0) or (activity.mute_end_time is not None)
+            has_punishment = (activity_dto.validation == 0) or (activity_dto.mute_end_time is not None)
             if not has_punishment:
                 # 没有处罚，发送提示信息
                 await interaction.followup.send(
