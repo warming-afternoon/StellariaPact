@@ -3,6 +3,8 @@ from discord import Interaction
 from discord.ui import Button, View
 
 from StellariaPact.cogs.Intake.IntakeModal import IntakeModal
+from StellariaPact.share.auth.MissingRole import MissingRole
+from StellariaPact.share.auth.RoleGuard import RoleGuard
 
 
 class IntakeSubmissionView(View):
@@ -20,5 +22,7 @@ class IntakeSubmissionView(View):
     )
     async def submit_button(self, interaction: Interaction, button: Button):
         """当用户点击“填写表单”按钮时，弹出模态框。"""
+        if not RoleGuard.hasRoles(interaction, "communityBuilder"):
+            raise MissingRole("抱歉，你没有提交草案的权限。\n需要'社区建设者'身份")
         modal = IntakeModal()
         await interaction.response.send_modal(modal)
