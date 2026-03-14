@@ -40,6 +40,7 @@ class IntakeCog(commands.Cog):
         self.closer.stop()
 
     @app_commands.command(name="提交草案", description="提交一份新的提案草案")
+    @RoleGuard.requireRoles("communityBuilder")
     async def submit_intake_draft(self, interaction: Interaction):
         """
         使用指令直接弹出提案提交流程的表单。

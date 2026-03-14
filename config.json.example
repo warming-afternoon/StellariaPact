@@ -46,7 +46,8 @@
     "councilModerator": null,
     "executionAuditor": null,
     "stewards": null,
-    "voteCreationNotifier": null
+    "voteCreationNotifier": null,
+    "communityBuilder": null
   },
   "proxy": null,
   "timezone": "Asia/Shanghai"
