@@ -27,12 +27,11 @@ class ThreadManageCog(commands.Cog):
     def __init__(self, bot: "StellariaPactBot"):
         self.bot = bot
 
-    @app_commands.command(name="修改提案内容", description="[管理组]修改当前提案帖子内容")
-    @RoleGuard.requireRoles("stewards")
+    @app_commands.command(name="修改提案内容", description="[管理组/提案组]修改当前提案帖子内容")
+    @RoleGuard.requireRoles("stewards", "councilModerator", "executionAuditor")
     async def edit_proposal_content(self, interaction: Interaction):
         """
         修改当前提案帖子的内容。
-        仅允许 stewards 身份组使用，且只能修改由当前 BOT 创建的帖子。
         """
         # 检查当前频道是否为论坛频道帖子
         if not isinstance(interaction.channel, discord.Thread):
