@@ -1,9 +1,9 @@
 from .ModerationEventListener import ModerationEventListener
-from .ViewEventListener import ViewEventListener
-from .VotingMessageListener import VotingMessageListener
+from .VotingEventListener import VotingEventListener
+from .DiscussionMessageListener import DiscussionMessageListener
 
 __all__ = [
     "ModerationEventListener",
-    "ViewEventListener",
-    "VotingMessageListener",
+    "VotingEventListener",
+    "DiscussionMessageListener",
 ]

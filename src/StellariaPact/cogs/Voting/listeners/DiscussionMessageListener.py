@@ -13,7 +13,7 @@ from StellariaPact.share import StellariaPactBot
 logger = logging.getLogger(__name__)
 
 
-class VotingMessageListener(commands.Cog):
+class DiscussionMessageListener(commands.Cog):
     """
     监听讨论频道帖子中的发言数变更，以判断用户是否有投票资格
     """

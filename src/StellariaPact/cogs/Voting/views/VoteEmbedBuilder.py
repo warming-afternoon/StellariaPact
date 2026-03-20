@@ -19,51 +19,6 @@ class VoteEmbedBuilder:
     """
 
     @staticmethod
-    def _add_vote_options_fields(
-        embed: discord.Embed,
-        vote_details: VoteDetailDto,
-        approve_text: str = "赞成",
-        reject_text: str = "反对",
-    ):
-        """
-        向 Embed 添加投票选项和结果字段。
-        """
-        if vote_details.options:
-            for i, option in enumerate(vote_details.options, 1):
-                # 显示选项标题和文本
-                embed.add_field(
-                    name=f"**选项 {i} : {option.choice_text}**",
-                    value="",
-                    inline=False,
-                )
-                if vote_details.realtime_flag:
-                    # 显示票数统计
-                    embed.add_field(
-                        name=approve_text,
-                        value=str(option.approve_votes),
-                        inline=True,
-                    )
-                    embed.add_field(
-                        name=reject_text,
-                        value=str(option.reject_votes),
-                        inline=True,
-                    )
-                    embed.add_field(
-                        name="\u200b",
-                        value="\u200b",
-                        inline=True,
-                    )
-        elif vote_details.realtime_flag:
-            # 如果没有 options 但启用了实时票数，显示总票数统计
-            embed.add_field(
-                name=approve_text, value=str(vote_details.total_approve_votes), inline=True
-            )
-            embed.add_field(
-                name=reject_text, value=str(vote_details.total_reject_votes), inline=True
-            )
-            embed.add_field(name="\u200b", value="\u200b", inline=True)
-
-    @staticmethod
     def _add_end_time_field(embed: discord.Embed, end_time: Optional[datetime]):
         """
         向 Embed 添加截止时间字段。
@@ -384,39 +339,6 @@ class VoteEmbedBuilder:
                         f"> **选项 {choice_index}:** {option_text}\n\n"
                         f"**删除理由:** {reason}",
             color=discord.Color.red(),
-        )
-        return embed
-
-    @staticmethod
-    def build_objection_voting_channel_embed(
-        objection: ObjectionDetailsDto, vote_details: VoteDetailDto, thread_jump_url: str
-    ) -> discord.Embed:
-        """
-        为投票频道构建异议裁决的镜像投票面板Embed
-        """
-        # 描述可以突出显示异议理由
-        objection_reason_preview = (
-            (objection.objection_reason[:600] + "\n\n...\n\n")
-            if len(objection.objection_reason) > 600
-            else objection.objection_reason
-        )
-
-        embed = discord.Embed(
-            title=f"异议裁决投票: {objection.proposal_title}",
-            url=thread_jump_url,
-            description=f"**异议原因**:\n{objection_reason_preview}",
-            color=discord.Color.orange(),  # 使用橙色以区分普通投票
-        )
-
-        VoteEmbedBuilder._add_end_time_field(embed, vote_details.end_time)
-
-        VoteEmbedBuilder._add_vote_options_fields(
-            embed, vote_details, approve_text="同意异议", reject_text="反对异议"
-        )
-
-        embed.set_footer(
-            text=f"投票资格 : 在异议讨论帖内有效发言数 ≥ {EligibilityService.REQUIRED_MESSAGES}\n"
-            f"有效发言 : 去除表情后, 长度 ≥ 5"
         )
         return embed
 

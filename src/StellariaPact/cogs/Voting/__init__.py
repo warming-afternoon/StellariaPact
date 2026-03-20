@@ -6,8 +6,8 @@ from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from .Cog import Voting
 from .EligibilityService import EligibilityService
 from .listeners.ModerationEventListener import ModerationEventListener
-from .listeners.ViewEventListener import ViewEventListener
-from .listeners.VotingMessageListener import VotingMessageListener
+from .listeners.VotingEventListener import VotingEventListener
+from .listeners.DiscussionMessageListener import DiscussionMessageListener
 from .tasks.VoteCloser import VoteCloser
 from .views.VoteView import VoteView
 from .views.VotingChannelView import VotingChannelView
@@ -18,8 +18,8 @@ __all__ = [
     "EligibilityService",
     "VotingLogic",
     "ModerationEventListener",
-    "ViewEventListener",
-    "VotingMessageListener",
+    "VotingEventListener",
+    "DiscussionMessageListener",
     "VoteCloser",
     "VoteView",
     "VotingChannelView",
@@ -43,8 +43,8 @@ async def setup(bot: StellariaPactBot):
         voting_cog,
         VoteCloser(bot),
         ModerationEventListener(bot),
-        VotingMessageListener(bot, voting_cog),
-        ViewEventListener(bot),
+        DiscussionMessageListener(bot, voting_cog),
+        VotingEventListener(bot),
     ]
 
     await asyncio.gather(*[bot.add_cog(cog) for cog in cogs_to_load])
