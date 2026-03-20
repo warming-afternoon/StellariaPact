@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 class PaginatedManageView(discord.ui.View):
     """
     支持翻页的投票管理视图
-    最多显示4个选项，每个选项有赞成、反对、弃票三个按钮
-    底部有分页导航按钮
+    默认样式：每行1个选项（赞成/反对/弃票），最多4行
+    简洁样式：每行2个选项（仅支持/撤回），最多4行（共8个选项）
     """
 
     message: discord.Message | discord.WebhookMessage | None = None
@@ -29,6 +29,8 @@ class PaginatedManageView(discord.ui.View):
         options: list[OptionResult],
         option_type: int,
         page: int = 0,
+        ui_style: int = 1,
+        user_votes: dict | None = None
     ):
         super().__init__(timeout=900)  # 15分钟超时
         self.bot = bot
@@ -38,63 +40,97 @@ class PaginatedManageView(discord.ui.View):
         self.options = options
         self.option_type = option_type  # 0-普通, 1-异议
         self.page = page
+        self.ui_style = ui_style
+        self.user_votes = user_votes or {}
 
-        self.items_per_page = 4
+        # 简洁样式(仅普通投票)使用每页8项（每行2个，共4行）
+        # 默认样式使用每页4项（每行1个，共4行）
+        if self.ui_style == 2 and self.option_type == 0:
+            self.items_per_page = 8
+        else:
+            self.items_per_page = 4
+
         self.total_pages = max(1, math.ceil(len(options) / self.items_per_page))
-
         self._build_ui()
 
     def _build_ui(self):
         """动态构建UI按钮"""
         self.clear_items()
 
-        # 切片获取当前页的选项 (最多4个)
         start_idx = self.page * self.items_per_page
         current_options = self.options[start_idx : start_idx + self.items_per_page]
-
         prefix = "选项" if self.option_type == 0 else "异议"
 
-        # 生成操作按钮 (行 0 到 3)
-        for i, opt in enumerate(current_options):
-            # 赞成按钮
-            btn_app = discord.ui.Button(
-                label=f"赞成{prefix} {opt.choice_index}",
-                style=discord.ButtonStyle.success,
-                row=i
-            )
-            btn_app.callback = partial(self._cast_vote, choice=1, choice_index=opt.choice_index)
+        if self.ui_style == 2 and self.option_type == 0:
+            # 简洁样式 (一行两个选项，最多4行)
+            for idx, opt in enumerate(current_options):
+                row = idx // 2  # 0,1,2,3 对应四行
+                is_supported = self.user_votes.get((self.option_type, opt.choice_index)) == 1
 
-            # 反对按钮
-            btn_rej = discord.ui.Button(
-                label=f"反对{prefix} {opt.choice_index}",
-                style=discord.ButtonStyle.danger,
-                row=i
-            )
-            btn_rej.callback = partial(self._cast_vote, choice=0, choice_index=opt.choice_index)
+                if is_supported:
+                    btn = discord.ui.Button(
+                        label=f"撤回支持选项 {opt.choice_index}",
+                        style=discord.ButtonStyle.secondary,
+                        row=row
+                    )
+                    btn.callback = partial(self._cast_vote, choice=None, choice_index=opt.choice_index)
+                else:
+                    btn = discord.ui.Button(
+                        label=f"支持选项 {opt.choice_index}",
+                        style=discord.ButtonStyle.success,
+                        row=row
+                    )
+                    btn.callback = partial(self._cast_vote, choice=1, choice_index=opt.choice_index)
+                self.add_item(btn)
 
-            # 弃票按钮 (删除投票记录)
-            btn_abs = discord.ui.Button(
-                label=f"{prefix} {opt.choice_index} 弃票",
-                style=discord.ButtonStyle.secondary,
-                row=i
-            )
-            btn_abs.callback = partial(self._cast_vote, choice=None, choice_index=opt.choice_index)
+                # 如果是创建人，添加删除按钮
+                if opt.creator_id == self.interaction.user.id and opt.option_id is not None:
+                    del_btn = discord.ui.Button(
+                        label=f"删除选项 {opt.choice_index}",
+                        style=discord.ButtonStyle.danger,
+                        row=row
+                    )
+                    del_btn.callback = partial(self._delete_option, opt=opt)
+                    self.add_item(del_btn)
+        else:
+            # 默认样式 (每行一个选项的赞成/反对/弃票)
+            for i, opt in enumerate(current_options):
+                btn_app = discord.ui.Button(
+                    label=f"赞成{prefix} {opt.choice_index}",
+                    style=discord.ButtonStyle.success,
+                    row=i
+                )
+                btn_app.callback = partial(self._cast_vote, choice=1, choice_index=opt.choice_index)
 
-            self.add_item(btn_app)
-            self.add_item(btn_rej)
-            self.add_item(btn_abs)
-
-            # 如果是该选项的创建人，则增加删除按钮
-            if opt.creator_id == self.interaction.user.id and opt.option_id is not None:
-                btn_del = discord.ui.Button(
-                    label=f"删除{prefix}",
+                btn_rej = discord.ui.Button(
+                    label=f"反对{prefix} {opt.choice_index}",
                     style=discord.ButtonStyle.danger,
                     row=i
                 )
-                btn_del.callback = partial(self._delete_option, opt=opt)
-                self.add_item(btn_del)
+                btn_rej.callback = partial(self._cast_vote, choice=0, choice_index=opt.choice_index)
 
-        # 在选项数 > 4 时生成底部分页按钮 (行 4)
+                btn_abs = discord.ui.Button(
+                    label=f"{prefix} {opt.choice_index} 弃票",
+                    style=discord.ButtonStyle.secondary,
+                    row=i
+                )
+                btn_abs.callback = partial(self._cast_vote, choice=None, choice_index=opt.choice_index)
+
+                self.add_item(btn_app)
+                self.add_item(btn_rej)
+                self.add_item(btn_abs)
+
+                # 如果是创建人，添加删除按钮
+                if opt.creator_id == self.interaction.user.id and opt.option_id is not None:
+                    btn_del = discord.ui.Button(
+                        label=f"删除{prefix}",
+                        style=discord.ButtonStyle.danger,
+                        row=i
+                    )
+                    btn_del.callback = partial(self._delete_option, opt=opt)
+                    self.add_item(btn_del)
+
+        # 翻页按钮（固定在行4）
         if len(self.options) > self.items_per_page:
             btn_first = discord.ui.Button(
                 emoji="⏪",
@@ -142,9 +178,7 @@ class PaginatedManageView(discord.ui.View):
             self.add_item(btn_last)
 
     async def on_timeout(self) -> None:
-        """
-        当视图超时后自动调用此方法。
-        """
+        """当视图超时后自动调用此方法"""
         if self.message:
             try:
                 await self.bot.api_scheduler.submit(
@@ -152,8 +186,7 @@ class PaginatedManageView(discord.ui.View):
                     priority=5,
                 )
             except discord.NotFound:
-                # 如果消息已被用户删除，则忽略
-                pass
+                pass  # 消息已被用户删除
             except Exception as e:
                 logger.error(f"删除超时的分页管理面板时出错: {e}")
 
@@ -171,7 +204,6 @@ class PaginatedManageView(discord.ui.View):
     ):
         """处理投票操作"""
         await safeDefer(interaction)
-        # 派发统一下层逻辑，附带 option_type
         self.bot.dispatch(
             "user_vote_submitted",
             interaction,
@@ -185,7 +217,6 @@ class PaginatedManageView(discord.ui.View):
 
     async def _delete_option(self, interaction: discord.Interaction, opt: OptionResult):
         """弹出删除确认理由模态框"""
-
         if opt.option_id is None:
             await interaction.response.send_message("发生错误：无法获取选项 ID。", ephemeral=True)
             return

@@ -138,6 +138,8 @@ class VoteSessionService:
             end_time=qo.end_time,
             total_choices=qo.total_choices,
             session_type=qo.session_type,
+            max_choices_per_user=qo.max_choices_per_user,
+            ui_style=qo.ui_style,
         )
         self.session.add(new_session)
         await self.session.flush()
@@ -370,6 +372,8 @@ class VoteSessionService:
             normal_options=normal_options,
             objection_options=objection_options,
             voters=voters,
+            max_choices_per_user=getattr(vote_session_model, "max_choices_per_user", 999999),
+            ui_style=getattr(vote_session_model, "ui_style", 1),
         )
 
     async def get_proposal_thread_id_by_objection_id(self, objection_id: int) -> Optional[int]:

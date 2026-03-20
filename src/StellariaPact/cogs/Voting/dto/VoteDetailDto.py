@@ -68,3 +68,9 @@ class VoteDetailDto(BaseModel):
 
     voters: List[VoterInfo] = Field(default_factory=list, description="所有投票者信息 (非匿名时)")
     """投票者明细（仅非匿名投票时有效）。"""
+
+    max_choices_per_user: int = Field(default=999999, description="单个用户的多选项数上限")
+    """单个用户的多选项数上限"""
+
+    ui_style: int = Field(default=1, description="投票样式: 1-当前样式, 2-简洁样式")
+    """投票样式: 1-当前样式, 2-简洁样式"""

@@ -63,3 +63,9 @@ class VoteSessionDto(BaseDto):
 
     created_at: datetime = Field(..., description="创建时间")
     """创建时间"""
+
+    max_choices_per_user: int = Field(..., description="单个用户的多选项数上限")
+    """单个用户的多选项数上限"""
+
+    ui_style: int = Field(..., description="投票样式: 1-当前样式, 2-简洁样式")
+    """投票样式: 1-当前样式, 2-简洁样式"""

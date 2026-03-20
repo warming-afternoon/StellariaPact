@@ -43,3 +43,9 @@ class CreateVoteSessionQo(BaseDto):
 
     session_type: int = 1
     """投票会话类型"""
+
+    max_choices_per_user: int = 999999
+    """单个用户的多选项数上限"""
+
+    ui_style: int = 1
+    """投票样式: 1-当前样式, 2-简洁样式"""

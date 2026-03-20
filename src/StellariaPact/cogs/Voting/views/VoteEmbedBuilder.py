@@ -464,7 +464,11 @@ class VoteEmbedBuilder:
         if normal_options:
             for opt in normal_options:
                 if vote_details.realtime_flag:
-                    value = f"✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}"
+                    # 简洁样式仅显示支持人数
+                    if vote_details.ui_style == 2:
+                        value = f"✅ 支持人数: {opt.approve_votes}"
+                    else:
+                        value = f"✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}"
                 else:
                     value = ""
                 normal_embed.add_field(
@@ -571,7 +575,11 @@ class VoteEmbedBuilder:
             )
             for opt in normal_options:
                 if vote_details.realtime_flag:
-                    val = f"✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}"
+                    # 简洁样式仅显示支持人数
+                    if vote_details.ui_style == 2:
+                        val = f"✅ 支持人数: {opt.approve_votes}"
+                    else:
+                        val = f"✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}"
                 else:
                     val = ""
                 normal_embed.add_field(
@@ -632,6 +640,7 @@ class VoteEmbedBuilder:
         option_type: int,
         options: list[OptionResult],
         realtime_flag: bool,
+        ui_style: int = 1,
     ) -> discord.Embed:
         """
         构建分页管理视图的 Embed。
@@ -651,21 +660,29 @@ class VoteEmbedBuilder:
                 inline=False,
             )
             if realtime_flag:
-                # 显示票数统计
-                embed.add_field(
-                    name="赞成",
-                    value=str(opt.approve_votes),
-                    inline=True,
-                )
-                embed.add_field(
-                    name="反对",
-                    value=str(opt.reject_votes),
-                    inline=True,
-                )
-                embed.add_field(
-                    name="总票数",
-                    value=str(opt.total_votes),
-                    inline=True,
-                )
+                # 简洁样式仅显示支持人数
+                if ui_style == 2 and option_type == 0:
+                    embed.add_field(
+                        name="支持人数",
+                        value=str(opt.approve_votes),
+                        inline=True,
+                    )
+                else:
+                    # 显示票数统计
+                    embed.add_field(
+                        name="赞成",
+                        value=str(opt.approve_votes),
+                        inline=True,
+                    )
+                    embed.add_field(
+                        name="反对",
+                        value=str(opt.reject_votes),
+                        inline=True,
+                    )
+                    embed.add_field(
+                        name="总票数",
+                        value=str(opt.total_votes),
+                        inline=True,
+                    )
 
         return embed

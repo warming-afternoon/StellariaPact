@@ -70,6 +70,7 @@ class ViewEventListener(commands.Cog):
 
         max_page = max(0, (len(all_options) - 1) // view.items_per_page) if all_options else 0
         page = min(view.page, max_page)
+        user_votes = await self.logic.get_user_votes_dict(view.msg_id, interaction.user.id)
 
         refreshed_view = PaginatedManageView(
             bot=self.bot,
@@ -79,6 +80,8 @@ class ViewEventListener(commands.Cog):
             options=all_options,
             option_type=view.option_type,
             page=page,
+            ui_style=vote_details.ui_style,
+            user_votes=user_votes
         )
         if hasattr(view, "message"):
             refreshed_view.message = view.message
@@ -95,6 +98,7 @@ class ViewEventListener(commands.Cog):
             option_type=view.option_type,
             options=all_options,
             realtime_flag=vote_details.realtime_flag,
+            ui_style=vote_details.ui_style,
         )
 
         await interaction.edit_original_response(embed=new_embed, view=refreshed_view)
@@ -168,6 +172,7 @@ class ViewEventListener(commands.Cog):
     ):
         """逻辑：弹出分页投票管理面板"""
         vote_details = await self.logic.get_vote_details(message_id)
+        user_votes = await self.logic.get_user_votes_dict(message_id, interaction.user.id)
         normal_options = vote_details.normal_options or []
         objection_options = vote_details.objection_options or []
 
@@ -186,12 +191,15 @@ class ViewEventListener(commands.Cog):
                 message_id,
                 normal_options,
                 0,
+                ui_style=vote_details.ui_style,
+                user_votes=user_votes
             )
             embed = VoteEmbedBuilder.build_paginated_manage_embed(
                 jump_url,
                 0,
                 normal_options,
                 vote_details.realtime_flag,
+                ui_style=vote_details.ui_style,
             )
             await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
 

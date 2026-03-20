@@ -36,6 +36,14 @@ class VotingLogic:
             await uow.vote_session.update_vote_session_message_id(session_id, message_id)
             await uow.commit()
 
+    async def get_user_votes_dict(self, message_id: int, user_id: int) -> dict[tuple[int, int], int]:
+        """获取特定用户在指定投票中的选择字典 {(option_type, choice_index): choice}"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            session = await uow.vote_session.get_vote_session_with_details(message_id)
+            if not session:
+                return {}
+            return {(v.option_type, v.choice_index): v.choice for v in session.userVotes if v.user_id == user_id}
+
     async def record_vote_and_get_details(self, qo: RecordVoteQo) -> VoteDetailDto:
         """
         处理用户的投票动作，并返回更新后的投票详情。
@@ -53,6 +61,17 @@ class VotingLogic:
 
             if not is_eligible:
                 raise PermissionError("投票资格已失效（有效发言数不足或已被撤销资格）。")
+
+            # 多选项数上限限制检查（仅针对支持票 choice==1 检查）
+            if qo.choice == 1:
+                current_supports = [
+                    v for v in vote_session.userVotes
+                    if v.user_id == qo.user_id and v.choice == 1 and v.option_type == qo.option_type
+                ]
+                already_supported = any(v.choice_index == qo.choice_index for v in current_supports)
+                # 如果是新的支持票，且已达上限，则阻拦
+                if not already_supported and len(current_supports) >= getattr(vote_session, "max_choices_per_user", 999999):
+                    raise PermissionError(f"您最多只能支持 {getattr(vote_session, 'max_choices_per_user', 999999)} 个选项。请先撤回其他支持。")
 
             # 记录投票
             updated_session = await uow.user_vote.record_vote(qo, vote_session)
