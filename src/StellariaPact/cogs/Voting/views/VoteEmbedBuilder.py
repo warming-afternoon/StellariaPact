@@ -6,7 +6,7 @@ from typing import Optional
 
 import discord
 
-from StellariaPact.cogs.Voting.dto import OptionResult, VoteDetailDto, VotingChoicePanelDto
+from StellariaPact.cogs.Voting.dto import OptionResult, VoteDetailDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.dto import ProposalDto
 
@@ -207,73 +207,6 @@ class VoteEmbedBuilder:
         return embeds
 
     @staticmethod
-    def create_management_panel_embed(
-        jump_url: str,
-        panel_data: VotingChoicePanelDto,
-        base_title: str = "投票管理",
-        approve_text: str = "✅ 赞成",
-        reject_text: str = "❌ 反对",
-    ) -> discord.Embed:
-        """
-        创建统一的、私密的投票管理面板 Embed。
-        """
-
-        embed = discord.Embed(
-            title=f"对 {jump_url} 的{base_title}",
-            color=discord.Color.green() if panel_data.is_eligible else discord.Color.red(),
-        )
-
-        embed.add_field(name="当前发言数", value=f"{panel_data.message_count}", inline=True)
-        embed.add_field(
-            name="要求发言数",
-            value=f"≥ {EligibilityService.REQUIRED_MESSAGES}",
-            inline=True,
-        )
-        embed.add_field(
-            name="资格状态",
-            value="✅ 合格" if panel_data.is_eligible else "❌ 不合格",
-            inline=True,
-        )
-
-        if panel_data.options:
-            # 为每个选项显示选项文本和用户的选择
-            for i, option in enumerate(panel_data.options, 1):
-                # 用户的选择
-                user_choice = panel_data.current_votes.get(option.choice_index)
-                if user_choice is None:
-                    status = "未投票"
-                elif user_choice == 1:
-                    status = approve_text
-                else:
-                    status = reject_text
-
-                # 显示选项文本
-                embed.add_field(
-                    name=f"选项 {i} : ( {status} )",
-                    value=option.choice_text,
-                    inline=False,
-                )
-        else:
-            # 如果没有选项，显示用户的投票状态
-            user_choice = panel_data.current_votes.get(1)  # 默认检查选项1
-            if user_choice is None:
-                status = "未投票"
-            elif user_choice == 1:
-                status = approve_text
-            else:
-                status = reject_text
-            embed.add_field(name="当前投票", value=status, inline=False)
-
-        if panel_data.is_validation_revoked:
-            embed.description = "注意：您的投票资格已被撤销。"
-
-        if not panel_data.is_vote_active:
-            embed.add_field(name="投票状态", value="**已结束**", inline=False)
-            embed.color = discord.Color.dark_grey()
-
-        return embed
-
-    @staticmethod
     def create_rule_management_embed(
         jump_url: str,
         vote_details: VoteDetailDto,
@@ -388,13 +321,16 @@ class VoteEmbedBuilder:
                 if vote_details.realtime_flag:
                     # 简洁样式仅显示支持人数
                     if vote_details.ui_style == 2:
-                        value = f"✅ 支持人数: {opt.approve_votes}"
+                        name = f"选项 {opt.choice_index} : 支持人数{opt.approve_votes}\n{opt.choice_text}\n"
+                        value = ""
                     else:
+                        name = f"选项 {opt.choice_index}: \n{opt.choice_text}\n"
                         value = f"✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}"
                 else:
+                    name = f"选项 {opt.choice_index}: \n{opt.choice_text}\n"
                     value = ""
                 normal_embed.add_field(
-                    name=f"选项 {opt.choice_index}: \n{opt.choice_text}\n",
+                    name=name,
                     value=value,
                     inline=False,
                 )
@@ -499,14 +435,17 @@ class VoteEmbedBuilder:
                 if vote_details.realtime_flag:
                     # 简洁样式仅显示支持人数
                     if vote_details.ui_style == 2:
-                        val = f"✅ 支持人数: {opt.approve_votes}"
+                        name = f"选项 {opt.choice_index} : 支持人数{opt.approve_votes}"
+                        val = f"\n\n{opt.choice_text}\n"
                     else:
-                        val = f"✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}"
+                        name = f"选项 {opt.choice_index}: "
+                        val = f"\n\n{opt.choice_text}\n✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}\n"
                 else:
-                    val = ""
+                    name = f"选项 {opt.choice_index}: "
+                    val = f"\n\n{opt.choice_text}\n"
                 normal_embed.add_field(
-                    name=f"选项 {opt.choice_index}: ",
-                    value=f"\n\n{opt.choice_text}\n"+val+"\n",
+                    name=name,
+                    value=val,
                     inline=False,
                 )
             embeds.append(normal_embed)
@@ -578,7 +517,7 @@ class VoteEmbedBuilder:
             if realtime_flag and ui_style == 2 and option_type == 0:
                 # 简洁样式：支持人数显示在标题中
                 embed.add_field(
-                    name=f"**选项 {opt.choice_index}** : 支持人数{opt.approve_votes}",
+                    name=f"**选项 {opt.choice_index}** : 支持人数 {opt.approve_votes}",
                     value=f"{opt.choice_text}",
                     inline=False,
                 )

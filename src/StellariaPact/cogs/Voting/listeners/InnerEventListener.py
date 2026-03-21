@@ -890,7 +890,8 @@ class InnerEventListener(commands.Cog):
             return
 
         try:
-            jump_url = f"https://discord.com/channels/{interaction.guild_id}/{thread_id}/{message_id}"
+            guild_id = vote_details.guild_id if vote_details else interaction.guild_id
+            jump_url = f"https://discord.com/channels/{guild_id}/{thread_id}/{message_id}"
 
             # 构建 embed
             if vote_details:

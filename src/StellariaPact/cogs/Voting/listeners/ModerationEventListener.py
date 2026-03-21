@@ -177,6 +177,7 @@ class ModerationEventListener(commands.Cog):
                 options=vote_details_options,
                 normal_options=vote_details_options,
                 voters=[],
+                ui_style=ui_style,
             )
 
             view = VoteView(self.bot, vote_details=initial_vote_details)
