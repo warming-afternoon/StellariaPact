@@ -575,20 +575,24 @@ class VoteEmbedBuilder:
 
         # 依次显示每个选项内容
         for opt in options:
-            # 显示选项标题和文本
-            embed.add_field(
-                name=f"**选项 {opt.choice_index}** :",
-                value=f"{opt.choice_text}",
-                inline=False,
-            )
+            if realtime_flag and ui_style == 2 and option_type == 0:
+                # 简洁样式：支持人数显示在标题中
+                embed.add_field(
+                    name=f"**选项 {opt.choice_index}** : 支持人数{opt.approve_votes}",
+                    value=f"{opt.choice_text}",
+                    inline=False,
+                )
+            else:
+                # 显示选项标题和文本
+                embed.add_field(
+                    name=f"**选项 {opt.choice_index}** :",
+                    value=f"{opt.choice_text}",
+                    inline=False,
+                )
             if realtime_flag:
-                # 简洁样式仅显示支持人数
+                # 简洁样式仅显示支持人数（已在标题中显示，跳过）
                 if ui_style == 2 and option_type == 0:
-                    embed.add_field(
-                        name="支持人数",
-                        value=str(opt.approve_votes),
-                        inline=True,
-                    )
+                    pass  # 支持人数已在标题中显示
                 else:
                     # 显示票数统计
                     embed.add_field(

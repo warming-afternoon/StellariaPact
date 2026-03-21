@@ -30,7 +30,8 @@ class PaginatedManageView(discord.ui.View):
         option_type: int,
         page: int = 0,
         ui_style: int = 1,
-        user_votes: dict | None = None
+        user_votes: dict | None = None,
+        user_has_builder_role: bool = False,
     ):
         super().__init__(timeout=900)  # 15分钟超时
         self.bot = bot
@@ -42,6 +43,7 @@ class PaginatedManageView(discord.ui.View):
         self.page = page
         self.ui_style = ui_style
         self.user_votes = user_votes or {}
+        self.user_has_builder_role = user_has_builder_role
 
         # 简洁样式(仅普通投票)使用每页8项（每行2个，共4行）
         # 默认样式使用每页4项（每行1个，共4行）
@@ -70,14 +72,14 @@ class PaginatedManageView(discord.ui.View):
                 if is_supported:
                     btn = discord.ui.Button(
                         label=f"撤回支持选项 {opt.choice_index}",
-                        style=discord.ButtonStyle.secondary,
+                        style=discord.ButtonStyle.primary,
                         row=row
                     )
                     btn.callback = partial(self._cast_vote, choice=None, choice_index=opt.choice_index)
                 else:
                     btn = discord.ui.Button(
                         label=f"支持选项 {opt.choice_index}",
-                        style=discord.ButtonStyle.success,
+                        style=discord.ButtonStyle.primary,
                         row=row
                     )
                     btn.callback = partial(self._cast_vote, choice=1, choice_index=opt.choice_index)
@@ -203,6 +205,13 @@ class PaginatedManageView(discord.ui.View):
         choice_index: int,
     ):
         """处理投票操作"""
+        # 检查身份组资格
+        if not self.user_has_builder_role:
+            await interaction.response.send_message(
+                "❌ 您没有投票资格。\n需要「社区建设者」身份组。", ephemeral=True
+            )
+            return
+
         await safeDefer(interaction)
         self.bot.dispatch(
             "user_vote_submitted",

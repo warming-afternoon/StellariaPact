@@ -26,6 +26,7 @@ from StellariaPact.share import (
     UnitOfWork,
     safeDefer,
 )
+from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums import ProposalStatus
 
 logger = logging.getLogger(__name__)
@@ -650,6 +651,9 @@ class InnerEventListener(commands.Cog):
 
         jump_url = f"https://discord.com/channels/{vote_details.guild_id}/{thread_id}/{message_id}"
 
+        # 检查用户是否具有社区建设者身份组
+        has_builder_role = RoleGuard.hasRoles(interaction, "communityBuilder")
+
         # 如果有普通选项，发普通选项面板
         if normal_options:
             view = PaginatedManageView(
@@ -660,7 +664,8 @@ class InnerEventListener(commands.Cog):
                 normal_options,
                 0,
                 ui_style=vote_details.ui_style,
-                user_votes=user_votes
+                user_votes=user_votes,
+                user_has_builder_role=has_builder_role
             )
             embed = VoteEmbedBuilder.build_paginated_manage_embed(
                 jump_url,
@@ -682,6 +687,7 @@ class InnerEventListener(commands.Cog):
                 message_id,
                 objection_options,
                 1,
+                user_has_builder_role=has_builder_role
             )
             embed = VoteEmbedBuilder.build_paginated_manage_embed(
                 jump_url,
@@ -853,7 +859,8 @@ class InnerEventListener(commands.Cog):
             option_type=view.option_type,
             page=page,
             ui_style=vote_details.ui_style,
-            user_votes=user_votes
+            user_votes=user_votes,
+            user_has_builder_role=view.user_has_builder_role
         )
         if hasattr(view, "message"):
             refreshed_view.message = view.message

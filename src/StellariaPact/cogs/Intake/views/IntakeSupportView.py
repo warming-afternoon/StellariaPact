@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ui import Button, View
 
+from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 
 if TYPE_CHECKING:
@@ -29,6 +30,12 @@ class IntakeSupportView(View):
         """
         处理用户点击"支持"按钮的事件。
         """
+        if not RoleGuard.hasRoles(interaction, "communityBuilder"):
+            await interaction.response.send_message(
+                "❌ 抱歉，您没有权限。\n需要「社区建设者」身份组。", ephemeral=True
+            )
+            return
+
         await safeDefer(interaction, ephemeral=True)
 
         self.bot.dispatch("intake_support_vote_added", interaction)
