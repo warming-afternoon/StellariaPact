@@ -316,6 +316,13 @@ class VoteEmbedBuilder:
             title="普通投票",
             color=discord.Color.green(),
         )
+        # 若多选项数不等于默认值，添加提醒字段
+        if vote_details.max_choices_per_user != 999999:
+            normal_embed.add_field(
+                name=f"每人最多可支持 {vote_details.max_choices_per_user} 个选项",
+                value="",
+                inline=False,
+            )
         if normal_options:
             for opt in normal_options:
                 if vote_details.realtime_flag:
@@ -431,6 +438,13 @@ class VoteEmbedBuilder:
                 title="普通投票",
                 color=discord.Color.green(),
             )
+            # 若多选项数不等于默认值，添加提醒字段
+            if vote_details.max_choices_per_user != 999999:
+                normal_embed.add_field(
+                    name=f"每人最多可支持 {vote_details.max_choices_per_user} 个选项",
+                    value="",
+                    inline=False,
+                )
             for opt in normal_options:
                 if vote_details.realtime_flag:
                     # 简洁样式仅显示支持人数
@@ -502,6 +516,7 @@ class VoteEmbedBuilder:
         options: list[OptionResult],
         realtime_flag: bool,
         ui_style: int = 1,
+        max_choices_per_user: int = 999999,
     ) -> discord.Embed:
         """
         构建分页管理视图的 Embed。
@@ -511,6 +526,14 @@ class VoteEmbedBuilder:
         summary = "普通投票" if option_type == 0 else "异议投票"
         title = f"对 {jump_url} 的" + summary
         embed = discord.Embed(title=title, description="", color=discord.Color.blurple())
+
+        # 若多选项数不等于默认值且为普通投票，添加提醒字段
+        if option_type == 0 and max_choices_per_user != 999999:
+            embed.add_field(
+                name=f"每人最多可支持 {max_choices_per_user} 个选项",
+                value="",
+                inline=False,
+            )
 
         # 依次显示每个选项内容
         for opt in options:

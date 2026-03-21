@@ -673,6 +673,7 @@ class InnerEventListener(commands.Cog):
                 normal_options,
                 vote_details.realtime_flag,
                 ui_style=vote_details.ui_style,
+                max_choices_per_user=vote_details.max_choices_per_user,
             )
             await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
 
@@ -694,6 +695,7 @@ class InnerEventListener(commands.Cog):
                 1,
                 objection_options,
                 vote_details.realtime_flag,
+                max_choices_per_user=vote_details.max_choices_per_user,
             )
             await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
 
@@ -915,6 +917,7 @@ class InnerEventListener(commands.Cog):
                 options=all_options,
                 realtime_flag=vote_details.realtime_flag,
                 ui_style=vote_details.ui_style,
+                max_choices_per_user=vote_details.max_choices_per_user,
             )
 
             if view is not None:

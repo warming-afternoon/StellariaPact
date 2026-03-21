@@ -59,11 +59,23 @@ class Voting(commands.Cog):
                     coro=interaction.response.send_message(str(original_error), ephemeral=True),
                     priority=1,
                 )
+            else:
+                await self.bot.api_scheduler.submit(
+                    coro=interaction.followup.send(str(original_error), ephemeral=True),
+                    priority=1,
+                )
         else:
             logger.error(f"在 Voting Cog 中发生未处理的错误: {error}", exc_info=True)
             if not interaction.response.is_done():
                 await self.bot.api_scheduler.submit(
                     coro=interaction.response.send_message(
+                        "发生了一个未知错误，请联系技术员", ephemeral=True
+                    ),
+                    priority=1,
+                )
+            else:
+                await self.bot.api_scheduler.submit(
+                    coro=interaction.followup.send(
                         "发生了一个未知错误，请联系技术员", ephemeral=True
                     ),
                     priority=1,
