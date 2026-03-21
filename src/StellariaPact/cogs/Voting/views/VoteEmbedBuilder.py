@@ -8,7 +8,7 @@ import discord
 
 from StellariaPact.cogs.Voting.dto import OptionResult, VoteDetailDto, VotingChoicePanelDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-from StellariaPact.dto import ObjectionDetailsDto, ProposalDto
+from StellariaPact.dto import ProposalDto
 
 logger = logging.getLogger(__name__)
 

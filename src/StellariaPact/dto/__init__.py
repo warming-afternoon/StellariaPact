@@ -7,6 +7,7 @@ from .ObjectionVotePanelDto import ObjectionVotePanelDto
 from .ProposalDto import ProposalDto
 from .UserActivityDto import UserActivityDto
 from .UserVoteDto import UserVoteDto
+from .VoteMessageMirrorDto import VoteMessageMirrorDto
 from .VoteSessionDto import VoteSessionDto
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "ProposalDto",
     "UserActivityDto",
     "UserVoteDto",
+    "VoteMessageMirrorDto",
     "VoteSessionDto",
 ]

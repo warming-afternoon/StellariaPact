@@ -1,8 +1,9 @@
-from pydantic import BaseModel
 
 from datetime import datetime
 from typing import Optional
+
 from StellariaPact.share.BaseDto import BaseDto
+
 
 class UserActivityDto(BaseDto):
     """

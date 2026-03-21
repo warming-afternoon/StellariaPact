@@ -17,7 +17,7 @@ from StellariaPact.cogs.Voting.views import (
     VotingChannelView,
 )
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
-from StellariaPact.dto import ProposalDto, VoteSessionDto
+from StellariaPact.dto import ProposalDto, VoteMessageMirrorDto, VoteSessionDto
 from StellariaPact.share import (
     DiscordUtils,
     PermissionGuard,
@@ -31,7 +31,7 @@ from StellariaPact.share.enums import ProposalStatus
 logger = logging.getLogger(__name__)
 
 
-class VotingEventListener(commands.Cog):
+class InnerEventListener(commands.Cog):
     """
     监听 Voting 模块内部派发的自定义事件
     """
@@ -579,6 +579,8 @@ class VotingEventListener(commands.Cog):
 
             await self._update_thread_panel(thread, vote_details)
 
+            await self._update_extra_mirrors(vote_details, thread.name)
+
             voting_channel_id_str = self.bot.config.get("channels", {}).get("voting_channel")
             if not voting_channel_id_str:
                 return
@@ -605,7 +607,7 @@ class VotingEventListener(commands.Cog):
         """
         显式解析上下文。
         local: 交互来自讨论帖。直接取当前频道和消息 ID。
-        mirror: 交互来自投票频道。通过数据库根据镜像消息 ID 查回原帖信息。
+        mirror: 交互来自投票频道或额外镜像。通过数据库根据消息 ID 查回原帖信息。
         """
         if not interaction.message:
             raise ValueError("交互消息无效。")
@@ -620,6 +622,10 @@ class VotingEventListener(commands.Cog):
                 session = await uow.vote_session.get_vote_session_by_voting_channel_message_id(
                     interaction.message.id
                 )
+                if not session:
+                    session = await uow.vote_session.get_vote_session_by_mirror_message_id(
+                        interaction.message.id
+                    )
                 if not session or not session.context_thread_id or not session.context_message_id:
                     raise ValueError("无法在数据库中找到该镜像消息关联的原始投票会话。")
                 return session.context_thread_id, session.context_message_id
@@ -972,4 +978,38 @@ class VotingEventListener(commands.Cog):
             )
         except Exception as e:
             logger.error(f"更新投票频道面板时出错: {e}", exc_info=True)
+
+    async def _update_extra_mirrors(self, vote_details: VoteDetailDto, topic: str):
+        """辅助方法：更新所有通过右键额外复制出的镜像面板"""
+        if not vote_details.context_message_id:
+            return
+
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            session = await uow.vote_session.get_vote_session_by_context_message_id(vote_details.context_message_id)
+            if not session or not session.id:
+                return
+            mirrors = await uow.vote_session.get_mirrors_by_session_id(session.id)
+            mirror_dtos = [VoteMessageMirrorDto.model_validate(mirror) for mirror in mirrors]
+
+        if not mirror_dtos:
+            return
+
+        for mirror in mirror_dtos:
+            try:
+                channel = await DiscordUtils.fetch_channel(self.bot, mirror.channel_id)
+                if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+                    continue
+                msg = await channel.fetch_message(mirror.message_id)
+
+                new_embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(topic, vote_details)
+                view = VotingChannelView(self.bot, vote_details=vote_details)
+
+                await self.bot.api_scheduler.submit(msg.edit(embeds=new_embeds, view=view), priority=3)
+            except discord.NotFound:
+                pass
+            except discord.Forbidden:
+                logger.warning(f"由于权限问题，无法更新镜像消息 {mirror.message_id}。")
+            except Exception as e:
+                logger.error(f"更新额外镜像面板时出错: {e}", exc_info=True)
 

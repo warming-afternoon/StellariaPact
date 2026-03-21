@@ -4,9 +4,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from StellariaPact.cogs.Voting.views import VoteEmbedBuilder, VotingChannelView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import ProposalDto
 from StellariaPact.share import (
+    DiscordUtils,
     MissingRole,
     RoleGuard,
     StellariaPactBot,
@@ -26,6 +28,22 @@ class Voting(commands.Cog):
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
         self.logic = VotingLogic(bot)
+
+        # 消息右键菜单：复制投票镜像
+        self.copy_vote_mirror_ctx = app_commands.ContextMenu(
+            name="复制该投票的镜像",
+            callback=self.copy_vote_mirror,
+            type=discord.AppCommandType.message,
+        )
+
+    def cog_load(self) -> None:
+        self.bot.tree.add_command(self.copy_vote_mirror_ctx)
+
+    async def cog_unload(self) -> None:
+        self.bot.tree.remove_command(
+            self.copy_vote_mirror_ctx.name,
+            type=self.copy_vote_mirror_ctx.type,
+        )
 
     async def cog_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
@@ -55,13 +73,33 @@ class Voting(commands.Cog):
         name="创建新提案投票",
         description="为当前讨论帖创建一个新的提案投票",
     )
+    @app_commands.rename(
+        option_1="选项1",
+        option_2="选项2",
+        option_3="选项3",
+        option_4="选项4",
+        option_5="选项5",
+        option_6="选项6",
+        duration_hours="持续时间",
+        anonymous="匿名投票",
+        realtime="实时显示",
+        notify="结束通知",
+        max_choices_per_user="每人最多选项数",
+        ui_style="面板样式",
+    )
     @app_commands.describe(
+        option_1="投票选项1（必填）",
+        option_2="投票选项2（选填）",
+        option_3="投票选项3（选填）",
+        option_4="投票选项4（选填）",
+        option_5="投票选项5（选填）",
+        option_6="投票选项6（选填）",
         duration_hours="投票持续时间（小时），默认72小时",
         anonymous="是否匿名投票，默认是",
         realtime="是否实时显示票数，默认是",
-        notify="结束时是否通知议员和监票员，默认是",
-        max_choices_per_user="单个用户最多可支持的选项数量，默认无限制(999999)",
-        ui_style="投票面板样式: 1=标准样式, 2=简洁样式(仅限普通投票)",
+        notify="结束时是否通知提案组，默认是",
+        max_choices_per_user="单个用户最多可支持的选项数量，默认无限制",
+        ui_style="投票面板样式: 1=标准样式, 2=简洁样式",
     )
     @app_commands.choices(
         duration_hours=[
@@ -81,6 +119,12 @@ class Voting(commands.Cog):
     async def create_new_proposal_vote(
         self,
         interaction: discord.Interaction,
+        option_1: str,
+        option_2: str | None = None,
+        option_3: str | None = None,
+        option_4: str | None = None,
+        option_5: str | None = None,
+        option_6: str | None = None,
         duration_hours: app_commands.Choice[int] | None = None,
         anonymous: bool = True,
         realtime: bool = True,
@@ -98,6 +142,16 @@ class Voting(commands.Cog):
         if not isinstance(interaction.channel, discord.Thread):
             await self.bot.api_scheduler.submit(
                 interaction.followup.send("此命令只能在讨论帖内使用。"), priority=1
+            )
+            return
+
+        # --- 处理并验证选项 ---
+        raw_options = [option_1, option_2, option_3, option_4, option_5, option_6]
+        valid_options = [opt.strip() for opt in raw_options if opt and opt.strip()]
+
+        if not valid_options:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("❌ 创建失败：必须至少提供一个有效的投票选项（不能全为空格）。"), priority=1
             )
             return
 
@@ -132,11 +186,11 @@ class Voting(commands.Cog):
             return
 
         try:
-            # 派发创建新投票事件
+            # 派发创建新投票事件，传入收集到的有效选项列表
             self.bot.dispatch(
                 "vote_session_created",
                 proposal_dto=proposal,
-                options=[],  # 默认选项
+                options=valid_options,
                 duration_hours=duration,
                 anonymous=anonymous,
                 realtime=realtime,
@@ -150,12 +204,11 @@ class Voting(commands.Cog):
 
             # 发送确认消息
             style_text = "标准样式" if style == 1 else "简洁样式"
+
+
             confirm_msg = (
-                f"✅ 已开始创建新的提案投票。\n"
+                f"✅ 已创建新的提案投票。\n"
                 f"- 持续时间: {duration}小时\n"
-                f"- 匿名投票: {'是' if anonymous else '否'}\n"
-                f"- 实时显示: {'是' if realtime else '否'}\n"
-                f"- 结束通知: {'是' if notify else '否'}\n"
                 f"- 每人最多支持选项数: {max_choices_per_user if max_choices_per_user < 999999 else '无限制'}\n"
                 f"- 面板样式: {style_text}"
             )
@@ -240,3 +293,57 @@ class Voting(commands.Cog):
                 await uow.commit()
                 return ProposalDto.model_validate(proposal)
             return None
+
+    @RoleGuard.requireRoles("stewards", "councilModerator", "executionAuditor")
+    async def copy_vote_mirror(self, interaction: discord.Interaction, message: discord.Message) -> None:
+        """
+        消息右键菜单命令：复制该投票的镜像到当前频道/帖子中。
+        """
+        await safeDefer(interaction, ephemeral=True)
+
+        if not interaction.guild_id or not interaction.channel_id:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("此命令只能在服务器频道内使用。"), priority=1
+            )
+            return
+
+        if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("此命令只能在文本频道或帖子内使用。"), priority=1
+            )
+            return
+
+        # 获取 DTO
+        vote_details = await self.logic.get_vote_details_by_any_message_id(message.id)
+
+        if not vote_details or not vote_details.context_message_id:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("找不到该消息对应的有效投票会话。"), priority=1
+            )
+            return
+
+        #获取原始讨论帖名称作为 Embed 的标题
+        thread = await DiscordUtils.fetch_thread(self.bot, vote_details.context_thread_id)
+        topic = StringUtils.clean_title(thread.name) if thread else "投票面板"
+
+        # 生成 Embed 和 镜像 View
+        embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(topic, vote_details)
+        view = VotingChannelView(self.bot, vote_details=vote_details)
+
+        # 在用户执行命令的当前频道中发送这条镜像消息
+        channel = interaction.channel
+        new_msg = await self.bot.api_scheduler.submit(
+            channel.send(embeds=embeds, view=view), priority=2  # type: ignore
+        )
+
+        # 记录新镜像到数据库
+        await self.logic.add_mirror_record_by_context(
+            context_message_id=vote_details.context_message_id,
+            guild_id=interaction.guild_id,
+            channel_id=interaction.channel_id,
+            new_message_id=new_msg.id
+        )
+
+        await self.bot.api_scheduler.submit(
+            interaction.followup.send("✅ 投票镜像复制成功！该面板的数据与原贴同步更新。"), priority=1
+        )

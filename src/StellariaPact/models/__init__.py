@@ -7,6 +7,7 @@ from .Proposal import Proposal
 from .ProposalIntake import ProposalIntake
 from .UserActivity import UserActivity
 from .UserVote import UserVote
+from .VoteMessageMirror import VoteMessageMirror
 from .VoteOption import VoteOption
 from .VoteSession import VoteSession
 
@@ -19,6 +20,7 @@ __all__ = [
     "Proposal",
     "UserActivity",
     "UserVote",
+    "VoteMessageMirror",
     "VoteOption",
     "VoteSession",
     "ProposalIntake",

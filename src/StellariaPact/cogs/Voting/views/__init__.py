@@ -8,7 +8,6 @@ from .RuleManagementView import RuleManagementView
 from .VoteEmbedBuilder import VoteEmbedBuilder
 from .VoteView import VoteView
 from .VotingChannelView import VotingChannelView
-from .VotingChoiceView import VotingChoiceView
 
 __all__ = [
     "AdjustTimeModal",
@@ -21,5 +20,4 @@ __all__ = [
     "VoteEmbedBuilder",
     "VoteView",
     "VotingChannelView",
-    "VotingChoiceView",
 ]

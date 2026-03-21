@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Sequence
 
-from sqlalchemy import update
+from sqlalchemy import and_, update
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -13,6 +13,7 @@ from StellariaPact.dto import VoteSessionDto
 from StellariaPact.models.Objection import Objection
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.UserVote import UserVote
+from StellariaPact.models.VoteMessageMirror import VoteMessageMirror
 from StellariaPact.models.VoteOption import VoteOption
 from StellariaPact.models.VoteSession import VoteSession
 
@@ -90,6 +91,29 @@ class VoteSessionService:
             select(VoteSession).where(VoteSession.voting_channel_message_id == message_id)
         )
         return result.one_or_none()
+
+    async def get_vote_session_with_details_by_voting_channel_message_id(
+        self, message_id: int
+    ) -> Optional[VoteSession]:
+        """根据主投票频道消息ID获取投票会话，并预加载投票详情"""
+        statement = (
+            select(VoteSession)
+            .where(VoteSession.voting_channel_message_id == message_id)
+            .options(selectinload(VoteSession.userVotes))  # type: ignore
+        )
+        return (await self.session.exec(statement)).one_or_none()
+
+    async def get_vote_session_with_details_by_mirror_message_id(
+        self, message_id: int
+    ) -> Optional[VoteSession]:
+        """根据额外镜像的消息ID获取投票会话，并预加载投票详情"""
+        statement = (
+            select(VoteSession)
+            .join(VoteMessageMirror, and_(VoteSession.id == VoteMessageMirror.session_id))  # type: ignore
+            .where(VoteMessageMirror.message_id == message_id)
+            .options(selectinload(VoteSession.userVotes))  # type: ignore
+        )
+        return (await self.session.exec(statement)).one_or_none()
 
     async def get_vote_session_with_details(self, message_id: int) -> Optional[VoteSession]:
         """
@@ -388,3 +412,36 @@ class VoteSessionService:
         )
         result = await self.session.exec(statement)
         return result.one_or_none()
+
+    async def add_mirror_message(self, session_id: int, guild_id: int, channel_id: int, message_id: int):
+        """
+        添加一个额外的投票面板镜像记录
+        """
+        mirror = VoteMessageMirror(
+            session_id=session_id,
+            guild_id=guild_id,
+            channel_id=channel_id,
+            message_id=message_id
+        )
+        self.session.add(mirror)
+        await self.session.flush()
+
+    async def get_mirrors_by_session_id(self, session_id: int) -> Sequence[VoteMessageMirror]:
+        """
+        获取一个投票会话关联的所有额外镜像
+        """
+        statement = select(VoteMessageMirror).where(VoteMessageMirror.session_id == session_id)
+        return (await self.session.exec(statement)).all()
+
+    async def get_vote_session_by_mirror_message_id(self, message_id: int) -> Optional[VoteSession]:
+        """
+        根据额外镜像的消息ID反查关联的原始投票会话
+        由于没有实体外键，这里使用显式的相等条件进行关联查询。
+        """
+
+        statement = (
+            select(VoteSession)
+            .join(VoteMessageMirror, and_(VoteSession.id == VoteMessageMirror.session_id))  # type: ignore
+            .where(VoteMessageMirror.message_id == message_id)
+        )
+        return (await self.session.exec(statement)).one_or_none()

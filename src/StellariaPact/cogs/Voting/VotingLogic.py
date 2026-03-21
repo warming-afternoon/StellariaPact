@@ -483,3 +483,42 @@ class VotingLogic:
             # 返回最新的 DTO
             return vote_details_dto
 
+    async def get_vote_details_by_any_message_id(self, message_id: int) -> Optional[VoteDetailDto]:
+        """
+        依次从原帖、主镜像、额外镜像中查找消息ID对应的投票详情。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 查原帖
+            session = await uow.vote_session.get_vote_session_with_details(message_id)
+
+            # 查主镜像
+            if not session:
+                session = await uow.vote_session.get_vote_session_with_details_by_voting_channel_message_id(message_id)
+
+            # 查额外镜像
+            if not session:
+                session = await uow.vote_session.get_vote_session_with_details_by_mirror_message_id(message_id)
+
+            # 如果都没找到
+            if not session or not session.id:
+                return None
+
+            # 获取选项并转换为纯粹的 DTO
+            vote_options = await uow.vote_option.get_vote_options(session.id)
+            return VoteSessionService.get_vote_details_dto(session, vote_options)
+
+    async def add_mirror_record_by_context(self, context_message_id: int, guild_id: int, channel_id: int, new_message_id: int):
+        """
+        根据原帖消息ID反查出 Session ID，并写入新的镜像记录。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            session = await uow.vote_session.get_vote_session_by_context_message_id(context_message_id)
+            if session and session.id:
+                await uow.vote_session.add_mirror_message(
+                    session_id=session.id,
+                    guild_id=guild_id,
+                    channel_id=channel_id,
+                    message_id=new_message_id
+                )
+                await uow.commit()
+
