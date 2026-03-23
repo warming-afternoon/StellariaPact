@@ -208,7 +208,7 @@ class Voting(commands.Cog):
                 realtime=realtime,
                 notify=notify,
                 create_in_voting_channel=True,
-                notify_creation_role=False,
+                notify_creation_role=True,
                 thread=thread,
                 max_choices_per_user=max_choices_per_user,
                 ui_style=style,

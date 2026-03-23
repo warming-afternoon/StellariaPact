@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import discord
-from sqlalchemy import func, select, update
+from sqlalchemy import false, func, select, update
 
 from StellariaPact.cogs.Intake.dto.SupportToggleDbResultDto import SupportToggleDbResultDto
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
@@ -288,7 +288,7 @@ class IntakeLogic:
             realtime=True,
             notify=True,
             create_in_voting_channel=True,
-            notify_creation_role=True,
+            notify_creation_role=False,
             thread=thread_with_message.thread,
         )
 
