@@ -4,7 +4,7 @@ from typing import List, Optional
 
 import discord
 
-from StellariaPact.cogs.Voting.dto import VoteDetailDto, VotingChoicePanelDto
+from StellariaPact.cogs.Voting.dto import VoteDetailDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo import (
     AdjustVoteTimeQo,
@@ -242,54 +242,6 @@ class VotingLogic:
             if updated_session.id:
                 vote_options = await uow.vote_option.get_vote_options(updated_session.id)
             return VoteSessionService.get_vote_details_dto(updated_session, vote_options)
-
-    async def prepare_voting_choice_data(
-        self, user_id: int, thread_id: int, message_id: int
-    ) -> VotingChoicePanelDto:
-        """
-        准备投票选择视图所需的所有数据。
-        """
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            # 获取投票会话详情
-            vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
-
-            if not vote_session or not vote_session.context_message_id:
-                raise ValueError("Vote session not found, cannot prepare panel data.")
-
-            # 获取资格数据 (并行获取当前和继承的活动)
-            (
-                is_eligible,
-                total_message_count,
-                is_validation_revoked,
-            ) = await self._get_combined_eligibility_data(uow, user_id, thread_id, vote_session)
-
-            # 处理选项和当前投票状态
-            vote_options_dto = []
-            current_votes = {}
-
-            if vote_session.id:
-                vote_options = await uow.vote_option.get_vote_options(vote_session.id)
-                vote_details = VoteSessionService.get_vote_details_dto(vote_session, vote_options)
-                vote_options_dto = vote_details.options
-
-                # 获取用户对每个选项的投票
-                user_votes = [v for v in vote_session.userVotes if v.user_id == user_id]
-                for v in user_votes:
-                    current_votes[v.choice_index] = v.choice
-
-            is_vote_active = vote_session.status == 1
-
-            return VotingChoicePanelDto(
-                guild_id=vote_session.guild_id,
-                thread_id=vote_session.context_thread_id,
-                message_id=vote_session.context_message_id,
-                is_eligible=is_eligible,
-                is_vote_active=is_vote_active,
-                message_count=total_message_count,
-                is_validation_revoked=is_validation_revoked,
-                options=vote_options_dto,
-                current_votes=current_votes,
-            )
 
     async def handle_message_creation(self, qo: UpdateUserActivityQo) -> None:
         """处理消息创建事件，增加用户活跃度。"""
