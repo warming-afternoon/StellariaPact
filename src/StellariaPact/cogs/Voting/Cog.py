@@ -111,7 +111,7 @@ class Voting(commands.Cog):
         realtime="是否实时显示票数，默认是",
         notify="结束时是否通知提案组，默认是",
         max_choices_per_user="单个用户最多可支持的选项数量，默认无限制",
-        ui_style="投票面板样式: 1=标准样式, 2=简洁样式",
+        ui_style="投票面板样式, 默认简洁样式",
     )
     @app_commands.choices(
         duration_hours=[
@@ -182,7 +182,7 @@ class Voting(commands.Cog):
 
         # 处理默认值
         duration = duration_hours.value if duration_hours else 72
-        style = ui_style.value if ui_style else 1
+        style = ui_style.value if ui_style else 2
 
         # 参数校验
         if max_choices_per_user < 1:
