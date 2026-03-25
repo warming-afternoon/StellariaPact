@@ -161,8 +161,8 @@ class ModerationLogic:
                     continue
 
                 created_at = option.created_at
-                if now - created_at < timedelta(hours=12):
-                    raise ValueError(f"无法操作：异议「{option.choice_text}」发布未满 12 小时。")
+                if now - created_at < timedelta(hours=1):
+                    raise ValueError(f"无法操作：异议「{option.choice_text}」发布未满 1 小时。")
 
                 approve_votes = sum(
                     1
@@ -397,6 +397,55 @@ class ModerationLogic:
             return
 
         logger.info(f"提案帖子 {thread_id} 已更新为异议中。")
+
+    async def execute_self_abandon_proposal(
+        self,
+        channel_id: int,
+        user_id: int,
+        reason: str
+    ) -> None:
+        """
+        执行“自助废弃”业务逻辑。
+        由提案人直接触发，无需双重确认。
+        """
+        proposal_id = None
+
+        # 校验并获取需要的信息
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.proposal.get_proposal_by_thread_id(channel_id)
+            if not proposal:
+                raise ValueError("未找到关连的提案。")
+
+            valid_statuses = [
+                ProposalStatus.DISCUSSION,
+                ProposalStatus.FROZEN,
+                ProposalStatus.EXECUTING,
+                ProposalStatus.UNDER_OBJECTION
+            ]
+            if proposal.status not in valid_statuses:
+                raise ValueError("提案当前状态不允许废弃。")
+
+            if proposal.proposer_id != user_id:
+                raise ValueError("抱歉，只有此提案的发起人才能使用自助废弃功能。")
+
+            proposal_id = proposal.id
+
+        if not proposal_id:
+            return
+
+        # 调用状态变更逻辑，更新数据库，并触发事件
+        proposal_dto = await self.proposal_status_change(proposal_id, ProposalStatus.ABANDONED)
+
+        if not proposal_dto:
+            raise ValueError("更新提案状态失败。")
+
+        # 更新 Discord 帖子外观 (由 thread_manager 执行)
+        try:
+            thread = await DiscordUtils.fetch_thread(self.bot, channel_id)
+            if isinstance(thread, discord.Thread):
+                await self.thread_manager.update_status(thread, "abandoned")
+        except Exception as e:
+            logger.error(f"自助废弃: 更新帖子 {channel_id} 状态时发生错误: {e}", exc_info=True)
 
     async def clear_proposal_objection_status(self, thread_id: int) -> None:
         """

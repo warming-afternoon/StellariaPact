@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import discord
-from sqlalchemy import false, func, select, update
+from sqlalchemy import func, select, update
 
 from StellariaPact.cogs.Intake.dto.SupportToggleDbResultDto import SupportToggleDbResultDto
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
