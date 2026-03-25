@@ -32,7 +32,8 @@ class ModerationEventListener(commands.Cog):
         notify_creation_role: bool,
         thread: discord.Thread,
         max_choices_per_user: int = 999999,
-        ui_style: int = 1
+        ui_style: int = 1,
+        creator: discord.User | discord.Member | None = None
     ):
         """
         为提案讨论帖创建投票面板，并尝试同步到投票频道
@@ -43,7 +44,8 @@ class ModerationEventListener(commands.Cog):
         # 在讨论帖内创建核心投票面板
         try:
             vote_details = await self._create_in_thread_vote(
-                proposal_dto, thread, duration_hours, anonymous, realtime, notify, options, max_choices_per_user, ui_style
+                proposal_dto, thread, duration_hours, anonymous, realtime, notify, options, max_choices_per_user, ui_style,
+                creator=creator
             )
         except Exception as e:
             logger.error(
@@ -80,7 +82,8 @@ class ModerationEventListener(commands.Cog):
         notify: bool,
         options: list[str],
         max_choices_per_user: int = 999999,
-        ui_style: int = 1
+        ui_style: int = 1,
+        creator: discord.User | discord.Member | None = None
     ):
         """
         在讨论帖内创建核心投票面板并保存到数据库
@@ -144,7 +147,11 @@ class ModerationEventListener(commands.Cog):
 
             # 创建所有选项 (普通投票选项，option_type=0)
             await uow.vote_option.create_vote_options(
-                session_dto.id, all_option_texts, option_type=0
+                session_dto.id,
+                all_option_texts,
+                option_type=0,
+                creator_id=creator.id if creator else None,
+                creator_name=creator.display_name if creator else None
             )
             await uow.commit()
 
