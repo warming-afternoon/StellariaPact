@@ -205,6 +205,7 @@ class Voting(commands.Cog):
                 thread=thread,
                 max_choices_per_user=max_choices_per_user,
                 ui_style=style,
+                creator=interaction.user,
             )
 
             # 发送确认消息
