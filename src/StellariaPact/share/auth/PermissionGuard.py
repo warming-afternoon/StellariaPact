@@ -60,14 +60,14 @@ class PermissionGuard:
 
     @staticmethod
     async def can_create_options(
-        interaction: discord.Interaction, thread_id: int | None = None
+        interaction: discord.Interaction, thread_id: int | None = None, option_type: int = 0
     ) -> bool:
         """
         检查用户是否可以创建投票选项/异议。
         满足以下任一条件即可：
         1. 用户有 councilModerator、executionAuditor 或 stewards 身份。
         2. 用户是当前帖子关联提案的发起人。
-        3. 用户在当前帖子中的有效发言数 > 10，并且拥有 社区建设者 身份。
+        3. 如果是异议 (option_type == 1)：用户在当前帖子中的有效发言数 > 10，并且拥有 社区建设者 身份。
         """
         if RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor", "stewards"):
             return True
@@ -86,12 +86,13 @@ class PermissionGuard:
             if proposal and proposal.proposer_id == interaction.user.id:
                 return True
 
-            # 检查有效发言数是否大于 10 并且具有 社区建设者 身份组
-            activity = await uow.user_activity.get_user_activity(
-                interaction.user.id, target_thread_id
-            )
-            if activity and activity.message_count > 10:
-                if RoleGuard.hasRoles(interaction, "communityBuilder"):
-                    return True
+            # 检查有效发言数是否大于 10 并且具有 社区建设者 身份组 (仅允许创建异议)
+            if option_type == 1:
+                activity = await uow.user_activity.get_user_activity(
+                    interaction.user.id, target_thread_id
+                )
+                if activity and activity.message_count > 10:
+                    if RoleGuard.hasRoles(interaction, "communityBuilder"):
+                        return True
 
         return False

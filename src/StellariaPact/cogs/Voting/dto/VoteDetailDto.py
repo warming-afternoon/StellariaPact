@@ -72,5 +72,5 @@ class VoteDetailDto(BaseModel):
     max_choices_per_user: int = Field(default=999999, description="单个用户的多选项数上限")
     """单个用户的多选项数上限"""
 
-    ui_style: int = Field(default=1, description="投票样式: 1-当前样式, 2-简洁样式")
+    ui_style: int = Field(default=2, description="投票样式: 1-当前样式, 2-简洁样式")
     """投票样式: 1-当前样式, 2-简洁样式"""

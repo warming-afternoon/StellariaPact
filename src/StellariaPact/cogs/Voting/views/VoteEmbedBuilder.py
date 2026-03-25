@@ -301,8 +301,9 @@ class VoteEmbedBuilder:
         )
         VoteEmbedBuilder._add_end_time_field(proposal_embed, vote_details.end_time)
         proposal_embed.set_footer(
-            text=f"投票资格 : 点击标题，在跳转到的讨论帖内有效发言数 ≥"
-            f" {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
+            text=f"投票资格 : 点击标题，在对应讨论帖内有效发言数 ≥"
+            f" {EligibilityService.REQUIRED_MESSAGES}的 [社区建设者]"
+            "\n有效发言 : 去除表情后, 长度 ≥ 5"
         )
         embeds.append(proposal_embed)
 
@@ -328,7 +329,7 @@ class VoteEmbedBuilder:
                 if vote_details.realtime_flag:
                     # 简洁样式仅显示支持人数
                     if vote_details.ui_style == 2:
-                        name = f"选项 {opt.choice_index} : 支持人数{opt.approve_votes}\n{opt.choice_text}\n"
+                        name = f"选项 {opt.choice_index} : 支持人数 {opt.approve_votes}\n{opt.choice_text}\n"
                         value = ""
                     else:
                         name = f"选项 {opt.choice_index}: \n{opt.choice_text}\n"
@@ -422,7 +423,8 @@ class VoteEmbedBuilder:
 
         rule_embed.set_footer(
             text=f"投票资格 : 在本讨论帖内有效发言数 ≥"
-            f" {EligibilityService.REQUIRED_MESSAGES}\n有效发言 : 去除表情后, 长度 ≥ 5"
+            f" {EligibilityService.REQUIRED_MESSAGES}的 [社区建设者]\n"
+            "有效发言 : 去除表情后, 长度 ≥ 5"
         )
         embeds.append(rule_embed)
 
@@ -449,7 +451,7 @@ class VoteEmbedBuilder:
                 if vote_details.realtime_flag:
                     # 简洁样式仅显示支持人数
                     if vote_details.ui_style == 2:
-                        name = f"选项 {opt.choice_index} : 支持人数{opt.approve_votes}"
+                        name = f"选项 {opt.choice_index} : 支持人数 {opt.approve_votes}"
                         val = f"\n\n{opt.choice_text}\n"
                     else:
                         name = f"选项 {opt.choice_index}: "

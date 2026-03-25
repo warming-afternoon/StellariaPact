@@ -580,7 +580,8 @@ class InnerEventListener(commands.Cog):
 
             await self._update_thread_panel(thread, vote_details)
 
-            await self._update_extra_mirrors(vote_details, thread.name)
+            clean_topic = StringUtils.clean_title(thread.name)
+            await self._update_extra_mirrors(vote_details, clean_topic)
 
             voting_channel_id_str = self.bot.config.get("channels", {}).get("voting_channel")
             if not voting_channel_id_str:
@@ -727,22 +728,41 @@ class InnerEventListener(commands.Cog):
         option_type: int,
     ):
         """弹出创建选项 Modal"""
-        can_create = await PermissionGuard.can_create_options(interaction, thread_id)
+
+        # --- 限制讨论帖创建满 2 小时后才能创建异议 ---
+        if option_type == 1:
+            thread = await DiscordUtils.fetch_thread(self.bot, thread_id)
+            if thread and thread.created_at:
+                now_utc = discord.utils.utcnow()
+                time_diff = now_utc - thread.created_at
+                if time_diff.total_seconds() < 2 * 3600:
+                    minutes_left = max(1, int((2 * 3600 - time_diff.total_seconds()) / 60))
+                    error_msg = (
+                        f"该提案讨论帖发布未满 2 小时，为保证充分讨论，暂时无法提出异议。"
+                        f"请在约 **{minutes_left} 分钟**后再试。"
+                        )
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(error_msg, ephemeral=True)
+                    else:
+                        await interaction.followup.send(error_msg, ephemeral=True)
+                    return
+
+        can_create = await PermissionGuard.can_create_options(interaction, thread_id, option_type)
         if not can_create:
+            error_msg = (
+                "你没有权限为此提案创建普通投票选项。需为提案人或管理组成员。"
+                if option_type == 0 else
+                "你没有权限为此提案创建异议。\n"
+                + "需为提案人、管理组成员或本帖有效发言数 > 10 的「社区建设者」。"
+            )
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    (
-                        "你没有权限为此提案创建投票选项。"
-                        "需为提案人、管理组成员或本帖有效发言数 > 10。"
-                    ),
+                    error_msg,
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    (
-                        "你没有权限为此提案创建投票选项。"
-                        "需为提案人、管理组成员或本帖有效发言数 > 10。"
-                    ),
+                    error_msg,
                     ephemeral=True,
                 )
             return
@@ -1006,11 +1026,12 @@ class InnerEventListener(commands.Cog):
         if not mirror_dtos:
             return
 
+        channel = await DiscordUtils.fetch_channel(self.bot, vote_details.context_thread_id)
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            return
+
         for mirror in mirror_dtos:
             try:
-                channel = await DiscordUtils.fetch_channel(self.bot, mirror.channel_id)
-                if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-                    continue
                 msg = await channel.fetch_message(mirror.message_id)
 
                 new_embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(topic, vote_details)
