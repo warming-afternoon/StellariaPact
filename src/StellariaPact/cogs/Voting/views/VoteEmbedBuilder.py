@@ -89,6 +89,7 @@ class VoteEmbedBuilder:
         """
         构建通用投票结果的 Embed 消息列表。
         第一个是普通投票embed，如果有异议投票，则追加第二个异议投票结果embed。
+        当 ui_style == 2 时，采用简洁样式排列结果。
         """
         embeds = []
         description = None
@@ -104,19 +105,24 @@ class VoteEmbedBuilder:
 
         normal_options = result.normal_options if result.normal_options else result.options
         if normal_options:
-            for i, option in enumerate(normal_options, 1):
-                normal_embed.add_field(
-                    name=f"**选项 {option.choice_index} : {option.choice_text}**",
-                    value="",
-                    inline=False,
-                )
-                normal_embed.add_field(name="赞成", value=str(option.approve_votes), inline=True)
-                normal_embed.add_field(name="反对", value=str(option.reject_votes), inline=True)
-                normal_embed.add_field(name="总票数", value=str(option.total_votes), inline=True)
-        else:
-            normal_embed.add_field(name="赞成", value=f"{result.total_approve_votes}", inline=True)
-            normal_embed.add_field(name="反对", value=f"{result.total_reject_votes}", inline=True)
-            normal_embed.add_field(name="总票数", value=f"{result.total_votes}", inline=True)
+            for option in normal_options:
+                if result.ui_style == 2:
+                    # 简洁样式：标题包含支持人数，Value 显示选项文本
+                    normal_embed.add_field(
+                        name=f"**选项 {option.choice_index} : 支持人数 {option.approve_votes}**",
+                        value=option.choice_text,
+                        inline=False,
+                    )
+                else:
+                    # 标准样式：展示 赞成/反对/总票数 详情
+                    normal_embed.add_field(
+                        name=f"**选项 {option.choice_index} : {option.choice_text}**",
+                        value="",
+                        inline=False,
+                    )
+                    normal_embed.add_field(name="赞成", value=str(option.approve_votes), inline=True)
+                    normal_embed.add_field(name="反对", value=str(option.reject_votes), inline=True)
+                    normal_embed.add_field(name="总票数", value=str(option.total_votes), inline=True)
 
         embeds.append(normal_embed)
 
