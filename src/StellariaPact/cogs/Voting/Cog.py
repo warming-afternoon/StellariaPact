@@ -110,17 +110,10 @@ class Voting(commands.Cog):
         anonymous="是否匿名投票，默认是",
         realtime="是否实时显示票数，默认是",
         notify="结束时是否通知提案组，默认是",
-        max_choices_per_user="单个用户最多可支持的选项数量，默认无限制",
+        max_choices_per_user="单个用户最多可支持的选项数量，默认为1",
         ui_style="投票面板样式, 默认简洁样式",
     )
     @app_commands.choices(
-        duration_hours=[
-            app_commands.Choice(name="24小时", value=24),
-            app_commands.Choice(name="48小时", value=48),
-            app_commands.Choice(name="72小时", value=72),
-            app_commands.Choice(name="96小时", value=96),
-            app_commands.Choice(name="168小时(7天)", value=168),
-        ],
         ui_style=[
             app_commands.Choice(name="1 - 标准样式", value=1),
             app_commands.Choice(name="2 - 简洁样式", value=2),
@@ -137,11 +130,11 @@ class Voting(commands.Cog):
         option_4: str | None = None,
         option_5: str | None = None,
         option_6: str | None = None,
-        duration_hours: app_commands.Choice[int] | None = None,
+        duration_hours: int = 72,
         anonymous: bool = True,
         realtime: bool = True,
         notify: bool = True,
-        max_choices_per_user: int = 999999,
+        max_choices_per_user: int = 1,
         ui_style: app_commands.Choice[int] | None = None,
     ):
         """
@@ -181,7 +174,7 @@ class Voting(commands.Cog):
             return
 
         # 处理默认值
-        duration = duration_hours.value if duration_hours else 72
+        duration = duration_hours
         style = ui_style.value if ui_style else 2
 
         # 参数校验

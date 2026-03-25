@@ -20,19 +20,9 @@ class DiscordUtils:
     @staticmethod
     async def fetch_channel(
         bot: StellariaPactBot, channel_id: int
-    ) -> discord.TextChannel | discord.ForumChannel:
+    ) -> discord.TextChannel | discord.ForumChannel | discord.Thread:
         """
-        获取一个频道对象，优先使用缓存，支持文本和论坛频道
-
-        Args:
-            bot: Bot 实例
-            channel_id: 要获取的频道的 ID
-
-        Returns:
-            获取到的频道对象
-
-        Raises:
-            RuntimeError: 如果无法获取频道，或者频道不是文本或论坛频道。
+        获取一个频道对象，优先使用缓存，支持文本、论坛频道和帖子(Thread)
         """
         channel = bot.get_channel(channel_id)
         if not channel:
@@ -41,8 +31,8 @@ class DiscordUtils:
             except (discord.NotFound, discord.Forbidden) as e:
                 raise RuntimeError(f"无法获取ID为 {channel_id} 的频道。") from e
 
-        if not isinstance(channel, (discord.TextChannel, discord.ForumChannel)):
-            raise RuntimeError(f"ID 为 {channel_id} 的频道不是一个文本或论坛频道。")
+        if not isinstance(channel, (discord.TextChannel, discord.ForumChannel, discord.Thread)):
+            raise RuntimeError(f"ID 为 {channel_id} 的频道不是一个可发送消息的频道或论坛。")
         return channel
 
     @staticmethod
