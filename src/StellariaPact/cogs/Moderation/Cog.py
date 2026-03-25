@@ -12,9 +12,11 @@ from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
 from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.SelfAbandonReasonModal import SelfAbandonReasonModal
 from StellariaPact.dto import ProposalDto
 from StellariaPact.share import StellariaPactBot, StringUtils, UnitOfWork, safeDefer
 from StellariaPact.share.auth import PermissionGuard, RoleGuard
+from StellariaPact.share.enums import ProposalStatus
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +91,97 @@ class Moderation(commands.Cog):
         await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
 
     @app_commands.command(
+        name="自助废弃", description="[提案人] 提案发起人直接废弃自己的提案"
+    )
+    async def self_abandon_proposal(self, interaction: discord.Interaction):
+        """
+        通过弹出一个模态框来让提案发起人直接废弃自己的提案。
+        此命令不检查管理权限，而是通过验证是否为提案所有人来放行。
+        """
+        if not isinstance(interaction.channel, discord.Thread):
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message(
+                    "此命令只能在提案帖子内使用。", ephemeral=True
+                ), 1
+            )
+            return
+
+        # 获取提案数据并转换为DTO
+        proposal_dto = None
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.proposal.get_proposal_by_thread_id(interaction.channel.id)
+            if proposal:
+                proposal_dto = ProposalDto.model_validate(proposal)
+
+        # 进行验证
+        if not proposal_dto:
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message("未找到关连的提案。", ephemeral=True), 1
+            )
+            return
+
+        if proposal_dto.proposer_id != interaction.user.id:
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message(
+                    "只有提案发起人才能使用自助废弃功能", ephemeral=True
+                ), 1
+            )
+            return
+
+        valid_statuses = [
+            ProposalStatus.DISCUSSION,
+            ProposalStatus.FROZEN,
+            ProposalStatus.EXECUTING,
+            ProposalStatus.UNDER_OBJECTION
+        ]
+        if proposal_dto.status not in valid_statuses:
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message("提案当前状态不允许废弃。", ephemeral=True), 1
+            )
+            return
+
+        # 弹出模态框收集原因
+        modal = SelfAbandonReasonModal(self.bot, self.thread_manager, self)
+        await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), 1)
+
+    async def _handle_self_abandon(self, interaction: discord.Interaction, reason: str):
+        """处理由自助废弃模态框提交过来的数据"""
+        await safeDefer(interaction)
+
+        if not isinstance(interaction.channel, discord.Thread):
+            return
+
+        try:
+            # 发送状态变更 Embed
+            embed = ModerationEmbedBuilder.build_status_change_embed(
+                thread_name=interaction.channel.name,
+                new_status="已废弃",
+                moderator=interaction.user,
+                reason=reason
+            )
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send(embed=embed, ephemeral=False), 2
+            )
+
+            # 调用 logic 层处理
+            await self.logic.execute_self_abandon_proposal(
+                channel_id=interaction.channel.id,
+                user_id=interaction.user.id,
+                reason=reason
+            )
+
+        except ValueError as e:
+            # 对于预期的异常，仍作临时消息回应
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send(str(e), ephemeral=True), 1
+            )
+        except Exception as e:
+            logger.error(f"处理自助废弃时发生意外错误: {e}", exc_info=True)
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
+            )
+
+    @app_commands.command(
         name="重新讨论", description="[议事督导+执行监理] 将任何状态的提案恢复为讨论中"
     )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
@@ -105,72 +198,6 @@ class Moderation(commands.Cog):
         await self._handle_confirmation_command(
             interaction, self.logic.handle_rediscuss_proposal, notify_roles
         )
-
-    # @app_commands.command(
-    #     name="创建提案投票",
-    #     description="[提案人/议事督导/执行监理] 为当前帖子手动创建一个提案投票",
-    # )
-    # @app_commands.rename(
-    #     duration_hours="投票持续时间",
-    #     anonymous="是否匿名",
-    #     realtime="实时票数",
-    #     notify="结束时通知提案委员",
-    #     create_in_voting_channel="创建镜像投票",
-    #     notify_creation_role="通知投票创建身份组",
-    # )
-    # @app_commands.describe(
-    #     duration_hours="投票持续时间（小时），默认为 72 小时",
-    #     anonymous="是否匿名投票，默认为 是",
-    #     realtime="是否实时显示票数，默认为 是",
-    #     notify="投票结束时是否通知提案委员，默认为 是",
-    #     create_in_voting_channel="是否在投票频道创建镜像投票，默认为 是",
-    #     notify_creation_role="是否通知“投票创建”身份组,默认否",
-    # )
-    # async def create_proposal_vote(
-    #     self,
-    #     interaction: discord.Interaction,
-    #     duration_hours: app_commands.Range[int, 1, 720] = VoteDuration.PROPOSAL_DEFAULT,
-    #     anonymous: bool = True,
-    #     realtime: bool = True,
-    #     notify: bool = True,
-    #     create_in_voting_channel: bool = True,
-    #     notify_creation_role: bool = False,
-    # ):
-    #     """为当前帖子手动创建一个提案投票。
-
-    #     Args:
-    #         interaction (discord.Interaction): 命令交互对象。
-    #         duration_hours (app_commands.Range[int, 1, 720], optional): 投票持续时间（小时）。
-    #             默认为 72。
-    #         anonymous (bool, optional): 是否匿名投票。默认为 True
-    #         realtime (bool, optional): 是否实时显示票数。默认为 True
-    #         notify (bool, optional): 投票结束时是否通知提案委员。默认为 True
-    #         create_in_voting_channel (bool, optional): 是否在投票频道创建镜像投票。默认为 True
-    #         notify_creation_role (bool, optional): 是否通知创建身份组。默认为 False
-    #     """
-
-    #     if not isinstance(interaction.channel, discord.Thread):
-    #         await interaction.response.send_message("此命令只能在提案帖子内使用。", ephemeral=True)
-    #         return
-
-    #     # 收集命令参数以便传递给 Modal
-    #     command_args = {
-    #         "duration_hours": duration_hours,
-    #         "anonymous": anonymous,
-    #         "realtime": realtime,
-    #         "notify": notify,
-    #         "create_in_voting_channel": create_in_voting_channel,
-    #         "notify_creation_role": notify_creation_role,
-    #     }
-
-    #     # 弹出 Modal 以收集选项
-    #     modal = VoteOptionsModal(
-    #         bot=self.bot,
-    #         moderation_cog=self,
-    #         original_interaction=interaction,
-    #         **command_args,
-    #     )
-    #     await interaction.response.send_modal(modal)
 
     async def process_vote_creation(
         self,
