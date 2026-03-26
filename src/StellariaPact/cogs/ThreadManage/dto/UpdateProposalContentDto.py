@@ -10,6 +10,7 @@ class UpdateProposalContentDto:
     def __init__(
         self,
         proposal_id: int,
+        proposer_id: int,
         title: str,
         reason: str,
         motion: str,
@@ -18,6 +19,7 @@ class UpdateProposalContentDto:
         thread_id: int,
     ):
         self.proposal_id = proposal_id
+        self.proposer_id = proposer_id
         self.title = title
         self.reason = reason
         self.motion = motion
@@ -30,6 +32,7 @@ class UpdateProposalContentDto:
         将各个字段格式化为提案内容字符串。
         """
         return (
+            f"***提案人: <@{self.proposer_id}>***\n\n"
             f"> ## 提案原因\n{self.reason}\n\n"
             f"> ## 议案动议\n{self.motion}\n\n"
             f"> ## 执行方案\n{self.implementation}\n\n"

@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 class EditProposalContentModal(discord.ui.Modal, title="修改提案内容"):
     """
     用于修改提案内容的模态框。
-    允许 stewards 修改提案的标题、原因、动议、执行方案和执行人。
     """
 
     def __init__(self, proposal_id: int, intake: Optional["ProposalIntakeDto"] = None):
@@ -72,8 +71,7 @@ class EditProposalContentModal(discord.ui.Modal, title="修改提案内容"):
 
     async def on_submit(self, interaction: discord.Interaction):
         """
-        当用户提交表单时被调用。
-        触发 proposal_content_update_requested 事件，由 Cog 处理实际更新逻辑。
+        当用户提交表单时被调用
         """
 
         # 获取当前线程 ID
@@ -81,6 +79,7 @@ class EditProposalContentModal(discord.ui.Modal, title="修改提案内容"):
 
         dto = UpdateProposalContentDto(
             proposal_id=self.proposal_id,
+            proposer_id=interaction.user.id,
             title=self.title_input.value,
             reason=self.reason_input.value,
             motion=self.motion_input.value,
@@ -89,12 +88,12 @@ class EditProposalContentModal(discord.ui.Modal, title="修改提案内容"):
             thread_id=thread_id,
         )
 
-        # 触发事件，让 Cog 处理后续逻辑
+        # 触发事件，让 Cog 处理实际更新逻辑
         interaction.client.dispatch("proposal_content_update_requested", dto, interaction)
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         """
-        当提交过程中发生错误时被调用。
+        当提交过程中发生错误时被调用
         """
         logger.error(f"修改提案内容时发生错误: {error}", exc_info=True)
         if not interaction.response.is_done():
