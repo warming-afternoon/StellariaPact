@@ -14,8 +14,8 @@ from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationVie
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.cogs.Moderation.views.SelfAbandonReasonModal import SelfAbandonReasonModal
 from StellariaPact.dto import ProposalDto
-from StellariaPact.share import StellariaPactBot, StringUtils, UnitOfWork, safeDefer
-from StellariaPact.share.auth import PermissionGuard, RoleGuard
+from StellariaPact.share import StellariaPactBot, UnitOfWork, safeDefer
+from StellariaPact.share.auth import RoleGuard
 from StellariaPact.share.enums import ProposalStatus
 
 logger = logging.getLogger(__name__)
@@ -198,89 +198,6 @@ class Moderation(commands.Cog):
         await self._handle_confirmation_command(
             interaction, self.logic.handle_rediscuss_proposal, notify_roles
         )
-
-    async def process_vote_creation(
-        self,
-        interaction: discord.Interaction,
-        options: list[str],
-        duration_hours: int,
-        anonymous: bool,
-        realtime: bool,
-        notify: bool,
-        create_in_voting_channel: bool,
-        notify_creation_role: bool,
-    ):
-        """由 VoteOptionsModal 提交后调用的核心逻辑"""
-        await safeDefer(interaction)
-
-        if not isinstance(interaction.channel, discord.Thread):
-            return
-
-        # 权限检查
-        can_create = await PermissionGuard.can_manage_vote(interaction)
-        if not can_create:
-            content = "您没有权限在此帖子中创建投票。"
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send(content, ephemeral=True), 1
-            )
-            return
-
-        thread = interaction.channel
-
-        try:
-            raw_content = await StringUtils.extract_starter_content(thread)
-            if not raw_content:
-                content = "无法获取帖子的首楼内容，操作失败。"
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send(content, ephemeral=True), 1
-                )
-                return
-
-            proposer_id = (
-                StringUtils.extract_proposer_id_from_content(raw_content) or thread.owner_id
-            )
-
-            clean_content = StringUtils.clean_proposal_content(raw_content)
-            clean_title = StringUtils.clean_title(thread.name)
-
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                # 尝试创建提案
-                proposal = await uow.proposal.create_proposal(
-                    thread.id, proposer_id, clean_title, clean_content
-                )
-                # 如果提案已存在，则获取它
-                if not proposal:
-                    proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
-                # 转换为 DTO 以供事件使用
-                proposal_dto = ProposalDto.model_validate(proposal) if proposal else None
-                await uow.commit()
-
-            # 派发事件以创建投票
-            if proposal_dto:
-                self.bot.dispatch(
-                    "vote_session_created",
-                    proposal_dto=proposal_dto,
-                    options=options,
-                    duration_hours=duration_hours,
-                    anonymous=anonymous,
-                    realtime=realtime,
-                    notify=notify,
-                    create_in_voting_channel=create_in_voting_channel,
-                    notify_creation_role=notify_creation_role,
-                    thread=thread,
-                )
-            else:
-                content = "处理提案信息失败，无法创建投票。"
-                await self.bot.api_scheduler.submit(
-                    interaction.followup.send(content, ephemeral=True), 1
-                )
-
-        except Exception as e:
-            logger.error(f"手动创建提案投票时出错: {e}", exc_info=True)
-            content = f"发生错误: {e}"
-            await self.bot.api_scheduler.submit(
-                interaction.followup.send(content, ephemeral=True), 1
-            )
 
     # --- 私有方法 ---
 

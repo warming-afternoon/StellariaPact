@@ -6,12 +6,12 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Moderation.dto.ObjectionCreationResultDto import ObjectionCreationResultDto
-from StellariaPact.cogs.Moderation.qo.CreateObjectionAndVoteSessionShellQo import (
+from StellariaPact.cogs.Objection.dto.CreateObjectionAndVoteSessionShellQo import (
     CreateObjectionAndVoteSessionShellQo,
 )
-from StellariaPact.cogs.Moderation.qo.CreateObjectionQo import CreateObjectionQo
-from StellariaPact.cogs.Moderation.qo.ObjectionSupportQo import ObjectionSupportQo
+from StellariaPact.cogs.Objection.dto.CreateObjectionQo import CreateObjectionQo
+from StellariaPact.cogs.Objection.dto.ObjectionCreationResultDto import ObjectionCreationResultDto
+from StellariaPact.cogs.Objection.dto.ObjectionSupportQo import ObjectionSupportQo
 from StellariaPact.dto import HandleSupportObjectionResultDto, ObjectionDetailsDto
 from StellariaPact.dto.ObjectionDto import ObjectionDto
 from StellariaPact.models.Objection import Objection

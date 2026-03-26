@@ -6,7 +6,7 @@ from StellariaPact.share.BaseDto import BaseDto
 
 class ExecuteProposalResultDto(BaseDto):
     """
-    用于封装 handle_execute_proposal 逻辑层方法成功执行后的结果。
+    用于封装 handle_execute_proposal(双重确认) 逻辑层方法成功执行后的结果。
     """
 
     session_dto: ConfirmationSessionDto
