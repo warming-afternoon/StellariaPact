@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 import discord
@@ -84,7 +85,7 @@ class ThreadManageCog(commands.Cog):
         await safeDefer(interaction, ephemeral=True)
 
         try:
-            # 执行数据库操作（内部会创建自己的 UnitOfWork）
+            # 执行数据库操作
             old_values, changed_fields = await self._handle_update_within_uow(dto)
 
             # 执行 Discord API 操作
@@ -94,7 +95,7 @@ class ThreadManageCog(commands.Cog):
 
             # 更新帖子名称并保留状态前缀
             # 提取可能存在的状态前缀，如 "[讨论中]", "【已结束】" 等
-            import re
+
             prefix_match = re.match(r"^\s*([\[【].*?[\]】])\s*", thread.name)
             prefix = prefix_match.group(1) + " " if prefix_match else ""
 
