@@ -26,14 +26,14 @@ class VoteCloser(commands.Cog):
         """
         每分钟运行一次, 获取并处理已到期且未处理的投票会话
         """
-        logger.debug("开始检查已到期的投票...")
+        # logger.debug("开始检查已到期的投票...")
         try:
             # 获取所有过期且未处理的会话
             async with UnitOfWork(self.bot.db_handler) as uow:
                 expired_sessions = await uow.vote_session.get_expired_sessions()
 
             if not expired_sessions:
-                logger.debug("没有发现已到期的投票。")
+                # logger.debug("没有发现已到期的投票。")
                 return
 
             for session_dto in expired_sessions:

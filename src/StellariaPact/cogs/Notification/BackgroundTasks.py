@@ -43,7 +43,7 @@ class BackgroundTasks(commands.Cog):
         """
         每分钟检查一次需要重复播报的公示。
         """
-        logger.debug("正在执行定时任务: 检查需要重复播报的公示...")
+        # logger.debug("正在执行定时任务: 检查需要重复播报的公示...")
         pending_monitor_ids = []
         try:
             # 在一个简短的事务中安全地获取所有待处理的监控ID
@@ -52,7 +52,7 @@ class BackgroundTasks(commands.Cog):
                 pending_monitor_ids = [m.id for m in pending_monitors if m.id is not None]
 
             if not pending_monitor_ids:
-                logger.debug("没有找到需要重复播报的公示。")
+                # logger.debug("没有找到需要重复播报的公示。")
                 return
 
             logger.info(
@@ -77,7 +77,7 @@ class BackgroundTasks(commands.Cog):
         """
         每分钟检查一次到期的公示。
         """
-        logger.debug("正在执行定时任务: 检查到期公示...")
+        # logger.debug("正在执行定时任务: 检查到期公示...")
         expired_announcement_dtos = []
         try:
             # 获取所有过期的公示
@@ -88,7 +88,7 @@ class BackgroundTasks(commands.Cog):
                 ]
 
             if not expired_announcement_dtos:
-                logger.debug("没有找到需要处理的到期公示。")
+                # logger.debug("没有找到需要处理的到期公示。")
                 return
 
             logger.info(f"发现 {len(expired_announcement_dtos)} 个到期公示，开始处理...")
