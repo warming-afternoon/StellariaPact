@@ -78,7 +78,9 @@ class PunishmentListener(commands.Cog):
         self, interaction, thread, moderator, target_user, reason
     ):
         """解除提案处罚"""
-        await self.logic.handle_remove_punishment(interaction, thread, moderator, target_user, reason)
+        await self.logic.handle_remove_punishment(
+            interaction, thread, moderator, target_user, reason
+        )
 
     @commands.Cog.listener()
     async def on_thread_mute_updated(

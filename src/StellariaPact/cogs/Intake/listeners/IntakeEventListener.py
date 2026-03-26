@@ -28,19 +28,33 @@ class IntakeEventListenerCog(commands.Cog):
         self.intake_cog = intake_cog
 
     @commands.Cog.listener()
-    async def on_intake_submitted(self, interaction: discord.Interaction, dto: IntakeSubmissionDto):
+    async def on_intake_submitted(
+        self,
+        interaction: discord.Interaction,
+        dto: IntakeSubmissionDto,
+    ):
         await safeDefer(interaction, ephemeral=True)
         logger.info(f"接收到草案提交事件，提交人: {dto.author_id}")
         try:
             intake_dto = await self.intake_cog.logic.process_submit_intake(dto)
-            logger.info(f"✅ 议案草稿 (ID: {intake_dto.id}) by {dto.author_id} 已成功提交至审核通道。")
+            logger.info(
+                f"✅ 议案草稿 (ID: {intake_dto.id}) by {dto.author_id} "
+                "已成功提交至审核通道。"
+            )
             await interaction.followup.send("✅ 草案已提交", ephemeral=True)
         except Exception as e:
             logger.error(f"处理来自 {dto.author_id} 的草案提交时出错: {e}", exc_info=True)
 
     @commands.Cog.listener()
-    async def on_intake_approved(self, interaction: discord.Interaction, review_comment: str):
-        logger.info(f"接收到草案批准事件，审核人: {interaction.user.id}, 审核意见: {review_comment[:50]}...")
+    async def on_intake_approved(
+        self,
+        interaction: discord.Interaction,
+        review_comment: str,
+    ):
+        logger.info(
+            f"接收到草案批准事件，审核人: {interaction.user.id}, "
+            f"审核意见: {review_comment[:50]}..."
+        )
         await safeDefer(interaction, ephemeral=True)
 
         try:
@@ -48,15 +62,28 @@ class IntakeEventListenerCog(commands.Cog):
             await self.intake_cog.logic.approve_intake(
                 interaction.channel_id, interaction.user.id, review_comment
             )
-            logger.info(f"草案（帖子ID: {interaction.channel_id}）已成功批准并进入支持票收集阶段。")
+            logger.info(
+                f"草案（帖子ID: {interaction.channel_id}）"
+                "已成功批准并进入支持票收集阶段。"
+            )
             await interaction.followup.send("✅ 草案已批准，审核信息已记录", ephemeral=True)
         except Exception as e:
-            logger.error(f"处理草案批准事件时出错 (帖子ID: {interaction.channel_id}): {e}", exc_info=True)
+            logger.error(
+                f"处理草案批准事件时出错 (帖子ID: {interaction.channel_id}): {e}",
+                exc_info=True,
+            )
             await interaction.followup.send(f"❌ 处理批准时出错: {str(e)}", ephemeral=True)
 
     @commands.Cog.listener()
-    async def on_intake_rejected(self, interaction: discord.Interaction, review_comment: str):
-        logger.info(f"接收到草案拒绝事件，审核人: {interaction.user.id}, 审核意见: {review_comment[:50]}...")
+    async def on_intake_rejected(
+        self,
+        interaction: discord.Interaction,
+        review_comment: str,
+    ):
+        logger.info(
+            f"接收到草案拒绝事件，审核人: {interaction.user.id}, "
+            f"审核意见: {review_comment[:50]}..."
+        )
         await safeDefer(interaction, ephemeral=True)
 
         try:
@@ -67,12 +94,22 @@ class IntakeEventListenerCog(commands.Cog):
             logger.info(f"草案（帖子ID: {interaction.channel_id}）已成功标记为“已拒绝”。")
             await interaction.followup.send("✅ 草案已拒绝，审核信息已记录", ephemeral=True)
         except Exception as e:
-            logger.error(f"处理草案拒绝事件时出错 (帖子ID: {interaction.channel_id}): {e}", exc_info=True)
+            logger.error(
+                f"处理草案拒绝事件时出错 (帖子ID: {interaction.channel_id}): {e}",
+                exc_info=True,
+            )
             await interaction.followup.send(f"❌ 处理拒绝时出错: {str(e)}", ephemeral=True)
 
     @commands.Cog.listener()
-    async def on_intake_modification_requested(self, interaction: discord.Interaction, review_comment: str):
-        logger.info(f"接收到草案要求修改事件，审核人: {interaction.user.id}, 审核意见: {review_comment[:50]}...")
+    async def on_intake_modification_requested(
+        self,
+        interaction: discord.Interaction,
+        review_comment: str,
+    ):
+        logger.info(
+            f"接收到草案要求修改事件，审核人: {interaction.user.id}, "
+            f"审核意见: {review_comment[:50]}..."
+        )
         await safeDefer(interaction, ephemeral=True)
 
         try:
@@ -83,7 +120,10 @@ class IntakeEventListenerCog(commands.Cog):
             logger.info(f"草案（帖子ID: {interaction.channel_id}）已成功标记为“需要修改”。")
             await interaction.followup.send("✅ 已要求修改草案，审核信息已记录", ephemeral=True)
         except Exception as e:
-            logger.error(f"处理草案要求修改事件时出错 (帖子ID: {interaction.channel_id}): {e}", exc_info=True)
+            logger.error(
+                f"处理草案要求修改事件时出错 (帖子ID: {interaction.channel_id}): {e}",
+                exc_info=True,
+            )
             await interaction.followup.send(f"❌ 处理要求修改时出错: {str(e)}", ephemeral=True)
 
     @commands.Cog.listener()
@@ -96,14 +136,22 @@ class IntakeEventListenerCog(commands.Cog):
             await interaction.followup.send(f"❌ 操作失败: {str(e)}", ephemeral=True)
 
     @commands.Cog.listener()
-    async def on_intake_edited(self, interaction: discord.Interaction, intake_id: int, dto: IntakeSubmissionDto):
+    async def on_intake_edited(
+        self,
+        interaction: discord.Interaction,
+        intake_id: int,
+        dto: IntakeSubmissionDto,
+    ):
         logger.info(f"接收到草案修改事件，修改人: {interaction.user.id}, 草案ID: {intake_id}")
         await safeDefer(interaction, ephemeral=True)
 
         try:
             await self.intake_cog.logic.edit_intake(intake_id, dto)
             logger.info(f"✅ 草案 (ID: {intake_id}) 已被成功修改并更新帖子内容。")
-            await interaction.followup.send("✅ 提案修改成功！审核帖子内容已更新。", ephemeral=True)
+            await interaction.followup.send(
+                "✅ 提案修改成功！审核帖子内容已更新。",
+                ephemeral=True,
+            )
         except Exception as e:
             logger.error(f"处理草案修改事件时出错 (ID: {intake_id}): {e}", exc_info=True)
             await interaction.followup.send(f"❌ 修改提案时出错: {str(e)}", ephemeral=True)

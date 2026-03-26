@@ -30,13 +30,25 @@ class IntakeEditModal(Modal):
             label="标题", default=intake.title, max_length=100, required=True
         )
         self.reason_input = TextInput(
-            label="原因", style=discord.TextStyle.paragraph, default=intake.reason, max_length=1000, required=True
+            label="原因",
+            style=discord.TextStyle.paragraph,
+            default=intake.reason,
+            max_length=1000,
+            required=True,
         )
         self.motion_input = TextInput(
-            label="动议", style=discord.TextStyle.paragraph, default=intake.motion, max_length=1000, required=True
+            label="动议",
+            style=discord.TextStyle.paragraph,
+            default=intake.motion,
+            max_length=1000,
+            required=True,
         )
         self.implementation_input = TextInput(
-            label="方案", style=discord.TextStyle.paragraph, default=intake.implementation, max_length=1000, required=True
+            label="方案",
+            style=discord.TextStyle.paragraph,
+            default=intake.implementation,
+            max_length=1000,
+            required=True,
         )
         self.executor_input = TextInput(
             label="执行人", default=intake.executor, max_length=100, required=True

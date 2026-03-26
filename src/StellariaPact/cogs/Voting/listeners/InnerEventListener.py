@@ -312,7 +312,8 @@ class InnerEventListener(commands.Cog):
                     status = proposal.status if proposal else None
                 if status and status == ProposalStatus.EXECUTING:
                     await interaction.followup.send(
-                        "❌ 操作失败：该提案已进入**执行阶段**，根据议事规则，此时无法再发起新的异议。",
+                        "❌ 操作失败：该提案已进入**执行阶段**，"
+                        "根据规则，此时无法再发起新的异议。",
                         ephemeral=True
                     )
                     return
@@ -970,7 +971,9 @@ class InnerEventListener(commands.Cog):
             view = VoteView(self.bot, vote_details=vote_details)
 
             if new_embeds:
-                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds, view=view), priority=2)
+                await self.bot.api_scheduler.submit(
+                    message.edit(embeds=new_embeds, view=view), priority=2
+                )
         except discord.NotFound:
             logger.warning(f"找不到帖子内投票消息 {vote_details.context_message_id}，跳过更新。")
         except Exception as e:
@@ -1002,7 +1005,9 @@ class InnerEventListener(commands.Cog):
             view = VotingChannelView(self.bot, vote_details=vote_details)
 
             if new_embeds:
-                await self.bot.api_scheduler.submit(message.edit(embeds=new_embeds, view=view), priority=2)
+                await self.bot.api_scheduler.submit(
+                    message.edit(embeds=new_embeds, view=view), priority=2
+                )
         except discord.NotFound:
             logger.warning(
                 f"找不到投票频道内消息 {vote_details.voting_channel_message_id}，跳过更新。"
@@ -1015,9 +1020,10 @@ class InnerEventListener(commands.Cog):
         if not vote_details.context_message_id:
             return
 
-
         async with UnitOfWork(self.bot.db_handler) as uow:
-            session = await uow.vote_session.get_vote_session_by_context_message_id(vote_details.context_message_id)
+            session = await uow.vote_session.get_vote_session_by_context_message_id(
+                vote_details.context_message_id
+            )
             if not session or not session.id:
                 return
             mirrors = await uow.vote_session.get_mirrors_by_session_id(session.id)
@@ -1037,7 +1043,9 @@ class InnerEventListener(commands.Cog):
                 new_embeds = VoteEmbedBuilder.create_vote_panel_embed_v2(topic, vote_details)
                 view = VotingChannelView(self.bot, vote_details=vote_details)
 
-                await self.bot.api_scheduler.submit(msg.edit(embeds=new_embeds, view=view), priority=3)
+                await self.bot.api_scheduler.submit(
+                    msg.edit(embeds=new_embeds, view=view), priority=3
+                )
             except discord.NotFound:
                 pass
             except discord.Forbidden:

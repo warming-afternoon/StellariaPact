@@ -16,7 +16,7 @@ class TimeUtils:
     ) -> datetime:
         """
         根据持续时间计算出未来的、准确的 UTC 结束时间。
-        
+
         Args:
             duration_hours: 持续的小时数。
             start_time: 计算的起始时间。如果为 None，则使用当前 UTC 时间。

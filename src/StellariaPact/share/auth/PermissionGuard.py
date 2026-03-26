@@ -67,7 +67,8 @@ class PermissionGuard:
         满足以下任一条件即可：
         1. 用户有 councilModerator、executionAuditor 或 stewards 身份。
         2. 用户是当前帖子关联提案的发起人。
-        3. 如果是异议 (option_type == 1)：用户在当前帖子中的有效发言数 > 10，并且拥有 社区建设者 身份。
+        3. 如果是异议 (option_type == 1)：用户在当前帖子中的有效发言数 > 10，
+           并且拥有 社区建设者 身份。
         """
         if RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor", "stewards"):
             return True

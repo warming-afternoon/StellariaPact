@@ -156,7 +156,10 @@ class Voting(commands.Cog):
 
         if not valid_options:
             await self.bot.api_scheduler.submit(
-                interaction.followup.send("❌ 创建失败：必须至少提供一个有效的投票选项（不能全为空格）。"), priority=1
+                interaction.followup.send(
+                    "❌ 创建失败：必须至少提供一个有效的投票选项（不能全为空格）。"
+                ),
+                priority=1,
             )
             return
 
@@ -180,13 +183,15 @@ class Voting(commands.Cog):
         # 参数校验
         if max_choices_per_user < 1:
             await self.bot.api_scheduler.submit(
-                interaction.followup.send("每人最多可支持的选项数量必须大于等于1。"), priority=1
+                interaction.followup.send("每人最多可支持的选项数量必须大于等于1。"),
+                priority=1,
             )
             return
 
         if style not in (1, 2):
             await self.bot.api_scheduler.submit(
-                interaction.followup.send("UI样式必须是1（标准）或2（简洁）。"), priority=1
+                interaction.followup.send("UI样式必须是1（标准）或2（简洁）。"),
+                priority=1,
             )
             return
 
@@ -211,11 +216,15 @@ class Voting(commands.Cog):
             # 发送确认消息
             style_text = "标准样式" if style == 1 else "简洁样式"
 
-
+            max_choices_text = (
+                str(max_choices_per_user)
+                if max_choices_per_user < 999999
+                else "无限制"
+            )
             confirm_msg = (
                 f"✅ 已创建新的提案投票。\n"
                 f"- 持续时间: {duration}小时\n"
-                f"- 每人最多支持选项数: {max_choices_per_user if max_choices_per_user < 999999 else '无限制'}\n"
+                f"- 每人最多支持选项数: {max_choices_text}\n"
                 f"- 面板样式: {style_text}"
             )
 
@@ -246,7 +255,11 @@ class Voting(commands.Cog):
             # 检查是否在讨论频道内
             discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
             try:
-                discussion_channel_id = int(discussion_channel_id_str) if discussion_channel_id_str else None
+                discussion_channel_id = (
+                    int(discussion_channel_id_str)
+                    if discussion_channel_id_str
+                    else None
+                )
             except ValueError:
                 discussion_channel_id = None
 
@@ -301,7 +314,9 @@ class Voting(commands.Cog):
             return None
 
     @RoleGuard.requireRoles("stewards", "councilModerator", "executionAuditor")
-    async def copy_vote_mirror(self, interaction: discord.Interaction, message: discord.Message) -> None:
+    async def copy_vote_mirror(
+        self, interaction: discord.Interaction, message: discord.Message
+    ) -> None:
         """
         消息右键菜单命令：复制该投票的镜像到当前频道/帖子中。
         """
@@ -339,7 +354,8 @@ class Voting(commands.Cog):
         # 在用户执行命令的当前频道中发送这条镜像消息
         channel = interaction.channel
         new_msg = await self.bot.api_scheduler.submit(
-            channel.send(embeds=embeds, view=view), priority=2  # type: ignore
+            channel.send(embeds=embeds, view=view),  # type: ignore
+            priority=2,
         )
 
         # 记录新镜像到数据库
@@ -347,9 +363,10 @@ class Voting(commands.Cog):
             context_message_id=vote_details.context_message_id,
             guild_id=interaction.guild_id,
             channel_id=interaction.channel_id,
-            new_message_id=new_msg.id
+            new_message_id=new_msg.id,
         )
 
         await self.bot.api_scheduler.submit(
-            interaction.followup.send("✅ 投票镜像复制成功！该面板的数据与原贴同步更新。"), priority=1
+            interaction.followup.send("✅ 投票镜像复制成功！该面板的数据与原贴同步更新。"),
+            priority=1,
         )

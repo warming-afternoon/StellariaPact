@@ -59,7 +59,9 @@ class PunishmentCog(commands.Cog):
         # )
 
     @RoleGuard.requireRoles("councilModerator", "stewards")
-    async def remove_punishment_message(self, interaction: discord.Interaction, message: discord.Message):
+    async def remove_punishment_message(
+        self, interaction: discord.Interaction, message: discord.Message
+    ):
         """[议事督导/管理组] 解除该消息作者在当前帖子的处罚"""
         # 目标用户是消息的作者
         target_member = message.author

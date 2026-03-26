@@ -180,7 +180,8 @@ class ModerationLogic:
                 )
                 if approve_votes > reject_votes:
                     raise ValueError(
-                        f"无法操作：异议「{option.choice_text}」目前赞成票居多 ({approve_votes} vs {reject_votes})。"
+                        f"无法操作：异议「{option.choice_text}」目前赞成票居多"
+                        f" ({approve_votes} vs {reject_votes})。"
                     )
 
     async def _initiate_proposal_confirmation(
@@ -393,7 +394,10 @@ class ModerationLogic:
                 return
             await self.thread_manager.update_status(thread, "under_objection")
         except Exception as e:
-            logger.error(f"提案帖子 {thread_id} 状态已入库，但更新 Discord UI 失败: {e}", exc_info=True)
+            logger.error(
+                f"提案帖子 {thread_id} 状态已入库，但更新 Discord UI 失败: {e}",
+                exc_info=True,
+            )
             return
 
         logger.info(f"提案帖子 {thread_id} 已更新为异议中。")
@@ -472,7 +476,10 @@ class ModerationLogic:
                 return
             await self.thread_manager.update_status(thread, "discussion")
         except Exception as e:
-            logger.error(f"提案帖子 {thread_id} 状态已入库，但更新 Discord UI 失败: {e}", exc_info=True)
+            logger.error(
+                f"提案帖子 {thread_id} 状态已入库，但更新 Discord UI 失败: {e}",
+                exc_info=True,
+            )
             return
 
         logger.info(f"提案帖子 {thread_id} 的异议已清空，已恢复为讨论中。")
@@ -505,7 +512,9 @@ class ModerationLogic:
                     proposal.discussion_thread_id
                 )
                 session_ids = [s.id for s in sessions if s.id is not None]
-                objection_options = await uow.vote_option.get_options_by_session_ids(session_ids, 1)
+                objection_options = await uow.vote_option.get_options_by_session_ids(
+                    session_ids, 1
+                )
 
                 for option in objection_options:
                     assert option.id is not None
@@ -524,16 +533,25 @@ class ModerationLogic:
         for message_id in session_message_ids_to_refresh:
             try:
                 async with UnitOfWork(self.bot.db_handler) as uow:
-                    vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
+                    vote_session = await uow.vote_session.get_vote_session_with_details(
+                        message_id
+                    )
                     if not vote_session:
-                        logger.warning(f"找不到与消息 ID {message_id} 关联的投票会话，跳过面板刷新。")
+                        logger.warning(
+                            f"找不到与消息 ID {message_id} 关联的投票会话，"
+                            "跳过面板刷新。"
+                        )
                         continue
 
                     vote_options = None
                     if vote_session.id:
-                        vote_options = await uow.vote_option.get_vote_options(vote_session.id)
+                        vote_options = await uow.vote_option.get_vote_options(
+                            vote_session.id
+                        )
 
-                    vote_details = VoteSessionService.get_vote_details_dto(vote_session, vote_options)
+                    vote_details = VoteSessionService.get_vote_details_dto(
+                        vote_session, vote_options
+                    )
 
                 self.bot.dispatch("vote_details_updated", vote_details)
             except Exception as e:

@@ -120,9 +120,15 @@ class VoteEmbedBuilder:
                         value="",
                         inline=False,
                     )
-                    normal_embed.add_field(name="赞成", value=str(option.approve_votes), inline=True)
-                    normal_embed.add_field(name="反对", value=str(option.reject_votes), inline=True)
-                    normal_embed.add_field(name="总票数", value=str(option.total_votes), inline=True)
+                    normal_embed.add_field(
+                        name="赞成", value=str(option.approve_votes), inline=True
+                    )
+                    normal_embed.add_field(
+                        name="反对", value=str(option.reject_votes), inline=True
+                    )
+                    normal_embed.add_field(
+                        name="总票数", value=str(option.total_votes), inline=True
+                    )
 
         embeds.append(normal_embed)
 
@@ -335,7 +341,10 @@ class VoteEmbedBuilder:
                 if vote_details.realtime_flag:
                     # 简洁样式仅显示支持人数
                     if vote_details.ui_style == 2:
-                        name = f"选项 {opt.choice_index} : 支持人数 {opt.approve_votes}\n{opt.choice_text}\n"
+                        name = (
+                            f"选项 {opt.choice_index} : 支持人数 {opt.approve_votes}\n"
+                            f"{opt.choice_text}\n"
+                        )
                         value = ""
                     else:
                         name = f"选项 {opt.choice_index}: \n{opt.choice_text}\n"
@@ -461,7 +470,11 @@ class VoteEmbedBuilder:
                         val = f"\n\n{opt.choice_text}\n"
                     else:
                         name = f"选项 {opt.choice_index}: "
-                        val = f"\n\n{opt.choice_text}\n✅ 赞成: {opt.approve_votes} | ❌ 反对: {opt.reject_votes}\n"
+                        val = (
+                            f"\n\n{opt.choice_text}\n"
+                            f"✅ 赞成: {opt.approve_votes} | "
+                            f"❌ 反对: {opt.reject_votes}\n"
+                        )
                 else:
                     name = f"选项 {opt.choice_index}: "
                     val = f"\n\n{opt.choice_text}\n"

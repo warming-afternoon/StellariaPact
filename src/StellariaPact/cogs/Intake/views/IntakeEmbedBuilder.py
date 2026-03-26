@@ -7,7 +7,6 @@ from typing import Optional
 import discord
 
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
-from StellariaPact.models.ProposalIntake import ProposalIntake
 from StellariaPact.share.enums import IntakeStatus
 
 logger = logging.getLogger(__name__)
@@ -61,13 +60,6 @@ class IntakeEmbedBuilder:
             color=color,
         )
 
-        # 如果已经开启了支持票收集，添加跳转到投票消息的链接
-        if intake.status >= IntakeStatus.SUPPORT_COLLECTING and intake.voting_message_id:
-            # 这里的投票频道 ID 通常需要从配置拿，为了方便，我们可以在 Embed 中展示
-            # 注意：这里需要投票频道的 channel_id，但当前模型中没有存储
-            # 我们可以先不添加这个链接，或者从配置中获取
-            pass
-
         embed.add_field(name="草案ID", value=f"`{intake.id}`", inline=True)
         embed.add_field(name="状态", value=status_text, inline=True)
         embed.add_field(name="原因", value=intake.reason, inline=False)
@@ -92,7 +84,19 @@ class IntakeEmbedBuilder:
             emoji = ""
             status_desc = status_text
 
-        content = f"""👤 **提案人：** <@{intake.author_id}>\n📅 **提交时间：** <t:{submitted_timestamp}:f>\n🆔 **草案ID：** `{intake.id}`\n\n---\n\n🏷️ **议案标题**\n{intake.title}\n\n📝 **提案原因**\n{intake.reason}\n\n📋 **议案动议**\n{intake.motion}\n\n🔧 **执行方案**\n{intake.implementation}\n\n👨‍💼 **议案执行人**\n{intake.executor}\n\n---\n\n{emoji} **状态：** {status_desc}\n"""
+        content = (
+            f"👤 **提案人：** <@{intake.author_id}>\n"
+            f"📅 **提交时间：** <t:{submitted_timestamp}:f>\n"
+            f"🆔 **草案ID：** `{intake.id}`\n\n"
+            "---\n\n"
+            f"🏷️ **议案标题**\n{intake.title}\n\n"
+            f"📝 **提案原因**\n{intake.reason}\n\n"
+            f"📋 **议案动议**\n{intake.motion}\n\n"
+            f"🔧 **执行方案**\n{intake.implementation}\n\n"
+            f"👨‍💼 **议案执行人**\n{intake.executor}\n\n"
+            "---\n\n"
+            f"{emoji} **状态：** {status_desc}\n"
+        )
         return content.strip()
 
     @staticmethod
@@ -121,7 +125,7 @@ class IntakeEmbedBuilder:
 
     @staticmethod
     def build_support_result_embed(
-        intake: ProposalIntake,
+        intake: ProposalIntakeDto,
         success: bool,
         thread_id: Optional[int] = None,
         current_votes: int = 0,
@@ -130,7 +134,7 @@ class IntakeEmbedBuilder:
         构建支持票收集结束后的结果 Embed
 
         Args:
-            intake: 草案对象
+            intake: 草案DTO对象
             success: 是否成功达到支持票数
             thread_id: 成功时关联的讨论帖ID（可选）
             current_votes: 当前获得的票数

@@ -44,7 +44,8 @@ class ModerationEventListener(commands.Cog):
         # 在讨论帖内创建核心投票面板
         try:
             vote_details = await self._create_in_thread_vote(
-                proposal_dto, thread, duration_hours, anonymous, realtime, notify, options, max_choices_per_user, ui_style,
+                proposal_dto, thread, duration_hours, anonymous, realtime,
+                notify, options, max_choices_per_user, ui_style,
                 creator=creator
             )
         except Exception as e:

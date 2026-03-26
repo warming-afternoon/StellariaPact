@@ -14,7 +14,7 @@ class PunishmentEmbedBuilder:
         is_voting_allowed: bool,
         mute_end_time: Optional[datetime] = None,
     ) -> discord.Embed:
-
+        """创建处罚公示 Embed"""
         description_lines = [f"**目标用户**: {target_user.mention}"]
 
         if is_voting_allowed:
@@ -57,7 +57,10 @@ class PunishmentEmbedBuilder:
         """创建解除处罚的公示 Embed"""
         embed = discord.Embed(
             title="议事成员处罚解除公示",
-            description=f"**目标用户**: {target_user.mention}\n**处理方式**: 恢复本帖投票资格，并解除禁言限制。",
+            description=(
+                f"**目标用户**: {target_user.mention}\n"
+                f"**处理方式**: 恢复本帖投票资格，并解除禁言限制。"
+            ),
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow(),
         )

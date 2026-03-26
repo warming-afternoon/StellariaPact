@@ -38,7 +38,8 @@ class VotingEventListener(commands.Cog):
         except Exception as e:
             logger.error(
                 "处理“提案进入异议中”请求失败: "
-                f"thread_id={thread_id}, trigger_user_id={trigger_user_id}, source={source}, error={e}",
+                f"thread_id={thread_id}, trigger_user_id={trigger_user_id}, "
+                f"source={source}, error={e}",
                 exc_info=True,
             )
 
@@ -60,6 +61,7 @@ class VotingEventListener(commands.Cog):
         except Exception as e:
             logger.error(
                 "处理'提案异议清空'请求失败: "
-                f"thread_id={thread_id}, trigger_user_id={trigger_user_id}, source={source}, error={e}",
+                f"thread_id={thread_id}, trigger_user_id={trigger_user_id}, "
+                f"source={source}, error={e}",
                 exc_info=True,
             )

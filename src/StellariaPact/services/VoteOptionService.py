@@ -87,7 +87,9 @@ class VoteOptionService:
         ).order_by(VoteOption.choice_index) # type: ignore
         return (await self.session.exec(statement)).all()
 
-    async def get_options_by_session_ids(self, session_ids: list[int], option_type: int) -> Sequence[VoteOption]:
+    async def get_options_by_session_ids(
+        self, session_ids: list[int], option_type: int
+    ) -> Sequence[VoteOption]:
         """批量获取多个会话下（未被逻辑删除）的特定类型选项"""
         if not session_ids:
             return []

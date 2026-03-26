@@ -187,7 +187,9 @@ class Moderation(commands.Cog):
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     @app_commands.rename(notify_roles="通知相关方")
     @app_commands.describe(notify_roles="是否在发起确认时通知督导和监理组 (默认为是)")
-    async def rediscuss_proposal(self, interaction: discord.Interaction, notify_roles: bool = True):
+    async def rediscuss_proposal(
+        self, interaction: discord.Interaction, notify_roles: bool = True
+    ):
         """
         将提案变更为重新讨论中状态。
 
@@ -199,7 +201,9 @@ class Moderation(commands.Cog):
             interaction, self.logic.handle_rediscuss_proposal, notify_roles
         )
 
-    # --- 私有方法 ---
+    # -------------------------
+    # 私有方法
+    # -------------------------
 
     async def _handle_confirmation_command(
         self,
