@@ -24,26 +24,41 @@ class VoteView(discord.ui.View):
 
         # --- 第一行 ---
         btn_manage = discord.ui.Button(
-            label="投票管理", style=discord.ButtonStyle.primary, row=0, custom_id="btn_manage_vote", disabled=not is_active
+            label="投票管理",
+            style=discord.ButtonStyle.primary,
+            row=0,
+            custom_id="btn_manage_vote",
+            disabled=not is_active,
         )
         btn_manage.callback = self.manage_vote
         self.add_item(btn_manage)
 
         btn_rules = discord.ui.Button(
-            label="规则管理", style=discord.ButtonStyle.secondary, row=0, custom_id="btn_manage_rules"
+            label="规则管理",
+            style=discord.ButtonStyle.secondary,
+            row=0,
+            custom_id="btn_manage_rules",
         )
         btn_rules.callback = self.manage_rules
         self.add_item(btn_rules)
 
         # --- 第二行 ---
         btn_normal = discord.ui.Button(
-            label="创建普通投票", style=discord.ButtonStyle.success, row=1, custom_id="btn_create_normal", disabled=not is_active
+            label="创建普通投票",
+            style=discord.ButtonStyle.success,
+            row=1,
+            custom_id="btn_create_normal",
+            disabled=not is_active,
         )
         btn_normal.callback = self.create_normal
         self.add_item(btn_normal)
 
         btn_objection = discord.ui.Button(
-            label="创建异议", style=discord.ButtonStyle.danger, row=1, custom_id="btn_create_objection", disabled=not is_active
+            label="创建异议",
+            style=discord.ButtonStyle.danger,
+            row=1,
+            custom_id="btn_create_objection",
+            disabled=not is_active,
         )
         btn_objection.callback = self.create_objection
         self.add_item(btn_objection)

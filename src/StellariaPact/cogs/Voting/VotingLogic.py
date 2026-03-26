@@ -36,13 +36,19 @@ class VotingLogic:
             await uow.vote_session.update_vote_session_message_id(session_id, message_id)
             await uow.commit()
 
-    async def get_user_votes_dict(self, message_id: int, user_id: int) -> dict[tuple[int, int], int]:
+    async def get_user_votes_dict(
+        self, message_id: int, user_id: int
+    ) -> dict[tuple[int, int], int]:
         """获取特定用户在指定投票中的选择字典 {(option_type, choice_index): choice}"""
         async with UnitOfWork(self.bot.db_handler) as uow:
             session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not session:
                 return {}
-            return {(v.option_type, v.choice_index): v.choice for v in session.userVotes if v.user_id == user_id}
+            return {
+                (v.option_type, v.choice_index): v.choice
+                for v in session.userVotes
+                if v.user_id == user_id
+            }
 
     async def record_vote_and_get_details(self, qo: RecordVoteQo) -> VoteDetailDto:
         """
@@ -65,13 +71,28 @@ class VotingLogic:
             # 多选项数上限限制检查（仅针对支持票 choice==1 检查）
             if qo.choice == 1:
                 current_supports = [
-                    v for v in vote_session.userVotes
-                    if v.user_id == qo.user_id and v.choice == 1 and v.option_type == qo.option_type
+                    v
+                    for v in vote_session.userVotes
+                    if (
+                        v.user_id == qo.user_id
+                        and v.choice == 1
+                        and v.option_type == qo.option_type
+                    )
                 ]
-                already_supported = any(v.choice_index == qo.choice_index for v in current_supports)
+                already_supported = any(
+                    v.choice_index == qo.choice_index for v in current_supports
+                )
                 # 如果是新的支持票，且已达上限，则阻拦
-                if not already_supported and len(current_supports) >= getattr(vote_session, "max_choices_per_user", 999999):
-                    raise PermissionError(f"您最多只能支持 {getattr(vote_session, 'max_choices_per_user', 999999)} 个选项。请先撤回其他支持。")
+                max_choices_per_user = getattr(
+                    vote_session, "max_choices_per_user", 999999
+                )
+                if (
+                    not already_supported
+                    and len(current_supports) >= max_choices_per_user
+                ):
+                    raise PermissionError(
+                        f"您最多只能支持 {max_choices_per_user} 个选项。请先撤回其他支持。"
+                    )
 
             # 记录投票
             updated_session = await uow.user_vote.record_vote(qo, vote_session)
@@ -94,14 +115,6 @@ class VotingLogic:
             if vote_session.id:
                 vote_options = await uow.vote_option.get_vote_options(vote_session.id)
             return VoteSessionService.get_vote_details_dto(vote_session, vote_options)
-
-    async def get_vote_flags(self, message_id: int) -> tuple[bool, bool, bool]:
-        """以轻量级方式仅获取投票会话的匿名、实时和通知标志。"""
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            flags = await uow.vote_session.get_vote_flags(message_id)
-            if not flags:
-                raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
-            return flags  # (is_anonymous, is_realtime, is_notify)
 
     async def _get_combined_eligibility_data(
         self, uow: UnitOfWork, user_id: int, thread_id: int, vote_session: VoteSession
@@ -429,7 +442,9 @@ class VotingLogic:
             )
 
             # 构建 DTO
-            vote_details_dto = uow.vote_session.get_vote_details_dto(vote_session, remaining_options)
+            vote_details_dto = uow.vote_session.get_vote_details_dto(
+                vote_session, remaining_options
+            )
             await uow.commit()
 
             # 返回最新的 DTO
@@ -445,11 +460,15 @@ class VotingLogic:
 
             # 查主镜像
             if not session:
-                session = await uow.vote_session.get_vote_session_with_details_by_voting_channel_message_id(message_id)
+                session = await uow.vote_session.get_details_by_voting_channel_message_id(
+                    message_id
+                )
 
             # 查额外镜像
             if not session:
-                session = await uow.vote_session.get_vote_session_with_details_by_mirror_message_id(message_id)
+                session = await uow.vote_session.get_details_by_mirror_message_id(
+                    message_id
+                )
 
             # 如果都没找到
             if not session or not session.id:
@@ -459,18 +478,26 @@ class VotingLogic:
             vote_options = await uow.vote_option.get_vote_options(session.id)
             return VoteSessionService.get_vote_details_dto(session, vote_options)
 
-    async def add_mirror_record_by_context(self, context_message_id: int, guild_id: int, channel_id: int, new_message_id: int):
+    async def add_mirror_record_by_context(
+        self,
+        context_message_id: int,
+        guild_id: int,
+        channel_id: int,
+        new_message_id: int,
+    ):
         """
         根据原帖消息ID反查出 Session ID，并写入新的镜像记录。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
-            session = await uow.vote_session.get_vote_session_by_context_message_id(context_message_id)
+            session = await uow.vote_session.get_vote_session_by_context_message_id(
+                context_message_id
+            )
             if session and session.id:
                 await uow.vote_session.add_mirror_message(
                     session_id=session.id,
                     guild_id=guild_id,
                     channel_id=channel_id,
-                    message_id=new_message_id
+                    message_id=new_message_id,
                 )
                 await uow.commit()
 

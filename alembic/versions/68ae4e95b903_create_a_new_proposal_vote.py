@@ -27,25 +27,86 @@ def upgrade() -> None:
         sa.Column('guild_id', sa.Integer(), nullable=False),
         sa.Column('channel_id', sa.Integer(), nullable=False),
         sa.Column('message_id', sa.Integer(), nullable=False),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+        sa.Column(
+            'created_at',
+            sa.DateTime(),
+            server_default=sa.text('(CURRENT_TIMESTAMP)'),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint('id')
         )
-        op.create_index(op.f('ix_vote_message_mirror_channel_id'), 'vote_message_mirror', ['channel_id'], unique=False)
-        op.create_index(op.f('ix_vote_message_mirror_guild_id'), 'vote_message_mirror', ['guild_id'], unique=False)
-        op.create_index(op.f('ix_vote_message_mirror_message_id'), 'vote_message_mirror', ['message_id'], unique=False)
-        op.create_index(op.f('ix_vote_message_mirror_session_id'), 'vote_message_mirror', ['session_id'], unique=False)
+        op.create_index(
+            op.f('ix_vote_message_mirror_channel_id'),
+            'vote_message_mirror',
+            ['channel_id'],
+            unique=False,
+        )
+        op.create_index(
+            op.f('ix_vote_message_mirror_guild_id'),
+            'vote_message_mirror',
+            ['guild_id'],
+            unique=False,
+        )
+        op.create_index(
+            op.f('ix_vote_message_mirror_message_id'),
+            'vote_message_mirror',
+            ['message_id'],
+            unique=False,
+        )
+        op.create_index(
+            op.f('ix_vote_message_mirror_session_id'),
+            'vote_message_mirror',
+            ['session_id'],
+            unique=False,
+        )
     op.drop_index(op.f('ix_objection_objectionThreadId'), table_name='objection')
     op.drop_index(op.f('ix_objection_objectorId'), table_name='objection')
     op.drop_index(op.f('ix_objection_proposalId'), table_name='objection')
     op.drop_index(op.f('ix_objection_reviewThreadId'), table_name='objection')
-    op.create_index(op.f('ix_objection_objection_thread_id'), 'objection', ['objection_thread_id'], unique=False)
-    op.create_index(op.f('ix_objection_objector_id'), 'objection', ['objector_id'], unique=False)
-    op.create_index(op.f('ix_objection_proposal_id'), 'objection', ['proposal_id'], unique=False)
-    op.create_index(op.f('ix_objection_review_thread_id'), 'objection', ['review_thread_id'], unique=False)
+    op.create_index(
+        op.f('ix_objection_objection_thread_id'),
+        'objection',
+        ['objection_thread_id'],
+        unique=False,
+    )
+    op.create_index(
+        op.f('ix_objection_objector_id'),
+        'objection',
+        ['objector_id'],
+        unique=False,
+    )
+    op.create_index(
+        op.f('ix_objection_proposal_id'),
+        'objection',
+        ['proposal_id'],
+        unique=False,
+    )
+    op.create_index(
+        op.f('ix_objection_review_thread_id'),
+        'objection',
+        ['review_thread_id'],
+        unique=False,
+    )
     op.drop_index(op.f('ix_proposal_proposerId'), table_name='proposal')
     op.create_index(op.f('ix_proposal_proposer_id'), 'proposal', ['proposer_id'], unique=False)
-    op.add_column('vote_session', sa.Column('max_choices_per_user', sa.Integer(), nullable=False, server_default='999999'))
-    op.add_column('vote_session', sa.Column('ui_style', sa.Integer(), nullable=False, server_default='1'))
+    op.add_column(
+        'vote_session',
+        sa.Column(
+            'max_choices_per_user',
+            sa.Integer(),
+            nullable=False,
+            server_default='999999',
+        ),
+    )
+    op.add_column(
+        'vote_session',
+        sa.Column(
+            'ui_style',
+            sa.Integer(),
+            nullable=False,
+            server_default='1',
+        ),
+    )
     # ### end Alembic commands ###
 
 
@@ -60,10 +121,30 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_objection_proposal_id'), table_name='objection')
     op.drop_index(op.f('ix_objection_objector_id'), table_name='objection')
     op.drop_index(op.f('ix_objection_objection_thread_id'), table_name='objection')
-    op.create_index(op.f('ix_objection_reviewThreadId'), 'objection', ['review_thread_id'], unique=False)
-    op.create_index(op.f('ix_objection_proposalId'), 'objection', ['proposal_id'], unique=False)
-    op.create_index(op.f('ix_objection_objectorId'), 'objection', ['objector_id'], unique=False)
-    op.create_index(op.f('ix_objection_objectionThreadId'), 'objection', ['objection_thread_id'], unique=False)
+    op.create_index(
+        op.f('ix_objection_reviewThreadId'),
+        'objection',
+        ['review_thread_id'],
+        unique=False,
+    )
+    op.create_index(
+        op.f('ix_objection_proposalId'),
+        'objection',
+        ['proposal_id'],
+        unique=False,
+    )
+    op.create_index(
+        op.f('ix_objection_objectorId'),
+        'objection',
+        ['objector_id'],
+        unique=False,
+    )
+    op.create_index(
+        op.f('ix_objection_objectionThreadId'),
+        'objection',
+        ['objection_thread_id'],
+        unique=False,
+    )
     op.drop_index(op.f('ix_vote_message_mirror_session_id'), table_name='vote_message_mirror')
     op.drop_index(op.f('ix_vote_message_mirror_message_id'), table_name='vote_message_mirror')
     op.drop_index(op.f('ix_vote_message_mirror_guild_id'), table_name='vote_message_mirror')

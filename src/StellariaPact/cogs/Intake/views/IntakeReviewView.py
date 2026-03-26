@@ -148,20 +148,33 @@ class IntakeReviewView(View):
         """处理提案人点击"修改提案"的事件"""
         async with UnitOfWork(self.bot.db_handler) as uow:
             if not interaction.channel_id:
-                return await interaction.response.send_message("❌ 无法获取帖子上下文。", ephemeral=True)
+                return await interaction.response.send_message(
+                    "❌ 无法获取帖子上下文。", ephemeral=True
+                )
 
-            intake = await uow.intake.get_intake_by_review_thread_id(interaction.channel_id)
+            intake = await uow.intake.get_intake_by_review_thread_id(
+                interaction.channel_id
+            )
             if not intake:
-                return await interaction.response.send_message("❌ 找不到相关草案。", ephemeral=True)
+                return await interaction.response.send_message(
+                    "❌ 找不到相关草案。", ephemeral=True
+                )
 
             intake_dto = ProposalIntakeDto.model_validate(intake)
             # 身份校验
             if interaction.user.id != intake.author_id:
-                return await interaction.response.send_message("❌ 只有提案人可以修改该提案。", ephemeral=True)
+                return await interaction.response.send_message(
+                    "❌ 只有提案人可以修改该提案。", ephemeral=True
+                )
 
             # 状态校验
-            if intake.status not in (IntakeStatus.PENDING_REVIEW, IntakeStatus.MODIFICATION_REQUIRED):
-                return await interaction.response.send_message("❌ 提案已进入其他阶段，无法继续修改。", ephemeral=True)
+            if intake.status not in (
+                IntakeStatus.PENDING_REVIEW,
+                IntakeStatus.MODIFICATION_REQUIRED,
+            ):
+                return await interaction.response.send_message(
+                    "❌ 提案已进入其他阶段，无法继续修改。", ephemeral=True
+                )
 
             modal = IntakeEditModal(self.bot, intake_dto)
             await interaction.response.send_modal(modal)

@@ -92,7 +92,7 @@ class VoteSessionService:
         )
         return result.one_or_none()
 
-    async def get_vote_session_with_details_by_voting_channel_message_id(
+    async def get_details_by_voting_channel_message_id(
         self, message_id: int
     ) -> Optional[VoteSession]:
         """根据主投票频道消息ID获取投票会话，并预加载投票详情"""
@@ -103,7 +103,7 @@ class VoteSessionService:
         )
         return (await self.session.exec(statement)).one_or_none()
 
-    async def get_vote_session_with_details_by_mirror_message_id(
+    async def get_details_by_mirror_message_id(
         self, message_id: int
     ) -> Optional[VoteSession]:
         """根据额外镜像的消息ID获取投票会话，并预加载投票详情"""
@@ -266,19 +266,6 @@ class VoteSessionService:
         self.session.add(vote_session)
         return vote_session
 
-    async def get_vote_flags(self, message_id: int) -> Optional[tuple[bool, bool, bool]]:
-        """以轻量级方式仅获取投票会话的匿名、实时和通知标志。"""
-        statement = select(
-            VoteSession.anonymous_flag,
-            VoteSession.realtime_flag,
-            VoteSession.notify_flag,
-        ).where(VoteSession.context_message_id == message_id)
-        result = await self.session.exec(statement)
-        flags = result.one_or_none()
-        if not flags:
-            return None
-        return flags[0], flags[1], flags[2]
-
     async def reopen_vote_session(
         self, message_id: int, new_end_time: datetime
     ) -> Optional[VoteSession]:
@@ -413,7 +400,9 @@ class VoteSessionService:
         result = await self.session.exec(statement)
         return result.one_or_none()
 
-    async def add_mirror_message(self, session_id: int, guild_id: int, channel_id: int, message_id: int):
+    async def add_mirror_message(
+        self, session_id: int, guild_id: int, channel_id: int, message_id: int
+    ):
         """
         添加一个额外的投票面板镜像记录
         """
@@ -433,7 +422,9 @@ class VoteSessionService:
         statement = select(VoteMessageMirror).where(VoteMessageMirror.session_id == session_id)
         return (await self.session.exec(statement)).all()
 
-    async def get_vote_session_by_mirror_message_id(self, message_id: int) -> Optional[VoteSession]:
+    async def get_vote_session_by_mirror_message_id(
+        self, message_id: int
+    ) -> Optional[VoteSession]:
         """
         根据额外镜像的消息ID反查关联的原始投票会话
         由于没有实体外键，这里使用显式的相等条件进行关联查询。

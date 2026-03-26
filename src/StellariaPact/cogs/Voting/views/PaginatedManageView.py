@@ -75,14 +75,18 @@ class PaginatedManageView(discord.ui.View):
                         style=discord.ButtonStyle.primary,
                         row=row
                     )
-                    btn.callback = partial(self._cast_vote, choice=None, choice_index=opt.choice_index)
+                    btn.callback = partial(
+                        self._cast_vote, choice=None, choice_index=opt.choice_index
+                    )
                 else:
                     btn = discord.ui.Button(
                         label=f"支持选项 {opt.choice_index}",
                         style=discord.ButtonStyle.primary,
                         row=row
                     )
-                    btn.callback = partial(self._cast_vote, choice=1, choice_index=opt.choice_index)
+                    btn.callback = partial(
+                        self._cast_vote, choice=1, choice_index=opt.choice_index
+                    )
                 self.add_item(btn)
 
                 # 如果是创建人，添加删除按钮
@@ -102,21 +106,27 @@ class PaginatedManageView(discord.ui.View):
                     style=discord.ButtonStyle.success,
                     row=i
                 )
-                btn_app.callback = partial(self._cast_vote, choice=1, choice_index=opt.choice_index)
+                btn_app.callback = partial(
+                    self._cast_vote, choice=1, choice_index=opt.choice_index
+                )
 
                 btn_rej = discord.ui.Button(
                     label=f"反对{prefix} {opt.choice_index}",
                     style=discord.ButtonStyle.danger,
                     row=i
                 )
-                btn_rej.callback = partial(self._cast_vote, choice=0, choice_index=opt.choice_index)
+                btn_rej.callback = partial(
+                    self._cast_vote, choice=0, choice_index=opt.choice_index
+                )
 
                 btn_abs = discord.ui.Button(
                     label=f"{prefix} {opt.choice_index} 弃票",
                     style=discord.ButtonStyle.secondary,
                     row=i
                 )
-                btn_abs.callback = partial(self._cast_vote, choice=None, choice_index=opt.choice_index)
+                btn_abs.callback = partial(
+                    self._cast_vote, choice=None, choice_index=opt.choice_index
+                )
 
                 self.add_item(btn_app)
                 self.add_item(btn_rej)
