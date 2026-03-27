@@ -144,22 +144,15 @@ class IntakeLogic:
         """草案审核 - 通过"""
         # 更新草案审核状态
         async with UnitOfWork(self.bot.db_handler) as uow:
-            intake = await uow.intake.get_intake_by_review_thread_id(thread_id)
-            if not intake:
-                raise ValueError("未找到对应的草案。")
-            if intake.status != IntakeStatus.PENDING_REVIEW:
-                raise ValueError("草案状态不正确，无法批准。")
-            if not intake.review_thread_id:
-                raise ValueError("草案缺少审核帖子ID，无法继续。")
-
-            intake.reviewer_id = reviewer_id
-            intake.reviewed_at = datetime.now(timezone.utc)
-            intake.review_comment = review_comment
-            intake.status = IntakeStatus.SUPPORT_COLLECTING
-            await uow.intake.update_intake(intake)
+            intake = await uow.intake.mark_reviewed(
+                thread_id,
+                reviewer_id,
+                review_comment,
+                IntakeStatus.SUPPORT_COLLECTING,
+                expected_current_status=IntakeStatus.PENDING_REVIEW,
+            )
 
             intake_dto = ProposalIntakeDto.model_validate(intake)
-            await uow.commit()
 
         # 在投票频道发送支持票面板
         channels_config = self.bot.config.get("channels", {})
@@ -218,18 +211,13 @@ class IntakeLogic:
         """草案审核 - 拒绝"""
         # 更新草案审核状态
         async with UnitOfWork(self.bot.db_handler) as uow:
-            intake = await uow.intake.get_intake_by_review_thread_id(thread_id)
-            if not intake:
-                raise ValueError("未找到对应的草案")
-
-            intake.reviewer_id = reviewer_id
-            intake.reviewed_at = datetime.now(timezone.utc)
-            intake.review_comment = review_comment
-            intake.status = IntakeStatus.REJECTED
-            await uow.intake.update_intake(intake)
-
+            intake = await uow.intake.mark_reviewed(
+                thread_id,
+                reviewer_id,
+                review_comment,
+                IntakeStatus.REJECTED,
+            )
             intake_dto = ProposalIntakeDto.model_validate(intake)
-            await uow.commit()
 
         # 修改审核帖首楼内容并发送审核公示
         view = IntakeReviewView(self.bot, intake_dto)
@@ -293,18 +281,13 @@ class IntakeLogic:
         """草案审核 - 需要修改"""
         # 更新草案审核状态
         async with UnitOfWork(self.bot.db_handler) as uow:
-            intake = await uow.intake.get_intake_by_review_thread_id(thread_id)
-            if not intake:
-                raise ValueError("未找到对应的草案。")
-
-            intake.reviewer_id = reviewer_id
-            intake.reviewed_at = datetime.now(timezone.utc)
-            intake.review_comment = review_comment
-            intake.status = IntakeStatus.MODIFICATION_REQUIRED
-            await uow.intake.update_intake(intake)
-
+            intake = await uow.intake.mark_reviewed(
+                thread_id,
+                reviewer_id,
+                review_comment,
+                IntakeStatus.MODIFICATION_REQUIRED,
+            )
             intake_dto = ProposalIntakeDto.model_validate(intake)
-            await uow.commit()
 
         # 修改审核帖首楼内容/标题/TAG 并发送修改公示
         view = IntakeReviewView(self.bot, intake_dto)
