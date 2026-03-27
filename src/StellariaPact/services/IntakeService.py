@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 from sqlmodel import select
@@ -67,6 +68,42 @@ class IntakeService:
         statement = select(ProposalIntake).where(ProposalIntake.discussion_thread_id == thread_id)
         result = await self.session.exec(statement)
         return result.one_or_none()
+
+    async def mark_reviewed(
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        target_status: int,
+        *,
+        expected_current_status: int | None = None,
+    ) -> ProposalIntake:
+        """
+        根据审核帖子 ID 更新草案审核结果。
+
+        Args:
+            thread_id: 审核帖子 Discord ID。
+            reviewer_id: 审核员 ID。
+            review_comment: 审核意见。
+            target_status: 审核完成后要写入的状态。
+            expected_current_status: 若提供，则要求当前状态必须匹配。
+
+        Returns:
+            更新后的 ProposalIntake。
+        """
+        intake = await self.get_intake_by_review_thread_id(thread_id)
+        if not intake:
+            raise ValueError("未找到对应的草案。")
+
+        if expected_current_status is not None and intake.status != expected_current_status:
+            raise ValueError("草案状态不正确，无法更新审核结果。")
+
+        intake.reviewer_id = reviewer_id
+        intake.reviewed_at = datetime.now(timezone.utc)
+        intake.review_comment = review_comment
+        intake.status = target_status
+
+        return await self.update_intake(intake)
 
     async def get_intake_by_voting_message_id(
         self, message_id: int, *, for_update: bool = False
