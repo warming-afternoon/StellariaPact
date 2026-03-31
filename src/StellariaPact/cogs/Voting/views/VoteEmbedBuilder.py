@@ -294,13 +294,13 @@ class VoteEmbedBuilder:
         parties = session_dto.confirmed_parties or {}
 
         if session_dto.status == 2:
-            title = "❌ 异议已失效 (逾期未收集满支持)"
+            title = "❌ 异议创建失败"
             color = discord.Color.red()
         elif session_dto.status == 1:
-            title = "✅ 异议已正式生效，已加入投票面板"
+            title = "✅ 异议已正式创建"
             color = discord.Color.green()
         else:
-            title = "⏳ 新异议需要支持 (附议)"
+            title = "⏳ 异议创建中"
             color = discord.Color.yellow()
 
         embed = discord.Embed(
@@ -311,8 +311,7 @@ class VoteEmbedBuilder:
 
         support_lines = []
         for key, uid in parties.items():
-            emoji = "👑" if key == "发起人" else "✅"
-            support_lines.append(f"{emoji} **{key}:** <@{uid}>")
+            support_lines.append(f" **{key}:** <@{uid}>")
 
         embed.add_field(
             name=f"当前支持情况 ({len(parties)}/3)",
@@ -328,7 +327,6 @@ class VoteEmbedBuilder:
                 name="失效时间",
                 value=(
                     f"<t:{expire_ts}:F> (<t:{expire_ts}:R>)\n"
-                    "如未在此之前收集满 3 人支持，该异议将自动撤销。"
                 ),
                 inline=False
             )
