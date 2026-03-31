@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 import discord
@@ -12,10 +13,11 @@ from StellariaPact.cogs.Voting.qo import (
     RecordVoteQo,
     UpdateUserActivityQo,
 )
-from StellariaPact.dto import UserActivityDto, VoteSessionDto
+from StellariaPact.dto import ConfirmationSessionDto, UserActivityDto, VoteSessionDto
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.services.VoteSessionService import VoteSessionService
 from StellariaPact.share import StellariaPactBot, TimeUtils, UnitOfWork
+from StellariaPact.share.auth import RoleGuard
 
 logger = logging.getLogger(__name__)
 
@@ -501,3 +503,94 @@ class VotingLogic:
                 )
                 await uow.commit()
 
+    async def handle_objection_support_click(
+        self, interaction: discord.Interaction
+    ) -> tuple[ConfirmationSessionDto, bool]:
+        """
+        处理异议支持按钮点击的业务逻辑
+        返回 (更新后的session DTO, 是否在本次点击后完成)
+        """
+
+        if not interaction.message or not interaction.message.id:
+            raise ValueError("无法获取消息ID。")
+
+        message_id = interaction.message.id
+        user_id = interaction.user.id
+
+        # 身份组校验
+        valid_roles = ["councilModerator", "executionAuditor", "stewards", "communityBuilder"]
+        if not RoleGuard.hasRoles(interaction, *valid_roles):
+            raise PermissionError(
+                "❌ 你没有权限支持异议。需要提案组/社区建设者身份组。"
+            )
+
+        session_dto = None
+        is_completed = False
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            session = await uow.confirmation_session.get_confirmation_session_by_message_id(
+                message_id
+            )
+            if not session or session.context != "objection_support":
+                raise ValueError("未找到对应的异议支持记录。")
+
+            if session.status != 0:
+                raise ValueError("该异议支持已结束或已失效。")
+
+            # 验证 3 天有效期 (逾期直接阻断并撤销)
+            now = datetime.now(timezone.utc)
+            if now > session.created_at + timedelta(days=3):
+                session = await uow.confirmation_session.cancel_objection_support(session)
+                await uow.commit()
+                # 转换为 DTO 返回
+                session_dto = ConfirmationSessionDto.model_validate(session)
+                return session_dto, False
+
+            # 防止重复支持
+            parties = session.confirmed_parties or {}
+            if user_id in parties.values():
+                raise ValueError("你已经支持过该异议了。")
+
+            # 调用服务层增加支持者
+            session = await uow.confirmation_session.add_objection_supporter(session, user_id)
+            is_completed = (session.status == 1)
+
+            # 如果凑齐 3 人完成，把异议写入关联的主投票面板 VoteOption 表
+            if is_completed:
+                main_vote_session = await uow.vote_session.get_vote_session_with_details(
+                    session.target_id
+                )
+                if not main_vote_session or not main_vote_session.id:
+                    raise ValueError("无法关联主投票会话，数据异常。")
+
+                creator_id = parties.get("发起人", user_id)
+                # 注意：这里需要确保 interaction.guild 不为 None
+                creator_user = None
+                if interaction.guild:
+                    creator_user = interaction.guild.get_member(creator_id)
+                if not creator_user:
+                    creator_user = await self.bot.fetch_user(creator_id)
+                creator_name = creator_user.display_name if creator_user else "未知用户"
+
+                reason_text = session.reason or "无理由说明"
+
+                await uow.vote_option.add_option(
+                    main_vote_session.id,
+                    option_type=1,
+                    text=reason_text,
+                    creator_id=creator_id,
+                    creator_name=creator_name
+                )
+
+                # 更新主会话选项总数
+                all_options = await uow.vote_option.get_vote_options(main_vote_session.id)
+                await uow.vote_session.update_vote_session_total_choices(
+                    main_vote_session.id, len(all_options)
+                )
+
+            await uow.commit()
+
+            # 转换为 DTO 返回
+            session_dto = ConfirmationSessionDto.model_validate(session)
+
+        return session_dto, is_completed

@@ -2,6 +2,7 @@ from .AdjustTimeModal import AdjustTimeModal
 from .ConfirmationView import ConfirmationView
 from .CreateOptionModal import CreateOptionModal
 from .DeleteOptionModal import DeleteOptionModal
+from .ObjectionSupportView import ObjectionSupportView
 from .PaginatedManageView import PaginatedManageView
 from .ReopenVoteModal import ReopenVoteModal
 from .RuleManagementView import RuleManagementView
@@ -14,6 +15,7 @@ __all__ = [
     "ConfirmationView",
     "CreateOptionModal",
     "DeleteOptionModal",
+    "ObjectionSupportView",
     "PaginatedManageView",
     "ReopenVoteModal",
     "RuleManagementView",

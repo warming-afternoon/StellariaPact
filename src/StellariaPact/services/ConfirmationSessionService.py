@@ -110,3 +110,57 @@ class ConfirmationSessionService:
         await self.session.flush()
         logger.debug(f"用户 {user_id} 取消了确认会话 {session.id}")
         return session
+
+    async def create_objection_support_session(
+        self, target_message_id: int, creator_id: int, reason: str
+    ) -> ConfirmationSession:
+        """
+        专门为异议支持（附议）创建一个确认会话
+        """
+        parties = {"发起人": creator_id}
+        session = ConfirmationSession(
+            context="objection_support",
+            target_id=target_message_id,  # 绑定主投票面板的 message_id
+            message_id=None,              # 稍后在发送消息后更新
+            status=ConfirmationStatus.PENDING,
+            required_roles=[],            # 动态身份组校验将在 Logic 层完成
+            confirmed_parties=parties,
+            reason=reason,
+        )
+        self.session.add(session)
+        await self.session.flush()
+        await self.session.refresh(session)
+        return session
+
+    async def add_objection_supporter(
+        self, session: ConfirmationSession, user_id: int
+    ) -> ConfirmationSession:
+        """
+        向异议支持会话中添加一名支持者，自动分配键名（如 "支持者 1"）
+        """
+        # 确保字典可修改
+        parties = session.confirmed_parties.copy() if session.confirmed_parties else {}
+
+        # 计算当前的支持者序号
+        supporter_count = len([k for k in parties.keys() if k.startswith("支持者")])
+        new_key = f"支持者 {supporter_count + 1}"
+
+        parties[new_key] = user_id
+        session.confirmed_parties = parties
+
+        # 满足 3 人（发起人 + 2 名支持者）则自动变更为完成状态
+        if len(parties) >= 3:
+            session.status = ConfirmationStatus.COMPLETED
+
+        self.session.add(session)
+        await self.session.flush()
+        return session
+
+    async def cancel_objection_support(
+        self, session: ConfirmationSession
+    ) -> ConfirmationSession:
+        """因逾期撤销异议支持"""
+        session.status = ConfirmationStatus.CANCELED
+        self.session.add(session)
+        await self.session.flush()
+        return session

@@ -10,6 +10,7 @@ from StellariaPact.cogs.Voting.dto import VoteDetailDto
 from StellariaPact.cogs.Voting.qo import DeleteVoteQo, RecordVoteQo
 from StellariaPact.cogs.Voting.views import (
     CreateOptionModal,
+    ObjectionSupportView,
     PaginatedManageView,
     RuleManagementView,
     VoteEmbedBuilder,
@@ -17,7 +18,12 @@ from StellariaPact.cogs.Voting.views import (
     VotingChannelView,
 )
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
-from StellariaPact.dto import ProposalDto, VoteMessageMirrorDto, VoteSessionDto
+from StellariaPact.dto import (
+    ConfirmationSessionDto,
+    ProposalDto,
+    VoteMessageMirrorDto,
+    VoteSessionDto,
+)
 from StellariaPact.share import (
     DiscordUtils,
     PermissionGuard,
@@ -301,15 +307,16 @@ class InnerEventListener(commands.Cog):
             return
 
         try:
-            # 获取创建者信息
             creator_id = interaction.user.id
             creator_name = interaction.user.display_name
 
-            # 如果是异议类型，先检查提案状态是否允许创建异议
+            # 异议 (option_type == 1) 分支：发送附议支持面板
             if option_type == 1:
+                # 校验提案状态是否允许
                 async with UnitOfWork(self.bot.db_handler) as uow:
                     proposal = await uow.proposal.get_proposal_by_thread_id(thread_id)
                     status = proposal.status if proposal else None
+
                 if status and status == ProposalStatus.EXECUTING:
                     await interaction.followup.send(
                         "❌ 操作失败：该提案已进入**执行阶段**，"
@@ -318,6 +325,36 @@ class InnerEventListener(commands.Cog):
                     )
                     return
 
+                async with UnitOfWork(self.bot.db_handler) as uow:
+                    # 写入 ConfirmationSession
+                    session = await uow.confirmation_session.create_objection_support_session(
+                        target_message_id=message_id,
+                        creator_id=creator_id,
+                        reason=text
+                    )
+
+                    # 转换为 DTO
+                    session_dto = ConfirmationSessionDto.model_validate(session)
+                    embed = VoteEmbedBuilder.build_objection_support_embed(session_dto)
+                    view = ObjectionSupportView(self.bot)
+
+                    # 发送面板
+                    support_msg = await interaction.followup.send(
+                        embed=embed,
+                        view=view,
+                        wait=True
+                    )
+
+                    session.message_id = support_msg.id
+                    await uow.commit()
+
+                await interaction.followup.send(
+                    "✅ 已发布异议附议面板，收集到 3 人支持后将正式加入投票。",
+                    ephemeral=True
+                )
+                return
+
+            # 普通选项 (option_type == 0) 分支
             async with UnitOfWork(self.bot.db_handler) as uow:
                 # 创建选项
                 vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
@@ -337,15 +374,6 @@ class InnerEventListener(commands.Cog):
                     vote_session.id, len(all_options)
                 )
                 await uow.commit()
-
-            # 创建异议投票时，派发事件让 Moderation 模块处理状态变更
-            if option_type == 1:
-                self.bot.dispatch(
-                    "proposal_under_objection_requested",
-                    thread_id=thread_id,
-                    trigger_user_id=interaction.user.id,
-                    source="voting_new_option",
-                )
 
             # 更新面板
             vote_details = await self.logic.get_vote_details(message_id)
@@ -597,6 +625,64 @@ class InnerEventListener(commands.Cog):
 
         except Exception as e:
             logger.error(f"同步投票面板时出错: {e}", exc_info=True)
+
+    @commands.Cog.listener()
+    async def on_objection_support_clicked(self, interaction: discord.Interaction):
+        """处理由 ObjectionSupportView 视图传来的点击事件"""
+        try:
+            if not interaction.message:
+                await interaction.followup.send("无法获取消息信息。", ephemeral=True)
+                return
+
+            session_dto, is_completed = await self.logic.handle_objection_support_click(
+                interaction
+            )
+
+            # 更新附议面板 UI
+            embed = VoteEmbedBuilder.build_objection_support_embed(session_dto)
+            view = ObjectionSupportView(self.bot)
+
+            # 若状态不再是 0(PENDING)，则禁用按钮
+            if session_dto.status != 0:
+                for child in view.children:
+                    if isinstance(child, discord.ui.Button):
+                        child.disabled = True
+
+            await self.bot.api_scheduler.submit(
+                interaction.message.edit(embed=embed, view=view), priority=2
+            )
+
+            # 响应交互
+            if session_dto.status == 0:
+                await interaction.followup.send("✅ 支持成功！", ephemeral=True)
+            elif session_dto.status == 2:
+                await interaction.followup.send(
+                    "❌ 该异议已超过 3 天未收集齐支持，已自动失效。",
+                    ephemeral=True
+                )
+
+            # 如果凑齐 3 人触发了完成，则派发状态变更与 UI 更新事件
+            if is_completed:
+                # 触发 Moderation 更改提案状态帖子标签
+                if interaction.channel and interaction.channel.id:
+                    self.bot.dispatch(
+                        "proposal_under_objection_requested",
+                        thread_id=interaction.channel.id,
+                        trigger_user_id=interaction.user.id,
+                        source="voting_new_objection"
+                    )
+
+                # 获取主投票面板的最新数据并刷新
+                vote_details = await self.logic.get_vote_details(session_dto.target_id)
+                self.bot.dispatch("vote_details_updated", vote_details)
+
+        except PermissionError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+        except ValueError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+        except Exception as e:
+            logger.error(f"处理异议支持时发生未捕获异常: {e}", exc_info=True)
+            await interaction.followup.send("处理异议支持时发生系统错误。", ephemeral=True)
 
     # -------------------------
     # 私有辅助方法

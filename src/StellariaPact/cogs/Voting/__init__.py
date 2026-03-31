@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from StellariaPact.cogs.Voting.views import ObjectionSupportView
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 from .Cog import Voting
@@ -35,6 +36,7 @@ async def setup(bot: StellariaPactBot):
     # 注册持久化视图
     bot.add_view(VoteView(bot))
     bot.add_view(VotingChannelView(bot))
+    bot.add_view(ObjectionSupportView(bot))
     # 实例化核心 Cog
     voting_cog = Voting(bot)
 

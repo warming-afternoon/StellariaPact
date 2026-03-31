@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import discord
 
 from StellariaPact.cogs.Voting.dto import OptionResult, VoteDetailDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-from StellariaPact.dto import ProposalDto
+from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +285,55 @@ class VoteEmbedBuilder:
                         f"**删除理由:** {reason}",
             color=discord.Color.red(),
         )
+        return embed
+
+    @staticmethod
+    def build_objection_support_embed(session_dto: ConfirmationSessionDto) -> discord.Embed:
+        """构建异议附议（收集支持）的 UI 面板"""
+
+        parties = session_dto.confirmed_parties or {}
+
+        if session_dto.status == 2:
+            title = "❌ 异议已失效 (逾期未收集满支持)"
+            color = discord.Color.red()
+        elif session_dto.status == 1:
+            title = "✅ 异议已正式生效，已加入投票面板"
+            color = discord.Color.green()
+        else:
+            title = "⏳ 新异议需要支持 (附议)"
+            color = discord.Color.yellow()
+
+        embed = discord.Embed(
+            title=title,
+            description=f"**异议内容：**\n{session_dto.reason}",
+            color=color
+        )
+
+        support_lines = []
+        for key, uid in parties.items():
+            emoji = "👑" if key == "发起人" else "✅"
+            support_lines.append(f"{emoji} **{key}:** <@{uid}>")
+
+        embed.add_field(
+            name=f"当前支持情况 ({len(parties)}/3)",
+            value="\n".join(support_lines),
+            inline=False
+        )
+
+        if session_dto.status == 0:
+            # 根据创建时间计算 3 天后的过期时间
+            expire_time = session_dto.created_at + timedelta(days=3)
+            expire_ts = int(expire_time.timestamp())
+            embed.add_field(
+                name="失效时间",
+                value=(
+                    f"<t:{expire_ts}:F> (<t:{expire_ts}:R>)\n"
+                    "如未在此之前收集满 3 人支持，该异议将自动撤销。"
+                ),
+                inline=False
+            )
+            embed.set_footer(text="支持资格: 管理组/提案组/社区建设者")
+
         return embed
 
     @staticmethod
