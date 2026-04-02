@@ -76,7 +76,7 @@ class IntakeService:
         review_comment: str,
         target_status: int,
         *,
-        expected_current_status: int | None = None,
+        expected_current_status: list[int] | None = None,
     ) -> ProposalIntake:
         """
         根据审核帖子 ID 更新草案审核结果。
@@ -95,8 +95,9 @@ class IntakeService:
         if not intake:
             raise ValueError("未找到对应的草案。")
 
-        if expected_current_status is not None and intake.status != expected_current_status:
-            raise ValueError("草案状态不正确，无法更新审核结果。")
+        if expected_current_status is not None:
+            if intake.status not in expected_current_status:
+                raise ValueError("草案状态不正确，无法更新审核结果。")
 
         intake.reviewer_id = reviewer_id
         intake.reviewed_at = datetime.now(timezone.utc)

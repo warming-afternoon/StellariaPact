@@ -149,7 +149,7 @@ class IntakeLogic:
                 reviewer_id,
                 review_comment,
                 IntakeStatus.SUPPORT_COLLECTING,
-                expected_current_status=IntakeStatus.PENDING_REVIEW,
+                expected_current_status=[IntakeStatus.PENDING_REVIEW],
             )
 
             intake_dto = ProposalIntakeDto.model_validate(intake)
@@ -216,6 +216,7 @@ class IntakeLogic:
                 reviewer_id,
                 review_comment,
                 IntakeStatus.REJECTED,
+                expected_current_status=[IntakeStatus.PENDING_REVIEW, IntakeStatus.MODIFICATION_REQUIRED],
             )
             intake_dto = ProposalIntakeDto.model_validate(intake)
 

@@ -108,12 +108,22 @@ class IntakeReviewView(View):
             self.add_item(edit_btn)
 
         elif intakeDto.status == IntakeStatus.MODIFICATION_REQUIRED:
-            # 只有作者按钮，放在第一行
+            # 管理员按钮 (第 0 行)
+            reject_btn = Button(
+                label="❌ 拒绝",
+                style=discord.ButtonStyle.danger,
+                custom_id="persistent:intake_reject",
+                row=0,
+            )
+            reject_btn.callback = self.reject
+            self.add_item(reject_btn)
+
+            # 作者按钮 (第 1 行)
             edit_btn = Button(
                 label="✏️ 修改提案",
                 style=discord.ButtonStyle.primary,
                 custom_id="persistent:intake_edit",
-                row=0,
+                row=1,
             )
             edit_btn.callback = self.edit_proposal
             self.add_item(edit_btn)
