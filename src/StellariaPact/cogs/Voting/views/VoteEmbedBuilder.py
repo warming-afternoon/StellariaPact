@@ -289,7 +289,7 @@ class VoteEmbedBuilder:
 
     @staticmethod
     def build_objection_support_embed(session_dto: ConfirmationSessionDto) -> discord.Embed:
-        """构建异议附议（收集支持）的 UI 面板"""
+        """构建异议附议（支持收集）的 UI 面板"""
 
         parties = session_dto.confirmed_parties or {}
 
@@ -311,7 +311,7 @@ class VoteEmbedBuilder:
 
         support_lines = []
         for key, uid in parties.items():
-            support_lines.append(f" **{key}:** <@{uid}>")
+            support_lines.append(f" **{key} :** <@{uid}>")
 
         embed.add_field(
             name=f"当前支持情况 ({len(parties)}/3)",

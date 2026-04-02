@@ -627,7 +627,7 @@ class InnerEventListener(commands.Cog):
             logger.error(f"同步投票面板时出错: {e}", exc_info=True)
 
     @commands.Cog.listener()
-    async def on_objection_support_clicked(self, interaction: discord.Interaction):
+    async def on_objection_support_clicked(self, interaction: discord.Interaction, action: str = "support"):
         """处理由 ObjectionSupportView 视图传来的点击事件"""
         try:
             if not interaction.message:
@@ -635,7 +635,7 @@ class InnerEventListener(commands.Cog):
                 return
 
             session_dto, is_completed = await self.logic.handle_objection_support_click(
-                interaction
+                interaction, action
             )
 
             # 更新附议面板 UI
@@ -654,7 +654,10 @@ class InnerEventListener(commands.Cog):
 
             # 响应交互
             if session_dto.status == 0:
-                await interaction.followup.send("✅ 支持成功！", ephemeral=True)
+                if action == "support":
+                    await interaction.followup.send("✅ 支持成功！", ephemeral=True)
+                else:
+                    await interaction.followup.send("✅ 已撤回支持。", ephemeral=True)
             elif session_dto.status == 2:
                 await interaction.followup.send(
                     "❌ 该异议已超过 3 天未收集齐支持，已自动失效。",
@@ -681,8 +684,8 @@ class InnerEventListener(commands.Cog):
         except ValueError as e:
             await interaction.followup.send(str(e), ephemeral=True)
         except Exception as e:
-            logger.error(f"处理异议支持时发生未捕获异常: {e}", exc_info=True)
-            await interaction.followup.send("处理异议支持时发生系统错误。", ephemeral=True)
+            logger.error(f"处理异议操作时发生未捕获异常: {e}", exc_info=True)
+            await interaction.followup.send("处理异议支持操作时发生系统错误", ephemeral=True)
 
     # -------------------------
     # 私有辅助方法

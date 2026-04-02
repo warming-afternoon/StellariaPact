@@ -504,10 +504,10 @@ class VotingLogic:
                 await uow.commit()
 
     async def handle_objection_support_click(
-        self, interaction: discord.Interaction
+        self, interaction: discord.Interaction, action: str = "support"
     ) -> tuple[ConfirmationSessionDto, bool]:
         """
-        处理异议支持按钮点击的业务逻辑
+        处理异议支持/撤回按钮点击的业务逻辑
         返回 (更新后的session DTO, 是否在本次点击后完成)
         """
 
@@ -521,7 +521,7 @@ class VotingLogic:
         valid_roles = ["councilModerator", "executionAuditor", "stewards", "communityBuilder"]
         if not RoleGuard.hasRoles(interaction, *valid_roles):
             raise PermissionError(
-                "❌ 你没有权限支持异议。需要提案组/社区建设者身份组。"
+                "❌ 你没有权限参与异议附议。需要提案组/社区建设者身份组。"
             )
 
         session_dto = None
@@ -541,54 +541,63 @@ class VotingLogic:
             now = datetime.now(timezone.utc)
             if now > session.created_at + timedelta(days=3):
                 session = await uow.confirmation_session.cancel_objection_support(session)
-                await uow.commit()
                 # 转换为 DTO 返回
                 session_dto = ConfirmationSessionDto.model_validate(session)
                 return session_dto, False
 
-            # 防止重复支持
             parties = session.confirmed_parties or {}
-            if user_id in parties.values():
-                raise ValueError("你已经支持过该异议了。")
 
-            # 调用服务层增加支持者
-            session = await uow.confirmation_session.add_objection_supporter(session, user_id)
-            is_completed = (session.status == 1)
+            # ======= 根据 action 分流处理 =======
+            if action == "support":
+                if user_id in parties.values():
+                    raise ValueError("你已经支持过该异议了。")
 
-            # 如果凑齐 3 人完成，把异议写入关联的主投票面板 VoteOption 表
-            if is_completed:
-                main_vote_session = await uow.vote_session.get_vote_session_with_details(
-                    session.target_id
-                )
-                if not main_vote_session or not main_vote_session.id:
-                    raise ValueError("无法关联主投票会话，数据异常。")
+                # 调用服务层增加支持者
+                session = await uow.confirmation_session.add_objection_supporter(session, user_id)
+                is_completed = (session.status == 1)
 
-                creator_id = parties.get("发起人", user_id)
-                # 注意：这里需要确保 interaction.guild 不为 None
-                creator_user = None
-                if interaction.guild:
-                    creator_user = interaction.guild.get_member(creator_id)
-                if not creator_user:
-                    creator_user = await self.bot.fetch_user(creator_id)
-                creator_name = creator_user.display_name if creator_user else "未知用户"
+                # 如果凑齐 3 人完成，把异议写入关联的主投票面板 VoteOption 表
+                if is_completed:
+                    main_vote_session = await uow.vote_session.get_vote_session_with_details(
+                        session.target_id
+                    )
+                    if not main_vote_session or not main_vote_session.id:
+                        raise ValueError("无法关联主投票会话，数据异常。")
 
-                reason_text = session.reason or "无理由说明"
+                    creator_id = parties.get("发起人", user_id)
+                    creator_user = None
+                    if interaction.guild:
+                        creator_user = interaction.guild.get_member(creator_id)
+                    if not creator_user:
+                        creator_user = await self.bot.fetch_user(creator_id)
+                    creator_name = creator_user.display_name if creator_user else "未知用户"
 
-                await uow.vote_option.add_option(
-                    main_vote_session.id,
-                    option_type=1,
-                    text=reason_text,
-                    creator_id=creator_id,
-                    creator_name=creator_name
-                )
+                    reason_text = session.reason or "无理由说明"
 
-                # 更新主会话选项总数
-                all_options = await uow.vote_option.get_vote_options(main_vote_session.id)
-                await uow.vote_session.update_vote_session_total_choices(
-                    main_vote_session.id, len(all_options)
-                )
+                    await uow.vote_option.add_option(
+                        main_vote_session.id,
+                        option_type=1,
+                        text=reason_text,
+                        creator_id=creator_id,
+                        creator_name=creator_name
+                    )
 
-            await uow.commit()
+                    # 更新主会话选项总数
+                    all_options = await uow.vote_option.get_vote_options(main_vote_session.id)
+                    await uow.vote_session.update_vote_session_total_choices(
+                        main_vote_session.id, len(all_options)
+                    )
+
+            elif action == "withdraw":
+                if user_id not in parties.values():
+                    raise ValueError("你尚未支持过该异议。")
+                
+                if parties.get("发起人") == user_id:
+                    raise ValueError("你是异议发起人，无法撤回支持。")
+
+                # 移除支持者
+                session = await uow.confirmation_session.remove_objection_supporter(session, user_id)
+                is_completed = False
 
             # 转换为 DTO 返回
             session_dto = ConfirmationSessionDto.model_validate(session)

@@ -45,5 +45,3 @@ class ConfirmationSessionDto(BaseDto):
     created_at: datetime = Field(description="创建时间")
     """创建时间"""
 
-    updated_at: datetime = Field(description="最后更新时间")
-    """最后更新时间"""

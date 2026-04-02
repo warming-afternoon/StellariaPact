@@ -118,19 +118,20 @@ class ConfirmationSessionService:
         专门为异议支持（附议）创建一个确认会话
         """
         parties = {"发起人": creator_id}
-        session = ConfirmationSession(
+        confirmation_session = ConfirmationSession(
             context="objection_support",
             target_id=target_message_id,  # 绑定主投票面板的 message_id
-            message_id=None,              # 稍后在发送消息后更新
+            message_id=None,  # 稍后在发送消息后更新
             status=ConfirmationStatus.PENDING,
-            required_roles=[],            # 动态身份组校验将在 Logic 层完成
+            required_roles=[],  # 动态身份组校验将在 Logic 层完成
             confirmed_parties=parties,
             reason=reason,
         )
-        self.session.add(session)
+        self.session.add(confirmation_session)
         await self.session.flush()
-        await self.session.refresh(session)
-        return session
+        await self.session.refresh(confirmation_session)
+
+        return confirmation_session
 
     async def add_objection_supporter(
         self, session: ConfirmationSession, user_id: int
@@ -153,7 +154,6 @@ class ConfirmationSessionService:
             session.status = ConfirmationStatus.COMPLETED
 
         self.session.add(session)
-        await self.session.flush()
         return session
 
     async def cancel_objection_support(
@@ -162,5 +162,37 @@ class ConfirmationSessionService:
         """因逾期撤销异议支持"""
         session.status = ConfirmationStatus.CANCELED
         self.session.add(session)
-        await self.session.flush()
+        return session
+
+    async def remove_objection_supporter(
+        self, session: ConfirmationSession, user_id: int
+    ) -> ConfirmationSession:
+        """
+        从异议支持会话中移除一名支持者，并重新排列支持者序号。
+        """
+        if not session.confirmed_parties:
+            return session
+
+        parties = session.confirmed_parties.copy()
+        
+        # 找到该 user_id 对应的键（不能是发起人）
+        keys_to_remove = [k for k, v in parties.items() if v == user_id and k != "发起人"]
+        if not keys_to_remove:
+            return session
+
+        for k in keys_to_remove:
+            del parties[k]
+
+        # 整理剩下的支持者序号
+        new_parties = {}
+        supporter_idx = 1
+        for k, v in parties.items():
+            if k == "发起人":
+                new_parties[k] = v
+            else:
+                new_parties[f"支持者 {supporter_idx}"] = v
+                supporter_idx += 1
+
+        session.confirmed_parties = new_parties
+        self.session.add(session)
         return session
