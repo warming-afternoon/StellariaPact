@@ -18,9 +18,10 @@ class EditProposalContentModal(discord.ui.Modal, title="修改提案内容"):
     用于修改提案内容的模态框。
     """
 
-    def __init__(self, proposal_id: int, intake: Optional["ProposalIntakeDto"] = None):
+    def __init__(self, proposal_id: int, proposer_id: int, intake: Optional["ProposalIntakeDto"] = None):
         super().__init__()
         self.proposal_id = proposal_id
+        self.proposer_id = proposer_id
 
         # 若 intake 存在，预填充默认值
         self.title_input.default = intake.title if intake else None
@@ -79,7 +80,7 @@ class EditProposalContentModal(discord.ui.Modal, title="修改提案内容"):
 
         dto = UpdateProposalContentDto(
             proposal_id=self.proposal_id,
-            proposer_id=interaction.user.id,
+            proposer_id=self.proposer_id,
             title=self.title_input.value,
             reason=self.reason_input.value,
             motion=self.motion_input.value,
