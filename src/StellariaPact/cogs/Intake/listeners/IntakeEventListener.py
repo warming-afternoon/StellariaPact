@@ -42,8 +42,15 @@ class IntakeEventListenerCog(commands.Cog):
                 "已成功提交至审核通道。"
             )
             await interaction.followup.send("✅ 草案已提交", ephemeral=True)
+        except PermissionError as pe:
+            # 捕获逻辑层抛出的"超过上限"异常
+            logger.warning(f"提交草案被拒绝 (讨论中议案过多): {dto.author_id}")
+            await interaction.followup.send(f"❌ {str(pe)}", ephemeral=True)
         except Exception as e:
             logger.error(f"处理来自 {dto.author_id} 的草案提交时出错: {e}", exc_info=True)
+            await interaction.followup.send(
+                f"❌ 提交过程中发生未知错误，请联系管理组\n{e}", ephemeral=True
+            )
 
     @commands.Cog.listener()
     async def on_intake_approved(

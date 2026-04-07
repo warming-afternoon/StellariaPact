@@ -46,6 +46,23 @@ class IntakeLogic:
 
     async def process_submit_intake(self, dto: "IntakeSubmissionDto") -> ProposalIntakeDto:
         """草案提交"""
+
+        # 校验提案数量
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            discussion_proposals = await uow.proposal.get_proposals_by_status(
+                ProposalStatus.DISCUSSION
+            )
+            if len(discussion_proposals) >= 3:
+                discussion_links = "\n".join(
+                    f"- https://discord.com/channels/{dto.guild_id}/{proposal.discussion_thread_id}"
+                    for proposal in discussion_proposals
+                )
+                raise PermissionError(
+                    "当前已有 3 个或更多提案正在讨论中，暂不允许提交新草案。"
+                    "请等待现有议案结案。\n\n"
+                    f"正在讨论中的提案：\n{discussion_links}"
+                )
+
         max_retries = 3
         retry_delay = 0.8
         # 创建草案

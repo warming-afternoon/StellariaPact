@@ -98,6 +98,14 @@ class ProposalService:
         else:
             logger.warning(f"尝试更新状态时，未找到帖子 {thread_id} 关联的提案。")
 
+    async def get_proposals_by_status(self, status: int) -> list[Proposal]:
+        """
+        获取特定状态的提案列表。
+        """
+        statement = select(Proposal).where(Proposal.status == status)
+        result = await self.session.exec(statement)
+        return list(result.all())
+
     async def get_proposal_by_thread_id(self, thread_id: int) -> Optional[Proposal]:
         """
         根据帖子ID获取提案 ORM 对象。
