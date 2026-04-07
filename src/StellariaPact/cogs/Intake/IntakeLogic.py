@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -39,6 +40,46 @@ class IntakeLogic:
 
     def __init__(self, bot: "StellariaPactBot"):
         self.bot = bot
+        self._draft_cache: dict[int, tuple[float, "IntakeSubmissionDto"]] = {}
+
+    def save_draft(self, user_id: int, dto: "IntakeSubmissionDto"):
+        """保存用户草稿，记录当前时间戳。"""
+        self._draft_cache[user_id] = (time.time(), dto)
+
+    def get_draft(self, user_id: int) -> "IntakeSubmissionDto | None":
+        """获取用户草稿，超过 30 分钟则自动清除。"""
+        if user_id not in self._draft_cache:
+            return None
+
+        timestamp, dto = self._draft_cache[user_id]
+        if time.time() - timestamp <= 1800:
+            return dto
+
+        del self._draft_cache[user_id]
+        return None
+
+    def clear_draft(self, user_id: int):
+        """成功提交后清除草稿。"""
+        self._draft_cache.pop(user_id, None)
+
+    async def check_submission_limit(self, guild_id: int) -> tuple[bool, str]:
+        """检查当前讨论中的提案是否达到上限。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            discussion_proposals = await uow.proposal.get_proposals_by_status(
+                ProposalStatus.DISCUSSION
+            )
+            if len(discussion_proposals) >= 3:
+                discussion_links = "\n".join(
+                    f"- https://discord.com/channels/{guild_id}/{proposal.discussion_thread_id}"
+                    for proposal in discussion_proposals
+                )
+                return False, (
+                    "当前已有 3 个或更多提案正在讨论中，暂不允许提交新草案。"
+                    "请等待现有议案结案。\n\n"
+                    f"正在讨论中的提案：\n{discussion_links}"
+                )
+
+        return True, ""
 
     # -------------------------
     # 草案提交处理
@@ -47,21 +88,9 @@ class IntakeLogic:
     async def process_submit_intake(self, dto: "IntakeSubmissionDto") -> ProposalIntakeDto:
         """草案提交"""
 
-        # 校验提案数量
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            discussion_proposals = await uow.proposal.get_proposals_by_status(
-                ProposalStatus.DISCUSSION
-            )
-            if len(discussion_proposals) >= 3:
-                discussion_links = "\n".join(
-                    f"- https://discord.com/channels/{dto.guild_id}/{proposal.discussion_thread_id}"
-                    for proposal in discussion_proposals
-                )
-                raise PermissionError(
-                    "当前已有 3 个或更多提案正在讨论中，暂不允许提交新草案。"
-                    "请等待现有议案结案。\n\n"
-                    f"正在讨论中的提案：\n{discussion_links}"
-                )
+        allowed, message = await self.check_submission_limit(dto.guild_id)
+        if not allowed:
+            raise PermissionError(message)
 
         max_retries = 3
         retry_delay = 0.8

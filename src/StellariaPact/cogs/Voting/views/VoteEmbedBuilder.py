@@ -656,7 +656,7 @@ class VoteEmbedBuilder:
         embed = discord.Embed(
             title=title,
             url=thread_url,
-            description="以下成员在草案阶段给予支持，使本提案得以进入正式投票：",
+            description="以下成员在草案阶段给予支持，使本提案得以进入正式讨论：",
             color=discord.Color.gold(),
         )
 

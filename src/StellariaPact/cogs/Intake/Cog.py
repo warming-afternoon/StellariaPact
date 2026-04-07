@@ -45,7 +45,13 @@ class IntakeCog(commands.Cog):
         """
         使用指令直接弹出提案提交流程的表单。
         """
-        modal = IntakeModal()
+        allowed, message = await self.logic.check_submission_limit(interaction.guild_id or 0)
+        if not allowed:
+            await interaction.response.send_message(message, ephemeral=True)
+            return
+
+        draft = self.logic.get_draft(interaction.user.id)
+        modal = IntakeModal(draft)
         await interaction.response.send_modal(modal)
 
     @app_commands.command(name="设置提交入口", description="[管理组]设置提案提交面板")
