@@ -119,6 +119,12 @@ class UserVoteService:
 
         return len(votes_to_delete)
 
+    async def get_voter_by_session_id(self, session_id: int) -> Sequence[UserVote]:
+        """根据会话 ID 获取该会话下的所有投票记录。"""
+        statement = select(UserVote).where(UserVote.session_id == session_id)
+        result = await self.session.exec(statement)
+        return result.all()
+
     async def get_vote_count_by_session_id(self, session_id: int) -> int:
         """
         获取特定投票会话的总票数

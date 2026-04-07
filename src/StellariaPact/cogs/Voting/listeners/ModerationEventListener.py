@@ -23,17 +23,18 @@ class ModerationEventListener(commands.Cog):
     async def on_vote_session_created(
         self,
         proposal_dto: ProposalDto,
-        options: list[str],
-        duration_hours: int,
-        anonymous: bool,
-        realtime: bool,
-        notify: bool,
-        create_in_voting_channel: bool,
-        notify_creation_role: bool,
-        thread: discord.Thread,
-        max_choices_per_user: int = 999999,
-        ui_style: int = 1,
-        creator: discord.User | discord.Member | None = None
+        options: list[str], # 投票选项
+        duration_hours: int, # 投票时长
+        anonymous: bool, # 是否匿名投票
+        realtime: bool, # 是否实时更新
+        notify: bool, # 是否通知
+        create_in_voting_channel: bool, # 是否在投票频道创建
+        notify_creation_role: bool, # 是否通知创建角色
+        thread: discord.Thread, # 讨论帖
+        max_choices_per_user: int = 999999, # 单个用户最大选择数
+        ui_style: int = 1, # UI样式
+        creator: discord.User | discord.Member | None = None, # 创建者
+        intake_id: int | None = None # 提案创建时传入, 在投票频道发送提案支持人
     ):
         """
         为提案讨论帖创建投票面板，并尝试同步到投票频道
@@ -66,6 +67,15 @@ class ModerationEventListener(commands.Cog):
                 vote_details,
                 notify_creation_role,
             )
+
+            # 如果是从草案转正时的投票创建，额外发送支持者名单
+            if intake_id:
+                await self._send_intake_founders_panel(
+                    intake_id,
+                    proposal_dto.title,
+                    thread.jump_url,
+                )
+
         except Exception as e:
             logger.error(
                 f"为上下文消息 {vote_details.context_message_id} "
@@ -287,6 +297,49 @@ class ModerationEventListener(commands.Cog):
             await uow.commit()
 
         logger.debug(f"成功为会话 {session_id} 创建并关联了镜像投票")
+
+    async def _send_intake_founders_panel(
+        self,
+        intake_id: int,
+        proposal_title: str,
+        thread_url: str,
+    ):
+        """查询草案阶段的支持者并发送名单面板到投票频道"""
+        voting_channel_id_str = self.bot.config.get("channels", {}).get("voting_channel")
+        if not voting_channel_id_str:
+            return
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 查找对应的草案支持票收集会话
+            support_sessions = await uow.vote_session.get_vote_sessions_by_intake_id(intake_id)
+            if not support_sessions:
+                return
+            support_session = support_sessions[0]
+
+            # 检查会话ID是否存在
+            if not support_session.id:
+                logger.warning(f"intake_id={intake_id} 对应的支持会话缺少ID，跳过发送联署人名单")
+                return
+
+            # 查询该会话的所有投票人
+            voters = await uow.user_vote.get_voter_by_session_id(support_session.id)
+            voter_ids = [vote.user_id for vote in voters]
+
+        if not voter_ids:
+            return
+
+        # 构建 Embed 并发送
+        voting_channel = await DiscordUtils.fetch_channel(self.bot, int(voting_channel_id_str))
+        if isinstance(voting_channel, discord.TextChannel):
+            embed = VoteEmbedBuilder.create_intake_founders_embed(
+                voter_ids,
+                proposal_title,
+                thread_url,
+            )
+            await self.bot.api_scheduler.submit(
+                voting_channel.send(embed=embed),
+                priority=4
+            )
 
 
 async def setup(bot: StellariaPactBot):

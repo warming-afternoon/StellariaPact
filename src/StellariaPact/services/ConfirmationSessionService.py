@@ -174,7 +174,7 @@ class ConfirmationSessionService:
             return session
 
         parties = session.confirmed_parties.copy()
-        
+
         # 找到该 user_id 对应的键（不能是发起人）
         keys_to_remove = [k for k, v in parties.items() if v == user_id and k != "发起人"]
         if not keys_to_remove:

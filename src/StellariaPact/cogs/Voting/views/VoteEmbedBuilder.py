@@ -642,3 +642,35 @@ class VoteEmbedBuilder:
                     )
 
         return embed
+
+    @staticmethod
+    def create_intake_founders_embed(
+        voter_ids: list[int],
+        proposal_title: str,
+        thread_url: str,
+    ) -> discord.Embed:
+        """
+        构建草案阶段支持者名单的 Embed。
+        """
+        title = f"草案「{proposal_title}」初始支持名单"
+        embed = discord.Embed(
+            title=title,
+            url=thread_url,
+            description="以下成员在草案阶段给予支持，使本提案得以进入正式投票：",
+            color=discord.Color.gold(),
+        )
+
+        # 将用户ID分批，每批40人（Discord Embed 字段值长度限制约1024字符）
+        batch_size = 40
+        batches = [
+            voter_ids[i:i + batch_size]
+            for i in range(0, len(voter_ids), batch_size)
+        ]
+
+        for idx, batch in enumerate(batches, start=1):
+            mentions = " ".join(f"<@{uid}>" for uid in batch)
+            field_name = f"联署人名单 - 批次 {idx}" if len(batches) > 1 else "联署人名单"
+            embed.add_field(name=field_name, value=mentions, inline=False)
+
+        embed.set_footer(text=f"共计 {len(voter_ids)} 位联署人")
+        return embed

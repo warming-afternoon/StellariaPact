@@ -584,6 +584,7 @@ class IntakeLogic:
             create_in_voting_channel=True,
             notify_creation_role=False,
             thread=thread_with_message.thread,
+            intake_id=intake_id,
         )
 
         # 更新收集面板和审核帖

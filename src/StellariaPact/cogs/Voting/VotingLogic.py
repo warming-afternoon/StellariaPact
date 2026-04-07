@@ -591,7 +591,7 @@ class VotingLogic:
             elif action == "withdraw":
                 if user_id not in parties.values():
                     raise ValueError("你尚未支持过该异议。")
-                
+
                 if parties.get("发起人") == user_id:
                     raise ValueError("你是异议发起人，无法撤回支持。")
 

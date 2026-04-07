@@ -16,6 +16,7 @@ from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteMessageMirror import VoteMessageMirror
 from StellariaPact.models.VoteOption import VoteOption
 from StellariaPact.models.VoteSession import VoteSession
+from StellariaPact.share.enums import VoteSessionType
 
 logger = logging.getLogger(__name__)
 
@@ -27,24 +28,6 @@ class VoteSessionService:
 
     def __init__(self, session: AsyncSession):
         self.session = session
-
-    async def get_by_thread_id(self, thread_id: int) -> Optional[VoteSessionDto]:
-        """
-        根据帖子ID获取投票会话。
-        """
-        statement = select(VoteSession).where(VoteSession.context_thread_id == thread_id)
-        result = await self.session.exec(statement)
-        session = result.one_or_none()
-        if not session:
-            return None
-        return VoteSessionDto.model_validate(session)
-
-    async def get_all_by_thread_id(self, thread_id: int) -> Sequence[VoteSessionDto]:
-        """根据帖子ID获取所有投票会话。"""
-        statement = select(VoteSession).where(VoteSession.context_thread_id == thread_id)
-        result = await self.session.exec(statement)
-        sessions = result.all()
-        return [VoteSessionDto.model_validate(s) for s in sessions]
 
     async def update_vote_session_message_id(self, session_id: int, message_id: int):
         """
@@ -179,6 +162,17 @@ class VoteSessionService:
             .returning(VoteSession.id)  # type: ignore
         )
         await self.session.exec(statement)
+
+    async def get_vote_sessions_by_intake_id(self, intake_id: int) -> Sequence[VoteSession]:
+        """根据草案 ID 获取支持收集阶段的投票会话。"""
+        statement = (
+            select(VoteSession)
+            .where(VoteSession.intake_id == intake_id)
+            .where(VoteSession.session_type == VoteSessionType.INTAKE_SUPPORT)
+        )
+        result = await self.session.exec(statement)
+        sessions = result.all()
+        return sessions
 
     async def get_expired_sessions(self) -> Sequence[VoteSessionDto]:
         """
