@@ -8,10 +8,13 @@ from discord import Interaction, app_commands
 from discord.ext import commands
 
 from StellariaPact.cogs.Intake.listeners.IntakeEventListener import IntakeEventListenerCog
+from StellariaPact.cogs.Intake.views.IntakeReviewModal import IntakeReviewModal
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.cogs.Intake.views.IntakeSubmissionView import IntakeSubmissionView
 from StellariaPact.cogs.Intake.views.IntakeSupportView import IntakeSupportView
 from StellariaPact.share.auth.RoleGuard import RoleGuard
+from StellariaPact.share.enums import IntakeStatus
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 from .IntakeCloser import IntakeCloser
 from .IntakeLogic import IntakeLogic
@@ -98,6 +101,38 @@ class IntakeCog(commands.Cog):
         await interaction.channel.send(embed=embed, view=view)
         await interaction.response.send_message("设置成功！", ephemeral=True)
 
+    @app_commands.command(name="拒绝提案", description="[管理组] 拒绝当前预审帖中的提案草案")
+    @RoleGuard.requireRoles("stewards")
+    async def reject_intake_command(self, interaction: Interaction):
+        """
+        使用指令直接拒绝草案，弹出填写拒绝理由的表单。
+        """
+        # 检查是否在帖子内执行
+        if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
+            await interaction.response.send_message(
+                "❌ 此命令只能在提案的预审帖子中使用。", ephemeral=True
+            )
+            return
+
+        # 校验当前帖子是否关联了待处理的草案
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            intake = await uow.intake.get_intake_by_review_thread_id(interaction.channel.id)
+
+            if not intake:
+                await interaction.response.send_message(
+                    "❌ 找不到与此帖子关联的草案记录。", ephemeral=True
+                )
+                return
+
+            if intake.status not in (IntakeStatus.PENDING_REVIEW, IntakeStatus.MODIFICATION_REQUIRED):
+                await interaction.response.send_message(
+                    "❌ 该草案当前不在可被拒绝的状态（可能已通过或已关闭）。", ephemeral=True
+                )
+                return
+
+        # 校验通过，弹出 Modal
+        modal = IntakeReviewModal(self.bot, "rejected")
+        await interaction.response.send_modal(modal)
 
 async def setup(bot: StellariaPactBot):
     intake_cog = IntakeCog(bot)
