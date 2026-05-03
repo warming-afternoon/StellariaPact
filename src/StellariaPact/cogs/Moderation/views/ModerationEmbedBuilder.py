@@ -20,6 +20,11 @@ class ModerationEmbedBuilder:
         根据确认会话状态构建Embed。
         """
         title_map = {
+            "intake_transition": {
+                ConfirmationStatus.PENDING.value: "⏳ 流程确认中：提案转入讨论阶段",
+                ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已进入讨论阶段",
+                ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
+            },
             "proposal_execution": {
                 ConfirmationStatus.PENDING.value: "⏳ 流程确认中：进入执行阶段",
                 ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已进入执行阶段",

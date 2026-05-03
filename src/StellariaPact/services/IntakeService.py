@@ -69,6 +69,48 @@ class IntakeService:
         result = await self.session.exec(statement)
         return result.one_or_none()
 
+    async def mark_first_reviewed(
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+    ) -> ProposalIntake:
+        """记录第一位管理审核，不改变状态（等待第二位管理确认）。"""
+        intake = await self.get_intake_by_review_thread_id(thread_id)
+        if not intake:
+            raise ValueError("未找到对应的草案。")
+        if intake.status != IntakeStatus.PENDING_REVIEW:
+            raise ValueError("草案状态不正确，无法审核。")
+
+        intake.reviewer_id = reviewer_id
+        intake.reviewed_at = datetime.now(timezone.utc)
+        intake.review_comment = review_comment
+        return await self.update_intake(intake)
+
+    async def mark_second_reviewed(
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        target_status: IntakeStatus,
+    ) -> ProposalIntake:
+        """记录第二位管理审核，改变状态（审核完成）。"""
+        intake = await self.get_intake_by_review_thread_id(thread_id)
+        if not intake:
+            raise ValueError("未找到对应的草案。")
+        if intake.status != IntakeStatus.PENDING_REVIEW:
+            raise ValueError("草案状态不正确，无法进行二审。")
+        if intake.reviewer_id is None:
+            raise ValueError("草案尚未完成初审，无法进行二审。")
+        if intake.reviewer_id == reviewer_id:
+            raise ValueError("同一位管理不能重复审核，请等待另一位管理确认。")
+
+        intake.reviewer_id_2 = reviewer_id
+        intake.reviewed_at_2 = datetime.now(timezone.utc)
+        intake.review_comment_2 = review_comment
+        intake.status = target_status
+        return await self.update_intake(intake)
+
     async def mark_reviewed(
         self,
         thread_id: int,

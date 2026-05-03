@@ -49,10 +49,19 @@ class ProposalIntakeDto(BaseDto):
     """需多少票才能正式发布"""
 
     reviewer_id: int | None
-    """审核人用户ID"""
+    """第一位审核人用户ID"""
 
     reviewed_at: datetime | None
-    """审核时间"""
+    """第一位审核时间"""
 
     review_comment: str | None
-    """审核意见"""
+    """第一位审核意见"""
+
+    reviewer_id_2: int | None = None
+    """第二位审核人用户ID"""
+
+    reviewed_at_2: datetime | None = None
+    """第二位审核时间"""
+
+    review_comment_2: str | None = None
+    """第二位审核意见"""
