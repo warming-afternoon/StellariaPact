@@ -33,21 +33,6 @@ class ModerationListener(commands.Cog):
     async def on_ready(self):
         pass
 
-    # @commands.Cog.listener()
-    # async def on_thread_create(self, thread: discord.Thread):
-    #     """
-    #     监听新帖子的创建，如果在提案讨论区，则委托给 ModerationLogic 处理
-    #     预计废弃
-    #     """
-    #     # 短暂休眠以等待帖子的启动消息被处理/缓存
-    #     await asyncio.sleep(1)
-    #     # 检查是否在提案讨论区
-    #     discussion_channel_id_str = self.bot.config.get("channels", {}).get("discussion")
-    #     if not discussion_channel_id_str or thread.parent_id != int(discussion_channel_id_str):
-    #         return
-
-    #     await self.logic.process_new_discussion_thread(thread)
-
     @commands.Cog.listener()
     async def on_confirmation_completed(self, session: ConfirmationSessionDto):
         logger.debug(f"接收到确认完成事件，上下文: {session.context}，目标ID: {session.target_id}")

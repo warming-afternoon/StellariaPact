@@ -10,7 +10,6 @@ if TYPE_CHECKING:
     from StellariaPact.services.AnnouncementService import AnnouncementService
     from StellariaPact.services.ConfirmationSessionService import ConfirmationSessionService
     from StellariaPact.services.IntakeService import IntakeService
-    from StellariaPact.services.ObjectionService import ObjectionService
     from StellariaPact.services.ProposalService import ProposalService
     from StellariaPact.services.UserActivityService import UserActivityService
     from StellariaPact.services.UserVoteService import UserVoteService
@@ -129,15 +128,6 @@ class UnitOfWork:
 
             self._announcement_monitor_service = AnnouncementMonitorService(self.session)
         return self._announcement_monitor_service
-
-    @property
-    def objection(self) -> "ObjectionService":
-        """获取异议服务实例。"""
-        if not hasattr(self, "_objection_service"):
-            from StellariaPact.services.ObjectionService import ObjectionService
-
-            self._objection_service = ObjectionService(self.session)
-        return self._objection_service
 
     @property
     def user_activity(self) -> "UserActivityService":

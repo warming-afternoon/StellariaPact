@@ -292,82 +292,77 @@ class ModerationLogic:
                 exc_info=True,
             )
 
-    async def process_new_discussion_thread(self, thread: discord.Thread) -> None:
-        """
-        处理一个新发现的、未被记录的讨论区帖子<br>
-        该方法会先判断帖子是提案还是异议，然后执行相应的处理
-        """
-        # 检查帖子是否由 Bot 自己创建
-        # 如果是 Bot 创建的，说明是 Intake 模块流程自动生成的，数据库中已有记录，无需重复处理
-        if self.bot.user and thread.owner_id == self.bot.user.id:
-            logger.info(f"帖子 {thread.id} 由 Bot 创建 (Intake 流程)，跳过 Moderation 自动发现。")
-            return
+    # async def process_new_discussion_thread(self, thread: discord.Thread) -> None:
+    #     """
+    #     [预计废弃] 处理一个新发现的、未被记录的讨论区帖子<br>
+    #     该方法会先判断帖子是提案还是异议，然后执行相应的处理
+    #     """
+    #     # 检查帖子是否由 Bot 自己创建
+    #     # 如果是 Bot 创建的，说明是 Intake 模块流程自动生成的，数据库中已有记录，无需重复处理
+    #     if self.bot.user and thread.owner_id == self.bot.user.id:
+    #         logger.info(f"帖子 {thread.id} 由 Bot 创建 (Intake 流程)，跳过 Moderation 自动发现。")
+    #         return
 
-        try:
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                # 检查它是否是一个已知的异议帖
-                objection = await uow.objection.get_objection_by_thread_id(thread.id)
-                if objection:
-                    logger.debug(f"帖子 {thread.id} 是一个已知的异议帖，跳过处理")
-                    return
+    #     try:
+    #         async with UnitOfWork(self.bot.db_handler) as uow:
 
-                # 检查它是否已经是一个已知的提案帖
-                proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
-                if proposal:
-                    logger.debug(f"提案 (帖子 ID: {thread.id}) 已存在，跳过处理")
-                    return
+    #             # 检查它是否已经是一个已知的提案帖
+    #             proposal = await uow.proposal.get_proposal_by_thread_id(thread.id)
+    #             if proposal:
+    #                 logger.debug(f"提案 (帖子 ID: {thread.id}) 已存在，跳过处理")
+    #                 return
 
-            # 如果以上都不是，则认定为新提案，执行创建流程
-            logger.info(f"发现新的提案帖: {thread.name} ({thread.id})。正在处理...")
+    #         # 如果以上都不是，则认定为新提案，执行创建流程
+    #         logger.info(f"发现新的提案帖: {thread.name} ({thread.id})。正在处理...")
 
-            # 获取首楼内容和提案人信息
-            raw_content = await StringUtils.extract_starter_content(thread)
-            if not raw_content:
-                logger.warning(f"无法获取帖子 {thread.id} 的首楼内容，中止提案创建。")
-                return
+    #         # 获取首楼内容和提案人信息
+    #         raw_content = await StringUtils.extract_starter_content(thread)
+    #         if not raw_content:
+    #             logger.warning(f"无法获取帖子 {thread.id} 的首楼内容，中止提案创建。")
+    #             return
 
-            proposer_id = StringUtils.extract_proposer_id_from_content(raw_content)
-            if not proposer_id:
-                proposer_id = thread.owner_id
+    #         proposer_id = StringUtils.extract_proposer_id_from_content(raw_content)
+    #         if not proposer_id:
+    #             proposer_id = thread.owner_id
 
-            clean_content = StringUtils.clean_proposal_content(raw_content)
-            clean_title = StringUtils.clean_title(thread.name)
+    #         clean_content = StringUtils.clean_proposal_content(raw_content)
+    #         clean_title = StringUtils.clean_title(thread.name)
 
-            # 在数据库中创建提案
-            proposal_dto = None
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                proposal = await uow.proposal.create_proposal(
-                    thread.id, proposer_id, clean_title, clean_content
-                )
-                if proposal:
-                    proposal_dto = ProposalDto.model_validate(proposal)
-                await uow.commit()
+    #         # 在数据库中创建提案
+    #         proposal_dto = None
+    #         async with UnitOfWork(self.bot.db_handler) as uow:
+    #             proposal = await uow.proposal.create_proposal(
+    #                 thread.id, proposer_id, clean_title, clean_content
+    #             )
+    #             if proposal:
+    #                 proposal_dto = ProposalDto.model_validate(proposal)
+    #             await uow.commit()
 
-            # 如果创建了 *新* 的提案，则更新UI并派发事件
-            if proposal_dto:
-                logger.info(f"已处理新提案 '{clean_title}' (帖子 ID: {thread.id})。")
-                # 更新帖子外观（标签、标题前缀）
-                thread_manager = ProposalThreadManager(self.bot.config)
-                await thread_manager.update_status(thread, "discussion")
-                # 派发事件，让 Voting cog 创建投票面板
-                self.bot.dispatch(
-                    "vote_session_created",
-                    proposal_dto=proposal_dto,
-                    options=[],
-                    duration_hours=VoteDuration.PROPOSAL_DEFAULT,
-                    anonymous=True,
-                    realtime=True,
-                    notify=True,
-                    create_in_voting_channel=True,
-                    notify_creation_role=True,
-                    thread=thread,
-                )
+    #         # 如果创建了 *新* 的提案，则更新UI并派发事件
+    #         if proposal_dto:
+    #             logger.info(f"已处理新提案 '{clean_title}' (帖子 ID: {thread.id})。")
+    #             # 更新帖子外观（标签、标题前缀）
+    #             thread_manager = ProposalThreadManager(self.bot.config)
+    #             await thread_manager.update_status(thread, "discussion")
+    #             # 派发事件，让 Voting cog 创建投票面板
+    #             self.bot.dispatch(
+    #                 "vote_session_created",
+    #                 proposal_dto=proposal_dto,
+    #                 options=[],
+    #                 duration_hours=VoteDuration.PROPOSAL_DEFAULT,
+    #                 anonymous=True,
+    #                 realtime=True,
+    #                 notify=True,
+    #                 create_in_voting_channel=True,
+    #                 notify_creation_role=True,
+    #                 thread=thread,
+    #             )
 
-        except Exception as e:
-            logger.error(
-                f"处理新讨论帖 {thread.id} 时发生错误: {e}",
-                exc_info=True,
-            )
+    #     except Exception as e:
+    #         logger.error(
+    #             f"处理新讨论帖 {thread.id} 时发生错误: {e}",
+    #             exc_info=True,
+    #         )
 
     async def mark_proposal_under_objection(self, thread_id: int) -> None:
         """

@@ -2,7 +2,6 @@ from .AnnouncementMonitorService import AnnouncementMonitorService
 from .AnnouncementService import AnnouncementService
 from .ConfirmationSessionService import ConfirmationSessionService
 from .IntakeService import IntakeService
-from .ObjectionService import ObjectionService
 from .ProposalService import ProposalService
 from .UserActivityService import UserActivityService
 from .UserVoteService import UserVoteService
@@ -14,7 +13,6 @@ __all__ = [
     "AnnouncementService",
     "ConfirmationSessionService",
     "IntakeService",
-    "ObjectionService",
     "ProposalService",
     "UserActivityService",
     "UserVoteService",
