@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands
 
 from StellariaPact.cogs.Intake.IntakeModal import IntakeModal
+from StellariaPact.dto import ConfirmationSessionDto
 from StellariaPact.share.SafeDefer import safeDefer
 
 if TYPE_CHECKING:
@@ -85,14 +86,25 @@ class IntakeEventListenerCog(commands.Cog):
 
         try:
             assert interaction.channel_id is not None
-            await self.intake_cog.logic.approve_intake(
+            intake_dto, is_fully_approved = await self.intake_cog.logic.approve_intake(
                 interaction.channel_id, interaction.user.id, review_comment
             )
-            logger.info(
-                f"草案（帖子ID: {interaction.channel_id}）"
-                "已成功批准并进入支持票收集阶段。"
-            )
-            await interaction.followup.send("✅ 草案已批准，审核信息已记录", ephemeral=True)
+            if is_fully_approved:
+                logger.info(
+                    f"草案（帖子ID: {interaction.channel_id}）"
+                    "二审通过并进入支持票收集阶段。"
+                )
+                await interaction.followup.send(
+                    "✅ 二审通过，草案已批准并进入公示阶段", ephemeral=True
+                )
+            else:
+                logger.info(
+                    f"草案（帖子ID: {interaction.channel_id}）"
+                    "已记录初审，等待第二位管理确认。"
+                )
+                await interaction.followup.send(
+                    "✅ 初审已记录，需第二位管理确认后进入公示阶段", ephemeral=True
+                )
         except Exception as e:
             logger.error(
                 f"处理草案批准事件时出错 (帖子ID: {interaction.channel_id}): {e}",
@@ -181,3 +193,20 @@ class IntakeEventListenerCog(commands.Cog):
         except Exception as e:
             logger.error(f"处理草案修改事件时出错 (ID: {intake_id}): {e}", exc_info=True)
             await interaction.followup.send(f"❌ 修改提案时出错: {str(e)}", ephemeral=True)
+
+    @commands.Cog.listener()
+    async def on_confirmation_completed(self, session: ConfirmationSessionDto):
+        """监听确认完成事件，处理 intake 相关上下文。"""
+        if session.context != "intake_transition":
+            return
+        logger.info(f"接收到 Intake 转段确认完成事件，target_id: {session.target_id}")
+        try:
+            await self.intake_cog.logic.handle_intake_transition_confirmed(
+                session.target_id
+            )
+            logger.info(f"Intake {session.target_id} 转段确认完成，讨论帖已建立。")
+        except Exception as e:
+            logger.error(
+                f"处理 Intake 转段确认完成事件时出错 (intake_id={session.target_id}): {e}",
+                exc_info=True,
+            )

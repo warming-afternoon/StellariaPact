@@ -10,8 +10,11 @@ import discord
 from sqlalchemy import func, select, update
 
 from StellariaPact.cogs.Intake.dto.SupportToggleDbResultDto import SupportToggleDbResultDto
+from StellariaPact.cogs.Moderation.qo import BuildConfirmationEmbedQo, CreateConfirmationSessionQo
+from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
+from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
 from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
-from StellariaPact.dto import ProposalDto
+from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.ProposalIntake import ProposalIntake
@@ -186,18 +189,51 @@ class IntakeLogic:
 
     async def approve_intake(
         self, thread_id: int, reviewer_id: int, review_comment: str
-    ) -> ProposalIntakeDto:
-        """草案审核 - 通过"""
-        # 更新草案审核状态
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            intake = await uow.intake.mark_reviewed(
-                thread_id,
-                reviewer_id,
-                review_comment,
-                IntakeStatus.SUPPORT_COLLECTING,
-                expected_current_status=[IntakeStatus.PENDING_REVIEW],
-            )
+    ) -> tuple[ProposalIntakeDto, bool]:
+        """草案审核 - 通过（双管理审核）。
 
+        第一位管理批准 → 记录初审，等待第二位管理。
+        第二位管理批准 → 完成审核，进入支持票收集阶段。
+
+        Returns (intake_dto, is_fully_approved).
+        """
+        # 检查是否已有第一位管理批准
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            existing = await uow.intake.get_intake_by_review_thread_id(thread_id)
+            if not existing:
+                raise ValueError("未找到对应的草案。")
+            is_second_review = existing.reviewer_id is not None
+
+        if is_second_review:
+            return await self._second_approve(thread_id, reviewer_id, review_comment), True
+        else:
+            return await self._first_approve(thread_id, reviewer_id, review_comment), False
+
+    async def _first_approve(
+        self, thread_id: int, reviewer_id: int, review_comment: str
+    ) -> ProposalIntakeDto:
+        """第一位管理批准：记录初审信息，等待第二位管理。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            intake = await uow.intake.mark_first_reviewed(
+                thread_id, reviewer_id, review_comment,
+            )
+            intake_dto = ProposalIntakeDto.model_validate(intake)
+
+        await self._update_review_thread_message(
+            intake_dto, view=IntakeReviewView(self.bot, intake_dto),
+            extra_note="⏳ 1/2 管理已确认，等待第二位管理确认中...",
+        )
+        return intake_dto
+
+    async def _second_approve(
+        self, thread_id: int, reviewer_id: int, review_comment: str
+    ) -> ProposalIntakeDto:
+        """第二位管理批准：完成审核，进入支持票收集阶段。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            intake = await uow.intake.mark_second_reviewed(
+                thread_id, reviewer_id, review_comment,
+                IntakeStatus.SUPPORT_COLLECTING,
+            )
             intake_dto = ProposalIntakeDto.model_validate(intake)
 
         # 在投票频道发送支持票面板
@@ -219,7 +255,6 @@ class IntakeLogic:
 
         # 写入草案发布收集投票消息 ID 关联, 并创建投票会话
         async with UnitOfWork(self.bot.db_handler) as uow:
-            # 加锁获取并更新 intake.message_id
             intake = await uow.intake.get_intake_by_id(intake_dto.id, for_update=True)
             if not intake:
                 raise ValueError("在创建投票会话时找不到草案。")
@@ -228,11 +263,10 @@ class IntakeLogic:
             await uow.intake.update_intake(intake)
             intake_dto = ProposalIntakeDto.model_validate(intake)
 
-            # 创建草案通过票收集投票会话
-            now = datetime.now(timezone.utc)
             if not intake.review_thread_id:
                 raise ValueError("草案缺少审核帖子ID，无法创建投票会话。")
 
+            now = datetime.now(timezone.utc)
             vote_qo = CreateVoteSessionQo(
                 guild_id=vote_msg.guild.id if vote_msg.guild else 0,
                 thread_id=intake.review_thread_id,
@@ -292,6 +326,15 @@ class IntakeLogic:
 
             if intake.status == IntakeStatus.MODIFICATION_REQUIRED:
                 intake.status = IntakeStatus.PENDING_REVIEW
+
+            # 如果处于待审核状态被修改，重置管理员初审记录
+            if intake.status == IntakeStatus.PENDING_REVIEW:
+                intake.reviewer_id = None
+                intake.reviewed_at = None
+                intake.review_comment = None
+                intake.reviewer_id_2 = None
+                intake.reviewed_at_2 = None
+                intake.review_comment_2 = None
 
             await uow.intake.update_intake(intake)
 
@@ -537,27 +580,63 @@ class IntakeLogic:
         return True, latest_count
 
     async def handle_support_reached(self, intake_id: int) -> ProposalDto | None:
-        """
-        处理草案达到所需支持票数后的转正流程。
-        """
-        # 获取草案数据
+        """处理草案达到所需支持票数后：发起转段确认流程。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
             intake = await uow.intake.get_intake_by_id(intake_id)
             if not intake:
                 raise ValueError("草案不存在。")
             if intake.status != IntakeStatus.APPROVED:
                 raise ValueError("草案状态不正确，无法立案。")
-
             intake_dto = ProposalIntakeDto.model_validate(intake)
             required_votes = intake.required_votes
 
-        # 同步数据到提案表的内容
-        proposal_content = (
-            f"> ### 提案原因\n{intake_dto.reason}\n\n"
-            f"> ### 议案动议\n{intake_dto.motion}\n\n"
-            f"> ### 执行方案\n{intake_dto.implementation}\n\n"
-            f"> ### 议案执行人\n{intake_dto.executor}"
+        # 创建转段确认会话
+        session_dto = await self._create_intake_transition_session(intake_dto)
+
+        if session_dto and intake_dto.review_thread_id:
+            thread = await DiscordUtils.fetch_thread(self.bot, intake_dto.review_thread_id)
+            if isinstance(thread, discord.Thread):
+                await self._send_transition_confirmation_message(
+                    thread, session_dto, intake_dto.guild_id
+                )
+
+        # 更新公示消息
+        channels_config = self.bot.config.get("channels", {})
+        if intake_dto.voting_message_id:
+            pending_embed = IntakeEmbedBuilder.build_support_result_embed(
+                intake_dto, success=True, current_votes=required_votes,
+            )
+            pending_embed.description = (
+                "该提案已收集到足够的支持票。\n"
+                "⏳ 等待提案委员会确认后转入讨论阶段..."
+            )
+            channel = await DiscordUtils.fetch_channel(
+                self.bot, channels_config.get("objection_publicity")
+            )
+            if isinstance(channel, discord.TextChannel):
+                try:
+                    msg = await channel.fetch_message(intake_dto.voting_message_id)
+                    await msg.edit(embed=pending_embed, view=None)
+                except Exception as e:
+                    logger.warning(f"更新收集票面板失败: {e}")
+
+        await self._update_review_thread_message(
+            intake_dto, view=None,
+            extra_note="🎉 支持票已达標！等待提案委员会确认中...",
         )
+        await self._update_review_thread_tags(intake_dto)
+        return None
+
+    async def handle_intake_transition_confirmed(
+        self, intake_id: int
+    ) -> ProposalDto | None:
+        """转段确认完成后：建立讨论帖并完成立案。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            intake = await uow.intake.get_intake_by_id(intake_id)
+            if not intake:
+                raise ValueError("草案不存在。")
+            intake_dto = ProposalIntakeDto.model_validate(intake)
+            required_votes = intake.required_votes
 
         # 创建讨论帖
         channels_config = self.bot.config.get("channels", {})
@@ -578,7 +657,6 @@ class IntakeLogic:
             f"> ## 议案执行人\n{intake_dto.executor}\n\n"
             f"*讨论帖创建时间: <t:{created_ts}:f>*"
         )
-        # 获取 discussion 标签
         tags_config = self.bot.config.get("tags", {})
         discussion_tag = self._resolve_forum_tag(
             forum=discussion_forum,
@@ -593,7 +671,16 @@ class IntakeLogic:
         )
         discussion_thread_id = thread_with_message.thread.id
 
-        # 将数据写入 Proposal 表，并更新 Intake
+        # 自动在讨论帖二楼发送参与准则
+        await self._post_discussion_rules(thread_with_message.thread)
+
+        # 写入 Proposal 表
+        proposal_content = (
+            f"> ### 提案原因\n{intake_dto.reason}\n\n"
+            f"> ### 议案动议\n{intake_dto.motion}\n\n"
+            f"> ### 执行方案\n{intake_dto.implementation}\n\n"
+            f"> ### 议案执行人\n{intake_dto.executor}"
+        )
         async with UnitOfWork(self.bot.db_handler) as uow:
             new_proposal = Proposal(
                 discussion_thread_id=discussion_thread_id,
@@ -604,21 +691,18 @@ class IntakeLogic:
             )
             created_proposal = await uow.proposal.add_proposal(new_proposal)
 
-            # 重新获取 intake 进行更新以防并发冲突
             intake_to_update = await uow.intake.get_intake_by_id(intake_id)
             if intake_to_update:
                 intake_to_update.discussion_thread_id = discussion_thread_id
                 await uow.intake.update_intake(intake_to_update)
-                # 保存更新后的 intake DTO 供后续使用
                 updated_intake_dto = ProposalIntakeDto.model_validate(intake_to_update)
             else:
-                # 如果找不到草案，使用之前获取的 intake_dto
                 updated_intake_dto = intake_dto
 
             proposal_dto = ProposalDto.model_validate(created_proposal)
             await uow.commit()
 
-        # 派发事件以创建讨论帖内初始投票面板
+        # 派发事件创建投票面板
         self.bot.dispatch(
             "vote_session_created",
             proposal_dto=proposal_dto,
@@ -633,19 +717,13 @@ class IntakeLogic:
             intake_id=intake_id,
         )
 
-        # 更新收集面板和审核帖
+        # 更新公示消息为成功状态
         voting_message_id = updated_intake_dto.voting_message_id
-        success_embed = None
         if voting_message_id:
-            # 构建 Embed
             success_embed = IntakeEmbedBuilder.build_support_result_embed(
-                updated_intake_dto,
-                success=True,
-                thread_id=discussion_thread_id,
+                updated_intake_dto, success=True, thread_id=discussion_thread_id,
                 current_votes=required_votes,
             )
-
-        if voting_message_id and success_embed:
             channel = await DiscordUtils.fetch_channel(
                 self.bot, channels_config.get("objection_publicity")
             )
@@ -656,10 +734,8 @@ class IntakeLogic:
                 except Exception as e:
                     logger.warning(f"更新收集票面板失败: {e}")
 
-        # 更新审核贴标签、标题并发布公示
         await self._update_review_thread_message(updated_intake_dto, view=None)
         await self._update_review_thread_tags(updated_intake_dto)
-
         return proposal_dto
 
     async def close_expired_intake(self, intake_id: int):
@@ -796,30 +872,16 @@ class IntakeLogic:
                 f"👤 **提案人：** <@{intake_dto.author_id}>",
                 f"📅 **提交时间：** <t:{submitted_ts}:f>",
                 f"🆔 **议案ID：** `{intake_dto.id}`",
+                "\n---\n",
+                f"\n🏷️ **议案标题**\n{intake_dto.title}",
+                f"\n📝 **提案原因**\n{intake_dto.reason}",
+                f"\n📋 **议案动议**\n{intake_dto.motion}",
+                f"\n🔧 **执行方案**\n{intake_dto.implementation}"
+                f"\n\n👨‍💼 **议案执行人**\n{intake_dto.executor}",
+                "\n---\n",
+                f"{status_emoji} **状态：** {status_text}\n",
+                f"💬 **审核意见：** {intake_dto.review_comment or '（无）'}",
             ]
-
-            if intake_dto.reviewer_id and intake_dto.reviewed_at:
-                reviewed_ts = int(intake_dto.reviewed_at.timestamp())
-                lines.extend(
-                    [
-                        f"👨‍💼 **审核员：** <@{intake_dto.reviewer_id}>",
-                        f"📅 **审核时间：** <t:{reviewed_ts}:f>",
-                    ]
-                )
-
-            lines.extend(
-                [
-                    "\n---\n",
-                    f"\n🏷️ **议案标题**\n{intake_dto.title}",
-                    f"\n📝 **提案原因**\n{intake_dto.reason}",
-                    f"\n📋 **议案动议**\n{intake_dto.motion}",
-                    f"\n🔧 **执行方案**\n{intake_dto.implementation}"
-                    f"\n\n👨‍💼 **议案执行人**\n{intake_dto.executor}",
-                    "\n---\n",
-                    f"{status_emoji} **状态：** {status_text}\n",
-                    f"💬 **审核意见：** {intake_dto.review_comment or '（无）'}",
-                ]
-            )
 
             if extra_note:
                 lines.extend(["", f"ℹ️ {extra_note}"])
@@ -827,18 +889,15 @@ class IntakeLogic:
             await msg.edit(content="\n".join(lines), embed=None, view=view)
 
             if notify_proposer and intake_dto.reviewer_id and intake_dto.reviewed_at:
-                reviewed_ts = int(intake_dto.reviewed_at.timestamp())
                 notify_lines = [
                     f"<@{intake_dto.author_id}> 您的议案已被审核！",
                     "## 📋 审核记录",
-                    f"👨‍💼 **审核员：** <@{intake_dto.reviewer_id}>",
-                    f"📅 **审核时间：** <t:{reviewed_ts}:f>",
                     f"{status_emoji} **审核结果：** {status_text}",
                     "",
                     "💬 **审核意见：**",
                     intake_dto.review_comment or "（无）",
                     "---",
-                    "📝 如有疑问，申请人可以联系审核员了解详细情况。",
+                    "📝 如有疑问，申请人可联系管理组了解详细情况。",
                 ]
                 await thread.send("\n".join(notify_lines))
 
@@ -902,6 +961,109 @@ class IntakeLogic:
             return None
 
         return tag
+
+    async def _create_intake_transition_session(
+        self, intake_dto: ProposalIntakeDto
+    ) -> ConfirmationSessionDto | None:
+        """创建转段确认会话。"""
+        assert intake_dto.id is not None
+        try:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                qo = CreateConfirmationSessionQo(
+                    context="intake_transition",
+                    target_id=intake_dto.id,
+                    message_id=0,
+                    required_roles=["councilModerator", "executionAuditor"],
+                    initiator_id=self.bot.user.id if self.bot.user else 0,
+                    initiator_role_keys=[],
+                )
+                session = await uow.confirmation_session.create_confirmation_session(qo)
+                session_dto = ConfirmationSessionDto.model_validate(session)
+                await uow.commit()
+                return session_dto
+        except Exception as e:
+            logger.error(f"创建转段确认会话失败: {e}", exc_info=True)
+            return None
+
+    async def _send_transition_confirmation_message(
+        self,
+        thread: discord.Thread,
+        session_dto: ConfirmationSessionDto,
+        guild_id: int,
+    ) -> None:
+        """在审核帖发送转段确认消息。"""
+        if not self.bot.user:
+            return
+
+        roles_config = self.bot.config.get("roles", {})
+        guild = self.bot.get_guild(guild_id)
+        role_display_names = {}
+        for role_key in session_dto.required_roles:
+            role_id = roles_config.get(role_key)
+            if role_id and guild:
+                role = guild.get_role(int(role_id))
+                role_display_names[role_key] = role.name if role else role_key
+            else:
+                role_display_names[role_key] = role_key
+
+        qo = BuildConfirmationEmbedQo(
+            context=session_dto.context,
+            status=session_dto.status,
+            canceler_id=session_dto.canceler_id,
+            confirmed_parties=session_dto.confirmed_parties,
+            required_roles=session_dto.required_roles,
+            role_display_names=role_display_names,
+        )
+        embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
+        view = ConfirmationView(self.bot, hide_cancel=True)
+
+        pings = []
+        moderator_role_id = roles_config.get("councilModerator")
+        auditor_role_id = roles_config.get("executionAuditor")
+        if moderator_role_id:
+            pings.append(f"<@&{moderator_role_id}>")
+        if auditor_role_id:
+            pings.append(f"<@&{auditor_role_id}>")
+        content = " ".join(pings) if pings else None
+
+        message = await thread.send(content=content, embed=embed, view=view)
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.confirmation_session.update_confirmation_session_message_id(
+                session_dto.id, message.id
+            )
+            await uow.commit()
+
+    @staticmethod
+    async def _post_discussion_rules(thread: discord.Thread) -> None:
+        """在讨论帖发送参与准则作为第二条消息。"""
+        rules = (
+            "📌 **提案区参与准则（简要版）**\n"
+            "💡 请各位成员理性讨论，共同维护良好氛围。\n\n"
+            "🚩 **违规界定**\n"
+            "🛑 **一类违规（严重干扰）**\n"
+            "严禁发布违规信息（键政/广告/色情/暴力）。\n"
+            "严禁人身攻击、引战及恶意破坏讨论流程。\n"
+            "严禁恶意刷票、私下施压等操纵行为。\n"
+            "严禁断章取义、误导讨论走向。\n\n"
+            "❌ **二类违规（中度干扰）**\n"
+            "不得持续偏题、使用阴阳怪气言论。\n"
+            "拒绝配合管理提醒将加重处罚。\n"
+            "禁止恶意刷屏、干扰正常讨论。\n\n"
+            "⛔ **三类违规（一般干扰）**\n"
+            "避免偏题或情绪化争吵。\n"
+            "避免「大字报」及干扰排版的格式。\n"
+            "避免无实质内容的无效水贴。\n\n"
+            "⚖️ **违规处理**\n"
+            "处理措施：包括但不限于口头警告、删除消息、临时/长时禁言或踢出提案并剥夺投票权等。多次违规将加重处理。\n"
+            "管理规范：管理人员遵循身份唯一原则。参与讨论的管理人员不具备该提案的管理权，严禁利用职权打压异见。\n\n"
+            "📖 详细规则请点击：📜｜社区制度。\n\n"
+            "*(本提醒由机器人自动发送，若发现违规请直接 @提案委员处理)*"
+        )
+        try:
+            await thread.send(rules)
+        except Exception as e:
+            logger.error(f"发送讨论规则失败 (帖子 {thread.id}): {e}")
 
     async def _update_review_thread_tags(self, intake_dto: ProposalIntakeDto):
         """更新审核帖子的标签和标题前缀"""

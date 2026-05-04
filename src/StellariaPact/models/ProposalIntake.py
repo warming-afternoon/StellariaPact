@@ -44,14 +44,21 @@ class ProposalIntake(BaseModel, table=True):
     required_votes: int = Field(default=20, description="需多少票才能正式发布")
     """需多少票才能正式发布"""
 
-    # 审核相关字段
-    reviewer_id: Optional[int] = Field(default=None, description="审核人用户ID")
-    """审核人用户ID"""
+    # 审核相关字段（双管理审核）
+    reviewer_id: Optional[int] = Field(default=None, description="第一位审核人用户ID")
+    """第一位审核人用户ID"""
     reviewed_at: Optional[datetime] = Field(
-        default=None,
-        sa_type=UTCDateTime,
-        description="审核时间",
+        default=None, sa_type=UTCDateTime, description="第一位审核时间"
     )
-    """审核时间"""
-    review_comment: Optional[str] = Field(default=None, description="审核意见")
-    """审核意见"""
+    """第一位审核时间"""
+    review_comment: Optional[str] = Field(default=None, description="第一位审核意见")
+    """第一位审核意见"""
+
+    reviewer_id_2: Optional[int] = Field(default=None, description="第二位审核人用户ID")
+    """第二位审核人用户ID"""
+    reviewed_at_2: Optional[datetime] = Field(
+        default=None, sa_type=UTCDateTime, description="第二位审核时间"
+    )
+    """第二位审核时间"""
+    review_comment_2: Optional[str] = Field(default=None, description="第二位审核意见")
+    """第二位审核意见"""
