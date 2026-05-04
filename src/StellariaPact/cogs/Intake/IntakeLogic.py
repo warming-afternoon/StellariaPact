@@ -1006,7 +1006,7 @@ class IntakeLogic:
             role_display_names=role_display_names,
         )
         embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
-        view = ConfirmationView(self.bot)
+        view = ConfirmationView(self.bot, hide_cancel=True)
 
         pings = []
         moderator_role_id = roles_config.get("councilModerator")

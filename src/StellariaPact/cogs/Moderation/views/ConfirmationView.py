@@ -12,19 +12,33 @@ logger = logging.getLogger(__name__)
 
 
 class ConfirmationView(discord.ui.View):
-    def __init__(self, bot: StellariaPactBot):
+    def __init__(self, bot: StellariaPactBot, hide_cancel: bool = False):
         super().__init__(timeout=None)
         self.bot = bot
+        self.hide_cancel = hide_cancel
+
+        # 添加确认按钮
+        confirm_btn = discord.ui.Button(
+            label="确认", style=discord.ButtonStyle.green, custom_id="moderation_confirm"
+        )
+        confirm_btn.callback = self.confirm_callback
+        self.add_item(confirm_btn)
+
+        # 根据参数决定是否添加反对/取消按钮
+        if not hide_cancel:
+            cancel_btn = discord.ui.Button(
+                label="反对", style=discord.ButtonStyle.red, custom_id="moderation_cancel"
+            )
+            cancel_btn.callback = self.cancel_callback
+            self.add_item(cancel_btn)
 
     def _disable_all_buttons(self):
+        """禁用当前实例中的所有按钮"""
         for item in self.children:
             if isinstance(item, discord.ui.Button):
                 item.disabled = True
 
-    @discord.ui.button(
-        label="确认", style=discord.ButtonStyle.green, custom_id="moderation_confirm"
-    )
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def confirm_callback(self, interaction: discord.Interaction):
         if not isinstance(interaction.user, discord.Member) or not self.bot.user:
             return await self.bot.api_scheduler.submit(
                 interaction.response.send_message("无法验证您的身份。", ephemeral=True), 1
@@ -103,19 +117,20 @@ class ConfirmationView(discord.ui.View):
             await uow.commit()
 
         # --- 事务外执行API调用 ---
+        updated_view = ConfirmationView(self.bot, hide_cancel=self.hide_cancel)
+
         if updated_status == 1:  # 已完成
-            self._disable_all_buttons()
+            updated_view._disable_all_buttons()
             await self.bot.api_scheduler.submit(
-                interaction.edit_original_response(embed=embed, view=self), 1
+                interaction.edit_original_response(embed=embed, view=updated_view), 1
             )
             self.bot.dispatch("confirmation_completed", dto)
         else:
             await self.bot.api_scheduler.submit(
-                interaction.edit_original_response(embed=embed, view=self), 1
+                interaction.edit_original_response(embed=embed, view=updated_view), 1
             )
 
-    @discord.ui.button(label="反对", style=discord.ButtonStyle.red, custom_id="moderation_cancel")
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def cancel_callback(self, interaction: discord.Interaction):
         if not isinstance(interaction.user, discord.Member) or not self.bot.user:
             return await self.bot.api_scheduler.submit(
                 interaction.response.send_message("无法验证您的身份。", ephemeral=True), 1
@@ -177,12 +192,11 @@ class ConfirmationView(discord.ui.View):
 
             embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
 
-            for item in self.children:
-                if isinstance(item, discord.ui.Button):
-                    item.disabled = True
-
             await uow.commit()
 
+        updated_view = ConfirmationView(self.bot, hide_cancel=self.hide_cancel)
+        updated_view._disable_all_buttons()
+
         await self.bot.api_scheduler.submit(
-            interaction.edit_original_response(embed=embed, view=self), 1
+            interaction.edit_original_response(embed=embed, view=updated_view), 1
         )
