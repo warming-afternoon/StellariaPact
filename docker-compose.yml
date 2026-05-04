@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: base
     container_name: stellaria-pact-bot
     restart: unless-stopped
     init: true
@@ -11,3 +12,18 @@ services:
     volumes:
       - ./config.json:/app/config.json:ro
       - ./data:/app/data
+
+  stellaria-pact-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    container_name: stellaria-pact-migrate
+    profiles:
+      - migrate
+    env_file:
+      - .env
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./data:/app/data
+    command: ["python", "migrate.py"]

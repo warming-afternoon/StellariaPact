@@ -1,5 +1,7 @@
-# 使用官方的 Python 运行时作为父镜像
-FROM python:3.11-slim
+# ============================================================
+# 阶段一：base — 仅安装核心依赖，用于正常启动 Bot
+# ============================================================
+FROM python:3.11-slim AS base
 
 # 设置工作目录
 WORKDIR /app
@@ -20,7 +22,7 @@ COPY alembic/ ./alembic/
 # 我们只复制 src 目录，因为这是应用代码所在的位置
 COPY src/ ./src/
 
-# 使用 uv 安装项目依赖
+# 使用 uv 安装项目依赖（仅核心依赖，不含 dev）
 # --system 表示将依赖安装到全局环境中
 # --no-cache 避免缓存，减小镜像体积
 RUN uv pip install --system --no-cache .
@@ -28,3 +30,11 @@ RUN uv pip install --system --no-cache .
 # 设置容器启动时执行的命令
 # 这会执行 src/StellariaPact/__main__.py
 CMD ["python", "-m", "StellariaPact"]
+
+# ============================================================
+# 阶段二：dev — 基于 base，额外安装 dev 依赖（alembic 等）
+# ============================================================
+FROM base AS dev
+
+# 安装 dev 依赖（alembic、ruff、pre-commit 等）
+RUN uv pip install --system --no-cache ".[dev]"
