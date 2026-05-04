@@ -327,6 +327,15 @@ class IntakeLogic:
             if intake.status == IntakeStatus.MODIFICATION_REQUIRED:
                 intake.status = IntakeStatus.PENDING_REVIEW
 
+            # 如果处于待审核状态被修改，重置管理员初审记录
+            if intake.status == IntakeStatus.PENDING_REVIEW:
+                intake.reviewer_id = None
+                intake.reviewed_at = None
+                intake.review_comment = None
+                intake.reviewer_id_2 = None
+                intake.reviewed_at_2 = None
+                intake.review_comment_2 = None
+
             await uow.intake.update_intake(intake)
 
             intake_dto = ProposalIntakeDto.model_validate(intake)
