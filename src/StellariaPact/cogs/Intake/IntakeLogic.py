@@ -1032,7 +1032,7 @@ class IntakeLogic:
         status_prefix_map = {
             int(IntakeStatus.PENDING_REVIEW): "[待审核]",
             int(IntakeStatus.SUPPORT_COLLECTING): "[已通过]",
-            int(IntakeStatus.APPROVED): "[已通过]",
+            int(IntakeStatus.APPROVED): "[已发布]",
             int(IntakeStatus.REJECTED): "[未通过]",
             int(IntakeStatus.MODIFICATION_REQUIRED): "[需要修改]",
         }
