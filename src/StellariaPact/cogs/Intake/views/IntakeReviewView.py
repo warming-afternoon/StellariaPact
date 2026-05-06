@@ -142,6 +142,27 @@ class IntakeReviewView(View):
         if not await self._check_permissions(interaction):
             return
 
+        # 批准操作：检查是否为二审，二审跳过审核意见弹窗
+        if action == "approved" and interaction.channel_id:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                intake = await uow.intake.get_intake_by_review_thread_id(interaction.channel_id)
+                if intake and intake.reviewer_id is not None and intake.reviewer_id != interaction.user.id:
+                    # 第二位管理审核：展示第一位管理意见作为参考，不要求填写审核意见
+                    await interaction.response.defer(ephemeral=True)
+                    comment_preview = (
+                        intake.review_comment
+                        if intake.review_comment
+                        else "（无）"
+                    )
+                    await interaction.followup.send(
+                        f"📋 **第一位管理 <@{intake.reviewer_id}> 的审核意见（只读参考）：**\n"
+                        f">>> {comment_preview}\n\n"
+                        f"✅ 正在处理批准...",
+                        ephemeral=True,
+                    )
+                    self.bot.dispatch("intake_approved", interaction, "")
+                    return
+
         modal = IntakeReviewModal(self.bot, action)
         await interaction.response.send_modal(modal)
 

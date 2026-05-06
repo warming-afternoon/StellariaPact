@@ -92,10 +92,10 @@ class IntakeEventListenerCog(commands.Cog):
             if is_fully_approved:
                 logger.info(
                     f"草案（帖子ID: {interaction.channel_id}）"
-                    "二审通过并进入支持票收集阶段。"
+                    "二审通过，讨论帖已建立（锁定中）。"
                 )
                 await interaction.followup.send(
-                    "✅ 二审通过，草案已批准并进入公示阶段", ephemeral=True
+                    "✅ 二审通过，讨论帖已建立（锁定中），等待提案委员会确认解锁", ephemeral=True
                 )
             else:
                 logger.info(
