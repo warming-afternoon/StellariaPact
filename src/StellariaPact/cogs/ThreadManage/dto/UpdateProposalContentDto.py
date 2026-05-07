@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from StellariaPact.share.ProposalContentFormatter import ProposalContentFormatter
+
 
 class UpdateProposalContentDto:
     """
@@ -28,13 +30,12 @@ class UpdateProposalContentDto:
         self.thread_id = thread_id
 
     def format_content(self) -> str:
-        """
-        将各个字段格式化为提案内容字符串。
-        """
-        return (
-            f"***提案人: <@{self.proposer_id}>***\n\n"
-            f"> ## 提案原因\n{self.reason}\n\n"
-            f"> ## 议案动议\n{self.motion}\n\n"
-            f"> ## 执行方案\n{self.implementation}\n\n"
-            f"> ## 议案执行人\n{self.executor}"
+        """将各个字段格式化为提案内容字符串。"""
+        return ProposalContentFormatter.format_discussion_body(
+            author_id=self.proposer_id,
+            reason=self.reason,
+            motion=self.motion,
+            implementation=self.implementation,
+            executor=self.executor,
+            heading_level=2,
         )

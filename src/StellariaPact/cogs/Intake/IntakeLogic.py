@@ -21,6 +21,7 @@ from StellariaPact.models.ProposalIntake import ProposalIntake
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.share import DiscordUtils
+from StellariaPact.share.ProposalContentFormatter import ProposalContentFormatter
 from StellariaPact.share.enums import IntakeStatus, ProposalStatus, VoteDuration, VoteSessionType
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
@@ -264,12 +265,16 @@ class IntakeLogic:
             raise TypeError("议案讨论区类型不正确。")
 
         created_ts = int(datetime.now(timezone.utc).timestamp())
+        discussion_body = ProposalContentFormatter.format_discussion_body(
+            author_id=intake_dto.author_id,
+            reason=intake_dto.reason,
+            motion=intake_dto.motion,
+            implementation=intake_dto.implementation,
+            executor=intake_dto.executor,
+            heading_level=2,
+        )
         discussion_content = (
-            f"***提案人: <@{intake_dto.author_id}>***\n\n"
-            f"> ## 提案原因\n{intake_dto.reason}\n\n"
-            f"> ## 议案动议\n{intake_dto.motion}\n\n"
-            f"> ## 执行方案\n{intake_dto.implementation}\n\n"
-            f"> ## 议案执行人\n{intake_dto.executor}\n\n"
+            f"{discussion_body}\n\n"
             f"*讨论帖创建时间: <t:{created_ts}:f>*\n\n"
             f"🔒 **此讨论帖暂为锁定状态，支持票达标且提案委员确认后将解锁开放发言。**"
         )
@@ -292,11 +297,14 @@ class IntakeLogic:
         await self._post_discussion_rules(discussion_thread)
 
         # 创建 Proposal 记录
-        proposal_content = (
-            f"> ### 提案原因\n{intake_dto.reason}\n\n"
-            f"> ### 议案动议\n{intake_dto.motion}\n\n"
-            f"> ### 执行方案\n{intake_dto.implementation}\n\n"
-            f"> ### 议案执行人\n{intake_dto.executor}"
+        proposal_content = ProposalContentFormatter.format_discussion_body(
+            author_id=intake_dto.author_id,
+            reason=intake_dto.reason,
+            motion=intake_dto.motion,
+            implementation=intake_dto.implementation,
+            executor=intake_dto.executor,
+            heading_level=3,
+            include_header=False,
         )
         async with UnitOfWork(self.bot.db_handler) as uow:
             new_proposal = Proposal(
@@ -748,14 +756,15 @@ class IntakeLogic:
             raise TypeError("议案讨论区类型不正确。")
 
         created_ts = int(datetime.now(timezone.utc).timestamp())
-        discussion_content = (
-            f"***提案人: <@{intake_dto.author_id}>***\n\n"
-            f"> ## 提案原因\n{intake_dto.reason}\n\n"
-            f"> ## 议案动议\n{intake_dto.motion}\n\n"
-            f"> ## 执行方案\n{intake_dto.implementation}\n\n"
-            f"> ## 议案执行人\n{intake_dto.executor}\n\n"
-            f"*讨论帖创建时间: <t:{created_ts}:f>*"
+        discussion_body = ProposalContentFormatter.format_discussion_body(
+            author_id=intake_dto.author_id,
+            reason=intake_dto.reason,
+            motion=intake_dto.motion,
+            implementation=intake_dto.implementation,
+            executor=intake_dto.executor,
+            heading_level=2,
         )
+        discussion_content = f"{discussion_body}\n\n*讨论帖创建时间: <t:{created_ts}:f>*"
         tags_config = self.bot.config.get("tags", {})
         discussion_tag = self._resolve_forum_tag(
             forum=discussion_forum,
@@ -774,11 +783,14 @@ class IntakeLogic:
         await self._post_discussion_rules(thread_with_message.thread)
 
         # 写入 Proposal 表
-        proposal_content = (
-            f"> ### 提案原因\n{intake_dto.reason}\n\n"
-            f"> ### 议案动议\n{intake_dto.motion}\n\n"
-            f"> ### 执行方案\n{intake_dto.implementation}\n\n"
-            f"> ### 议案执行人\n{intake_dto.executor}"
+        proposal_content = ProposalContentFormatter.format_discussion_body(
+            author_id=intake_dto.author_id,
+            reason=intake_dto.reason,
+            motion=intake_dto.motion,
+            implementation=intake_dto.implementation,
+            executor=intake_dto.executor,
+            heading_level=3,
+            include_header=False,
         )
         async with UnitOfWork(self.bot.db_handler) as uow:
             new_proposal = Proposal(
@@ -967,17 +979,12 @@ class IntakeLogic:
                 int(IntakeStatus.APPROVED): "🎉",
             }.get(int(intake_dto.status), "ℹ️")
 
+            review_body = ProposalContentFormatter.format_review_body(
+                intake_dto, submitted_ts, id_label="议案ID"
+            )
             lines = [
-                f"👤 **提案人：** <@{intake_dto.author_id}>",
-                f"📅 **提交时间：** <t:{submitted_ts}:f>",
-                f"🆔 **议案ID：** `{intake_dto.id}`",
-                "\n---\n",
-                f"\n🏷️ **议案标题**\n{intake_dto.title}",
-                f"\n📝 **提案原因**\n{intake_dto.reason}",
-                f"\n📋 **议案动议**\n{intake_dto.motion}",
-                f"\n🔧 **执行方案**\n{intake_dto.implementation}"
-                f"\n\n👨‍💼 **议案执行人**\n{intake_dto.executor}",
-                "\n---\n",
+                review_body,
+                "",
                 f"{status_emoji} **状态：** {status_text}\n",
                 f"💬 **审核意见：** {intake_dto.review_comment or '（无）'}",
             ]

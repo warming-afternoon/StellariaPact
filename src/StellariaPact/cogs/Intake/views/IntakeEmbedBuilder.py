@@ -8,6 +8,7 @@ import discord
 
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share.enums import IntakeStatus
+from StellariaPact.share.ProposalContentFormatter import ProposalContentFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -84,19 +85,8 @@ class IntakeEmbedBuilder:
             emoji = ""
             status_desc = status_text
 
-        content = (
-            f"👤 **提案人：** <@{intake.author_id}>\n"
-            f"📅 **提交时间：** <t:{submitted_timestamp}:f>\n"
-            f"🆔 **草案ID：** `{intake.id}`\n\n"
-            "---\n\n"
-            f"🏷️ **议案标题**\n{intake.title}\n\n"
-            f"📝 **提案原因**\n{intake.reason}\n\n"
-            f"📋 **议案动议**\n{intake.motion}\n\n"
-            f"🔧 **执行方案**\n{intake.implementation}\n\n"
-            f"👨‍💼 **议案执行人**\n{intake.executor}\n\n"
-            "---\n\n"
-            f"{emoji} **状态：** {status_desc}\n"
-        )
+        body = ProposalContentFormatter.format_review_body(intake, submitted_timestamp)
+        content = f"{body}\n\n{emoji} **状态：** {status_desc}\n"
         return content.strip()
 
     @staticmethod
