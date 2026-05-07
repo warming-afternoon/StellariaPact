@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from StellariaPact.share.BaseDto import BaseDto
-from StellariaPact.share.enums.IntakeStatus import IntakeStatus
+from StellariaPact.share.enums import IntakeStatus
 
 
 class ProposalIntakeDto(BaseDto):
