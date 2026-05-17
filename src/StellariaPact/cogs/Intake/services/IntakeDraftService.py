@@ -59,22 +59,8 @@ class IntakeDraftService:
     # -------------------------
 
     async def check_submission_limit(self, guild_id: int) -> tuple[bool, str]:
-        """检查当前讨论中或待审核的提案是否达到上限。"""
+        """检查当前讨论中的提案是否达到上限。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            # 检查待审核草案是否达到 3 个上限
-            pending_intakes = await uow.intake.get_all_pending_intakes()
-            if len(pending_intakes) >= 3:
-                pending_links = "\n".join(
-                    f"- https://discord.com/channels/{guild_id}/{intake.review_thread_id}"
-                    for intake in pending_intakes if intake.review_thread_id
-                )
-                return False, (
-                    "预审核区待审核的提案已满（达到 3 个上限），暂不允许提交新草案。\n"
-                    "请等待管理组处理现有的待审提案后再提交。\n\n"
-                    f"当前待审核提案：\n{pending_links}"
-                )
-
-            # 讨论中提案数量检查
             discussion_proposals = await uow.proposal.get_proposals_by_status(
                 ProposalStatus.DISCUSSION
             )

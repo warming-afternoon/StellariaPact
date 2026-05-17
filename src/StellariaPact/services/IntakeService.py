@@ -37,7 +37,7 @@ class IntakeService:
     async def get_all_pending_intakes(self) -> Sequence[ProposalIntake]:
         statement = select(ProposalIntake).where(
             ProposalIntake.status == IntakeStatus.PENDING_REVIEW
-        ).order_by(ProposalIntake.id)  # type: ignore
+        )
         result = await self.session.exec(statement)
         return result.all()
 
