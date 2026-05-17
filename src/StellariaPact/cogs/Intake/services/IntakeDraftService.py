@@ -63,10 +63,19 @@ class IntakeDraftService:
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 检查待审核草案是否达到 3 个上限
             pending_intakes = await uow.intake.get_all_pending_intakes()
-            if len(pending_intakes) >= 3:
+
+            # 过滤掉 review_thread_id 为空的，并按 review_thread_id 去重
+            seen_thread_ids: set[int] = set()
+            filtered_pending: list[ProposalIntake] = []
+            for intake in pending_intakes:
+                if intake.review_thread_id and intake.review_thread_id not in seen_thread_ids:
+                    seen_thread_ids.add(intake.review_thread_id)
+                    filtered_pending.append(intake)
+
+            if len(filtered_pending) >= 3:
                 pending_links = "\n".join(
                     f"- https://discord.com/channels/{guild_id}/{intake.review_thread_id}"
-                    for intake in pending_intakes if intake.review_thread_id
+                    for intake in filtered_pending
                 )
                 return False, (
                     "预审核区待审核的提案已满（达到 3 个上限），暂不允许提交新草案。\n"
