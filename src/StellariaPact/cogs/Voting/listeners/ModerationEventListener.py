@@ -31,6 +31,7 @@ class ModerationEventListener(commands.Cog):
         create_in_voting_channel: bool, # 是否在投票频道创建
         notify_creation_role: bool, # 是否通知创建角色
         thread: discord.Thread, # 讨论帖
+        description: str | None = None, # 投票详细描述
         max_choices_per_user: int = 999999, # 单个用户最大选择数
         ui_style: int = 1, # UI样式
         creator: discord.User | discord.Member | None = None, # 创建者
@@ -47,6 +48,7 @@ class ModerationEventListener(commands.Cog):
             vote_details = await self._create_in_thread_vote(
                 proposal_dto, thread, duration_hours, anonymous, realtime,
                 notify, options, max_choices_per_user, ui_style,
+                description=description,
                 creator=creator
             )
         except Exception as e:
@@ -94,6 +96,7 @@ class ModerationEventListener(commands.Cog):
         options: list[str],
         max_choices_per_user: int = 999999,
         ui_style: int = 1,
+        description: str | None = None,
         creator: discord.User | discord.Member | None = None
     ):
         """
@@ -109,6 +112,7 @@ class ModerationEventListener(commands.Cog):
             options: 投票选项列表
             max_choices_per_user: 单个用户的多选项数上限
             ui_style: 投票样式: 1-当前样式, 2-简洁样式
+            description: 投票的详细描述说明
 
         Returns:
             VoteDetailDto | None: 初始化后的投票详情；失败时返回 None。
@@ -151,6 +155,7 @@ class ModerationEventListener(commands.Cog):
                 total_choices=total_choices,
                 max_choices_per_user=max_choices_per_user,
                 ui_style=ui_style,
+                description=description,
             )
             session_dto = await uow.vote_session.create_vote_session(qo)
             if not session_dto.id:
@@ -190,6 +195,7 @@ class ModerationEventListener(commands.Cog):
                 notify_flag=notify,
                 end_time=end_time,
                 context_message_id=None,
+                description=description,
                 status=1, # 投票状态 1-进行中
                 total_choices=total_choices,
                 options=vote_details_options,

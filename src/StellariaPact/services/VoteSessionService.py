@@ -147,6 +147,7 @@ class VoteSessionService:
             session_type=qo.session_type,
             max_choices_per_user=qo.max_choices_per_user,
             ui_style=qo.ui_style,
+            description=qo.description,
         )
         self.session.add(new_session)
         await self.session.flush()
@@ -368,6 +369,7 @@ class VoteSessionService:
             notify_flag=vote_session_model.notify_flag,
             end_time=vote_session_model.end_time,
             context_message_id=vote_session_model.context_message_id,
+            description=getattr(vote_session_model, "description", None),
             status=vote_session_model.status,
             total_choices=vote_session_model.total_choices,  # type: ignore
             total_approve_votes=total_approve_votes,

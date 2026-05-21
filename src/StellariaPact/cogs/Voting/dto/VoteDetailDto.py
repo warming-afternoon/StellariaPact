@@ -74,3 +74,6 @@ class VoteDetailDto(BaseModel):
 
     ui_style: int = Field(default=2, description="投票样式: 1-当前样式, 2-简洁样式")
     """投票样式: 1-当前样式, 2-简洁样式"""
+
+    description: Optional[str] = Field(None, description="投票详细描述")
+    """投票的详细说明文本"""

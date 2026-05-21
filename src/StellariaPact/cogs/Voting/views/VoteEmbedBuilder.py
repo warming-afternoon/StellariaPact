@@ -374,6 +374,7 @@ class VoteEmbedBuilder:
 
         normal_embed = discord.Embed(
             title="普通投票",
+            description=vote_details.description or None,
             color=discord.Color.green(),
         )
         # 若多选项数不等于默认值，添加提醒字段
@@ -405,7 +406,8 @@ class VoteEmbedBuilder:
                     inline=False,
                 )
         else:
-            normal_embed.description = "暂无选项"
+            desc = f"{vote_details.description}\n\n暂无选项" if vote_details.description else "暂无选项"
+            normal_embed.description = desc
             if vote_details.realtime_flag:
                 normal_embed.add_field(
                     name="总赞成票",
@@ -500,6 +502,7 @@ class VoteEmbedBuilder:
         if normal_options:
             normal_embed = discord.Embed(
                 title="普通投票",
+                description=vote_details.description or None,
                 color=discord.Color.green(),
             )
             # 若多选项数不等于默认值，添加提醒字段
@@ -533,9 +536,10 @@ class VoteEmbedBuilder:
             embeds.append(normal_embed)
         else:
             # 没有普通选项时，显示总票数汇总
+            desc = f"{vote_details.description}\n\n暂无选项" if vote_details.description else "暂无选项"
             normal_embed = discord.Embed(
                 title="普通投票",
-                description="暂无选项",
+                description=desc,
                 color=discord.Color.green(),
             )
             if vote_details.realtime_flag:

@@ -49,3 +49,6 @@ class CreateVoteSessionQo(BaseDto):
 
     ui_style: int = 1
     """投票样式: 1-当前样式, 2-简洁样式"""
+
+    description: Optional[str] = None
+    """投票详细描述"""

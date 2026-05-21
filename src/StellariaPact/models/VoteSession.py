@@ -92,6 +92,9 @@ class VoteSession(BaseModel, table=True):
     ui_style: int = Field(default=1, description="投票样式: 1-当前样式, 2-简洁样式")
     """投票样式: 1-当前样式, 2-简洁样式"""
 
+    description: Optional[str] = Field(default=None, description="投票的详细描述说明")
+    """投票的详细描述说明"""
+
     # --- 关系定义 ---
     objection: Optional[Objection] = Relationship(
         back_populates="vote_session",
