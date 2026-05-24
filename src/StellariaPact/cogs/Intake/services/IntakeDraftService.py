@@ -83,10 +83,11 @@ class IntakeDraftService:
                     f"当前待审核提案：\n{pending_links}"
                 )
 
-            # 讨论中提案数量检查
+            # 讨论中提案数量检查（排除特殊提案）
             discussion_proposals = await uow.proposal.get_proposals_by_status(
                 ProposalStatus.DISCUSSION
             )
+            discussion_proposals = [p for p in discussion_proposals if not p.is_special]
             if len(discussion_proposals) >= 3:
                 discussion_links = "\n".join(
                     f"- https://discord.com/channels/{guild_id}/{proposal.discussion_thread_id}"

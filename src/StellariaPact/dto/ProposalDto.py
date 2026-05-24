@@ -23,5 +23,8 @@ class ProposalDto(BaseDto):
     status: ProposalStatus
     """提案当前状态: 0-讨论中, 1-执行中, 2-冻结中, 3-已废弃, 4-已否决, 5-已结束"""
 
+    is_special: bool
+    """是否为特殊提案，不计入讨论槽位"""
+
     discussion_thread_id: int | None
     """Discord讨论帖的ID"""

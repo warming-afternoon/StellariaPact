@@ -3,6 +3,7 @@ from .AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from .BaseModel import BaseModel
 from .ConfirmationSession import ConfirmationSession
 from .Objection import Objection
+from .OperationLog import OperationLog
 from .Proposal import Proposal
 from .ProposalIntake import ProposalIntake
 from .UserActivity import UserActivity
@@ -17,6 +18,7 @@ __all__ = [
     "BaseModel",
     "ConfirmationSession",
     "Objection",
+    "OperationLog",
     "Proposal",
     "UserActivity",
     "UserVote",

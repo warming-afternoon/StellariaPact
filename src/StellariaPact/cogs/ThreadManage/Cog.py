@@ -14,6 +14,7 @@ from StellariaPact.dto import ProposalDto
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share import UnitOfWork, safeDefer
 from StellariaPact.share.auth.RoleGuard import RoleGuard
+from StellariaPact.share.enums.OperationType import OperationType
 
 if TYPE_CHECKING:
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -76,6 +77,100 @@ class ThreadManageCog(commands.Cog):
             intake=intake_dto,
         )
         await interaction.response.send_modal(modal)
+
+    @app_commands.command(name="设置特殊提案", description="[管理组]将当前提案标记为特殊提案（不计入讨论槽位）")
+    @RoleGuard.requireRoles("stewards")
+    async def set_special_proposal(self, interaction: Interaction):
+        """将当前帖子的提案标记为特殊提案。"""
+        await safeDefer(interaction, ephemeral=True)
+
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send(
+                "❌ 此命令只能在提案讨论帖中使用。", ephemeral=True
+            )
+            return
+
+        thread_id = interaction.channel.id
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.proposal.get_proposal_by_thread_id(thread_id)
+            if not proposal:
+                await interaction.followup.send(
+                    "❌ 当前帖子不是有效的提案讨论帖。", ephemeral=True
+                )
+                return
+
+            if proposal.is_special:
+                await interaction.followup.send(
+                    "⚠️ 该提案已经是特殊提案。", ephemeral=True
+                )
+                return
+
+            proposal.is_special = True
+            await uow.proposal.update_proposal(proposal)
+
+            await uow.operation_log.log_operation(
+                operator_id=interaction.user.id,
+                operator_name=interaction.user.name,
+                operator_display_name=interaction.user.display_name,
+                op_type=OperationType.PROPOSAL,
+                action="set_special",
+                target_type="proposal",
+                target_id=proposal.id,
+                guild_id=interaction.guild_id,
+            )
+            await uow.commit()
+
+        await interaction.followup.send(
+            "✅ 已将该提案标记为**特殊提案**，不再计入讨论槽位数。", ephemeral=True
+        )
+        logger.info(f"用户 {interaction.user.id} 将提案 {proposal.id} 设置为特殊提案")
+
+    @app_commands.command(name="取消特殊提案", description="[管理组]取消当前提案的特殊标记（恢复计入讨论槽位）")
+    @RoleGuard.requireRoles("stewards")
+    async def unset_special_proposal(self, interaction: Interaction):
+        """取消当前帖子提案的特殊标记。"""
+        await safeDefer(interaction, ephemeral=True)
+
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send(
+                "❌ 此命令只能在提案讨论帖中使用。", ephemeral=True
+            )
+            return
+
+        thread_id = interaction.channel.id
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.proposal.get_proposal_by_thread_id(thread_id)
+            if not proposal:
+                await interaction.followup.send(
+                    "❌ 当前帖子不是有效的提案讨论帖。", ephemeral=True
+                )
+                return
+
+            if not proposal.is_special:
+                await interaction.followup.send(
+                    "⚠️ 该提案不是特殊提案。", ephemeral=True
+                )
+                return
+
+            proposal.is_special = False
+            await uow.proposal.update_proposal(proposal)
+
+            await uow.operation_log.log_operation(
+                operator_id=interaction.user.id,
+                operator_name=interaction.user.name,
+                operator_display_name=interaction.user.display_name,
+                op_type=OperationType.PROPOSAL,
+                action="unset_special",
+                target_type="proposal",
+                target_id=proposal.id,
+                guild_id=interaction.guild_id,
+            )
+            await uow.commit()
+
+        await interaction.followup.send(
+            "✅ 已取消该提案的特殊标记，恢复正常计入讨论槽位。", ephemeral=True
+        )
+        logger.info(f"用户 {interaction.user.id} 取消了提案 {proposal.id} 的特殊标记")
 
     @commands.Cog.listener()
     async def on_proposal_content_update_requested(

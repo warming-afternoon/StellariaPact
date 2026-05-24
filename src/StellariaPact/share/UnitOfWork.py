@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from StellariaPact.services.AnnouncementService import AnnouncementService
     from StellariaPact.services.ConfirmationSessionService import ConfirmationSessionService
     from StellariaPact.services.IntakeService import IntakeService
+    from StellariaPact.services.OperationLogService import OperationLogService
     from StellariaPact.services.ProposalService import ProposalService
     from StellariaPact.services.UserActivityService import UserActivityService
     from StellariaPact.services.UserVoteService import UserVoteService
@@ -184,3 +185,12 @@ class UnitOfWork:
 
             self._intake_service = IntakeService(self.session)
         return self._intake_service
+
+    @property
+    def operation_log(self) -> "OperationLogService":
+        """获取操作记录服务实例。"""
+        if not hasattr(self, "_operation_log_service"):
+            from StellariaPact.services.OperationLogService import OperationLogService
+
+            self._operation_log_service = OperationLogService(self.session)
+        return self._operation_log_service

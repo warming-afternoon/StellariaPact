@@ -30,6 +30,9 @@ class Proposal(BaseModel, table=True):
     proposer_id: int = Field(index=True, description="提案发起人的Discord ID")
     """提案发起人的Discord ID"""
 
+    is_special: bool = Field(default=False, description="是否为特殊提案，不计入讨论槽位")
+    """是否为特殊提案，不计入讨论槽位"""
+
     status: int = Field(
         default=ProposalStatus.DISCUSSION,
         index=True,
