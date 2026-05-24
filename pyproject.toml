@@ -20,6 +20,7 @@ dependencies = [
     "regex",
     "aiorun",
     "uvloop; sys_platform != 'win32'",
+    "aioboto3>=13.0.0",
 ]
 
 [project.optional-dependencies]

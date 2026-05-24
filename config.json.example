@@ -50,5 +50,20 @@
     "communityBuilder": null
   },
   "proxy": null,
-  "timezone": "Asia/Shanghai"
+  "timezone": "Asia/Shanghai",
+  "backup": {
+    "enabled": false,
+    "_comment_enabled": "是否启用数据库定时备份到 S3 兼容对象存储（如 Cloudflare R2）",
+
+    "endpoint_url": "https://<account_id>.r2.cloudflarestorage.com",
+    "_comment_endpoint_url": "S3 兼容对象存储的端点 URL",
+    "access_key": "<your_r2_access_key>",
+    "_comment_access_key": "S3 访问密钥 ID",
+    "secret_key": "<your_r2_secret_key>",
+    "_comment_secret_key": "S3 访问密钥 Secret",
+    "bucket_name": "<your_bucket_name>",
+    "_comment_bucket_name": "存储桶名称",
+    "region_name": "auto",
+    "_comment_region_name": "区域名称，R2 通常为 auto"
+  }
 }
