@@ -530,7 +530,7 @@ class InnerEventListener(commands.Cog):
                 mentions = []
                 if council_role_id:
                     mentions.append(f"<@&{council_role_id}>")
-                if auditor_role_id:
+                if auditor_role_id and auditor_role_id != council_role_id:
                     mentions.append(f"<@&{auditor_role_id}>")
                 if mentions:
                     content_to_send = " ".join(mentions)
