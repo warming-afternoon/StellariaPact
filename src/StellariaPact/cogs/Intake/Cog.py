@@ -16,6 +16,7 @@ from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.cogs.Intake.views.IntakeSubmissionView import \
     IntakeSubmissionView
 from StellariaPact.cogs.Intake.views.IntakeSupportView import IntakeSupportView
+from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums import IntakeStatus
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -170,8 +171,10 @@ class IntakeCog(commands.Cog):
                 )
                 return
 
+            intake_dto = ProposalIntakeDto.model_validate(intake)
+
         # 校验通过，弹出 Modal
-        modal = IntakeEditReviewModal(self.bot, intake)
+        modal = IntakeEditReviewModal(self.bot, intake_dto)
         await interaction.response.send_modal(modal)
 
 async def setup(bot: StellariaPactBot):
