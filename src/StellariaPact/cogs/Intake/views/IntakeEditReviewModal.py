@@ -6,11 +6,14 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ui import Modal, TextInput
 
+from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import \
+    IntakeDiscordHelper
+from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
+from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share.enums.LogOperationType import LogOperationType
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
 if TYPE_CHECKING:
-    from StellariaPact.models.ProposalIntake import ProposalIntake
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
@@ -19,7 +22,7 @@ logger = logging.getLogger(__name__)
 class IntakeEditReviewModal(Modal):
     """修改审核意见的 Modal —— 任何管理组成员都能修改草案的审核意见。"""
 
-    def __init__(self, bot: "StellariaPactBot", intake: "ProposalIntake"):
+    def __init__(self, bot: "StellariaPactBot", intake: ProposalIntakeDto):
         super().__init__(title="修改审核意见")
         self.bot = bot
         self.intake = intake
@@ -64,7 +67,7 @@ class IntakeEditReviewModal(Modal):
                     op_type=LogOperationType.INTAKE,
                     action="edit_review_comment",
                     target_type="intake",
-                    target_id=self.intake.id or 0,
+                    target_id=self.intake.id,
                     guild_id=guild_id,
                     detail=(
                         f"原意见: {old_comment[:100] if old_comment else '（无）'}, "
@@ -72,7 +75,13 @@ class IntakeEditReviewModal(Modal):
                     ),
                 )
 
+                updated_dto = ProposalIntakeDto.model_validate(intake_to_update)
                 await uow.commit()
+
+            # 刷新审核帖首楼，显示新的审核意见
+            helper = IntakeDiscordHelper(self.bot)
+            view = IntakeReviewView(self.bot, updated_dto)
+            await helper.update_review_thread_message(updated_dto, view=view)
 
             await interaction.followup.send("✅ 已更新审核意见。", ephemeral=True)
             logger.info(
