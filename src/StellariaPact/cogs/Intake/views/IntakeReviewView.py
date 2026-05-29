@@ -149,7 +149,21 @@ class IntakeReviewView(View):
                     await interaction.response.send_message("❌ 找不到相关草案记录，无法执行操作。", ephemeral=True)
                     return
 
-                # 批准操作: 检查是否为二审，二审跳过审核意见弹窗
+                # 检查是否按照先后顺序进行审核
+                if intake.status == IntakeStatus.PENDING_REVIEW:
+                    pending_intakes = await uow.intake.get_all_pending_intakes()
+                    if pending_intakes and pending_intakes[0].id != intake.id:
+                        oldest = pending_intakes[0]
+                        guild_id = interaction.guild_id or oldest.guild_id
+                        oldest_link = f"https://discord.com/channels/{guild_id}/{oldest.review_thread_id}" if oldest.review_thread_id else f"草案 ID: {oldest.id}"
+                        await interaction.response.send_message(
+                            f"❌ **请按照先后顺序进行审核！**\n"
+                            f"您必须先处理最早提交的待审核提案：\n{oldest_link}",
+                            ephemeral=True,
+                        )
+                        return
+
+                # 批准操作：检查是否为二审，二审跳过审核意见弹窗
                 if action == "approved":
                     if intake.reviewer_id is not None and intake.reviewer_id != interaction.user.id:
                         # 第二位管理审核：展示第一位管理意见作为参考，不要求填写审核意见
