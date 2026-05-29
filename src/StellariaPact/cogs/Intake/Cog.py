@@ -170,15 +170,8 @@ class IntakeCog(commands.Cog):
                 )
                 return
 
-            # 校验当前用户是否是该草案的审核人
-            if intake.reviewer_id != interaction.user.id and intake.reviewer_id_2 != interaction.user.id:
-                await interaction.response.send_message(
-                    "❌ 你并非该草案的审核人，无法修改审核意见。", ephemeral=True
-                )
-                return
-
         # 校验通过，弹出 Modal
-        modal = IntakeEditReviewModal(self.bot, interaction.user.id, intake)
+        modal = IntakeEditReviewModal(self.bot, intake)
         await interaction.response.send_modal(modal)
 
 async def setup(bot: StellariaPactBot):
