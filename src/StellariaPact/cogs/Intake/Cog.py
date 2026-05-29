@@ -7,10 +7,14 @@ import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Intake.listeners.IntakeEventListener import IntakeEventListenerCog
+from StellariaPact.cogs.Intake.listeners.IntakeEventListener import \
+    IntakeEventListenerCog
+from StellariaPact.cogs.Intake.views.IntakeEditReviewModal import \
+    IntakeEditReviewModal
 from StellariaPact.cogs.Intake.views.IntakeReviewModal import IntakeReviewModal
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
-from StellariaPact.cogs.Intake.views.IntakeSubmissionView import IntakeSubmissionView
+from StellariaPact.cogs.Intake.views.IntakeSubmissionView import \
+    IntakeSubmissionView
 from StellariaPact.cogs.Intake.views.IntakeSupportView import IntakeSupportView
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums import IntakeStatus
@@ -132,6 +136,49 @@ class IntakeCog(commands.Cog):
 
         # 校验通过，弹出 Modal
         modal = IntakeReviewModal(self.bot, "rejected")
+        await interaction.response.send_modal(modal)
+
+    @app_commands.command(name="修改审核意见", description="[管理组] 修改当前草案的审核意见")
+    @RoleGuard.requireRoles("stewards")
+    async def edit_review_comment(self, interaction: Interaction):
+        """
+        使用指令直接修改当前草案的审核意见，弹出预填充的修改表单。
+        """
+        # 检查是否在帖子内执行
+        if not interaction.channel or not isinstance(interaction.channel, discord.Thread):
+            await interaction.response.send_message(
+                "❌ 此命令只能在提案的预审帖子中使用。", ephemeral=True
+            )
+            return
+
+        # 校验当前帖子是否关联了待处理的草案
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            intake = await uow.intake.get_intake_by_review_thread_id(interaction.channel.id)
+
+            if not intake:
+                await interaction.response.send_message(
+                    "❌ 找不到与此帖子关联的草案记录。", ephemeral=True
+                )
+                return
+
+            if intake.status not in (
+                IntakeStatus.PENDING_REVIEW,
+                IntakeStatus.MODIFICATION_REQUIRED,
+            ):
+                await interaction.response.send_message(
+                    "❌ 该草案当前不在可修改审核意见的状态。", ephemeral=True
+                )
+                return
+
+            # 校验当前用户是否是该草案的审核人
+            if intake.reviewer_id != interaction.user.id and intake.reviewer_id_2 != interaction.user.id:
+                await interaction.response.send_message(
+                    "❌ 你并非该草案的审核人，无法修改审核意见。", ephemeral=True
+                )
+                return
+
+        # 校验通过，弹出 Modal
+        modal = IntakeEditReviewModal(self.bot, interaction.user.id, intake)
         await interaction.response.send_modal(modal)
 
 async def setup(bot: StellariaPactBot):

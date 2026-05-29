@@ -55,7 +55,13 @@ class IntakeEventListenerCog(commands.Cog):
         self.intake_cog.logic.save_draft(dto.author_id, dto)
 
         try:
-            intake_dto = await self.intake_cog.logic.process_submit_intake(dto)
+            intake_dto = await self.intake_cog.logic.process_submit_intake(
+                dto,
+                operator_name=interaction.user.name,
+                operator_display_name=(
+                    interaction.user.display_name or interaction.user.name
+                ),
+            )
             self.intake_cog.logic.clear_draft(dto.author_id)
             logger.info(
                 f"✅ 议案草稿 (ID: {intake_dto.id}) by {dto.author_id} "
@@ -87,7 +93,13 @@ class IntakeEventListenerCog(commands.Cog):
         try:
             assert interaction.channel_id is not None
             intake_dto, is_fully_approved = await self.intake_cog.logic.approve_intake(
-                interaction.channel_id, interaction.user.id, review_comment
+                interaction.channel_id,
+                interaction.user.id,
+                review_comment,
+                operator_name=interaction.user.name,
+                operator_display_name=(
+                    interaction.user.display_name or interaction.user.name
+                ),
             )
             if is_fully_approved:
                 logger.info(
@@ -127,7 +139,13 @@ class IntakeEventListenerCog(commands.Cog):
         try:
             assert interaction.channel_id is not None
             await self.intake_cog.logic.reject_intake(
-                interaction.channel_id, interaction.user.id, review_comment
+                interaction.channel_id,
+                interaction.user.id,
+                review_comment,
+                operator_name=interaction.user.name,
+                operator_display_name=(
+                    interaction.user.display_name or interaction.user.name
+                ),
             )
             logger.info(f"草案（帖子ID: {interaction.channel_id}）已成功标记为“已拒绝”。")
             await interaction.followup.send("✅ 草案已拒绝，审核信息已记录", ephemeral=True)
@@ -153,7 +171,13 @@ class IntakeEventListenerCog(commands.Cog):
         try:
             assert interaction.channel_id is not None
             await self.intake_cog.logic.request_modification_intake(
-                interaction.channel_id, interaction.user.id, review_comment
+                interaction.channel_id,
+                interaction.user.id,
+                review_comment,
+                operator_name=interaction.user.name,
+                operator_display_name=(
+                    interaction.user.display_name or interaction.user.name
+                ),
             )
             logger.info(f"草案（帖子ID: {interaction.channel_id}）已成功标记为“需要修改”。")
             await interaction.followup.send("✅ 已要求修改草案，审核信息已记录", ephemeral=True)
@@ -184,7 +208,14 @@ class IntakeEventListenerCog(commands.Cog):
         await safeDefer(interaction, ephemeral=True)
 
         try:
-            await self.intake_cog.logic.edit_intake(intake_id, dto)
+            await self.intake_cog.logic.edit_intake(
+                intake_id,
+                dto,
+                operator_name=interaction.user.name,
+                operator_display_name=(
+                    interaction.user.display_name or interaction.user.name
+                ),
+            )
             logger.info(f"✅ 草案 (ID: {intake_id}) 已被成功修改并更新帖子内容。")
             await interaction.followup.send(
                 "✅ 提案修改成功！审核帖子内容已更新。",

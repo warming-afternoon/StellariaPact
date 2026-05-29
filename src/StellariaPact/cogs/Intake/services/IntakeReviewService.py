@@ -7,18 +7,23 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import IntakeEmbedBuilder
+from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import \
+    IntakeEmbedBuilder
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.cogs.Intake.views.IntakeSupportView import IntakeSupportView
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import CreateVoteSessionQo
+from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
+    CreateVoteSessionQo
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share import DiscordUtils
+from StellariaPact.share.enums import (IntakeStatus, LogOperationType,
+                                       VoteSessionType)
 from StellariaPact.share.UnitOfWork import UnitOfWork
-from StellariaPact.share.enums import IntakeStatus, VoteSessionType
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import IntakeSubmissionDto
-    from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import IntakeDiscordHelper
+    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import \
+        IntakeSubmissionDto
+    from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import \
+        IntakeDiscordHelper
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
@@ -36,7 +41,12 @@ class IntakeReviewService:
     # -------------------------
 
     async def approve_intake(
-        self, thread_id: int, reviewer_id: int, review_comment: str
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        operator_name: str = "",
+        operator_display_name: str = "",
     ) -> tuple[ProposalIntakeDto, bool]:
         """草案审核 - 通过（双管理审核）。
 
@@ -53,12 +63,31 @@ class IntakeReviewService:
             is_second_review = existing.reviewer_id is not None
 
         if is_second_review:
-            return await self._second_approve(thread_id, reviewer_id, review_comment), True
+            return (
+                await self._second_approve(
+                    thread_id, reviewer_id, review_comment,
+                    operator_name=operator_name,
+                    operator_display_name=operator_display_name,
+                ),
+                True,
+            )
         else:
-            return await self._first_approve(thread_id, reviewer_id, review_comment), False
+            return (
+                await self._first_approve(
+                    thread_id, reviewer_id, review_comment,
+                    operator_name=operator_name,
+                    operator_display_name=operator_display_name,
+                ),
+                False,
+            )
 
     async def _first_approve(
-        self, thread_id: int, reviewer_id: int, review_comment: str
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        operator_name: str = "",
+        operator_display_name: str = "",
     ) -> ProposalIntakeDto:
         """第一位管理批准：记录初审信息，等待第二位管理。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
@@ -67,6 +96,20 @@ class IntakeReviewService:
             )
             intake_dto = ProposalIntakeDto.model_validate(intake)
 
+            # 写入操作日志
+            await uow.operation_log.log_operation(
+                operator_id=reviewer_id,
+                operator_name=operator_name,
+                operator_display_name=operator_display_name,
+                op_type=LogOperationType.INTAKE,
+                action="first_approve",
+                target_type="intake",
+                target_id=intake_dto.id,
+                guild_id=intake_dto.guild_id,
+                detail=f"审核意见: {review_comment[:100]}" if review_comment else None,
+            )
+            await uow.commit()
+
         await self.discord_helper.update_review_thread_message(
             intake_dto, view=IntakeReviewView(self.bot, intake_dto),
             extra_note="⏳ 1/2 管理已确认，等待第二位管理确认中...",
@@ -74,7 +117,12 @@ class IntakeReviewService:
         return intake_dto
 
     async def _second_approve(
-        self, thread_id: int, reviewer_id: int, review_comment: str
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        operator_name: str = "",
+        operator_display_name: str = "",
     ) -> ProposalIntakeDto:
         """第二位管理批准：完成审核，进入支持票收集阶段。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
@@ -83,6 +131,20 @@ class IntakeReviewService:
                 IntakeStatus.SUPPORT_COLLECTING,
             )
             intake_dto = ProposalIntakeDto.model_validate(intake)
+
+            # 写入操作日志
+            await uow.operation_log.log_operation(
+                operator_id=reviewer_id,
+                operator_name=operator_name,
+                operator_display_name=operator_display_name,
+                op_type=LogOperationType.INTAKE,
+                action="second_approve",
+                target_type="intake",
+                target_id=intake_dto.id,
+                guild_id=intake_dto.guild_id,
+                detail=f"审核意见: {review_comment[:100]}" if review_comment else None,
+            )
+            await uow.commit()
 
         channels_config = self.bot.config.get("channels", {})
 
@@ -141,7 +203,12 @@ class IntakeReviewService:
     # -------------------------
 
     async def reject_intake(
-        self, thread_id: int, reviewer_id: int, review_comment: str
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        operator_name: str = "",
+        operator_display_name: str = "",
     ) -> ProposalIntakeDto:
         """草案审核 - 拒绝"""
         # 更新草案审核状态
@@ -154,6 +221,20 @@ class IntakeReviewService:
                 expected_current_status=[IntakeStatus.PENDING_REVIEW, IntakeStatus.MODIFICATION_REQUIRED],
             )
             intake_dto = ProposalIntakeDto.model_validate(intake)
+
+            # 写入操作日志
+            await uow.operation_log.log_operation(
+                operator_id=reviewer_id,
+                operator_name=operator_name,
+                operator_display_name=operator_display_name,
+                op_type=LogOperationType.INTAKE,
+                action="reject",
+                target_type="intake",
+                target_id=intake_dto.id,
+                guild_id=intake_dto.guild_id,
+                detail=f"审核意见: {review_comment[:100]}" if review_comment else None,
+            )
+            await uow.commit()
 
         # 修改审核帖首楼内容并发送审核公示
         view = IntakeReviewView(self.bot, intake_dto)
@@ -168,7 +249,12 @@ class IntakeReviewService:
     # -------------------------
 
     async def request_modification_intake(
-        self, thread_id: int, reviewer_id: int, review_comment: str
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        operator_name: str = "",
+        operator_display_name: str = "",
     ) -> ProposalIntakeDto:
         """草案审核 - 需要修改"""
         # 更新草案审核状态
@@ -180,6 +266,20 @@ class IntakeReviewService:
                 IntakeStatus.MODIFICATION_REQUIRED,
             )
             intake_dto = ProposalIntakeDto.model_validate(intake)
+
+            # 写入操作日志
+            await uow.operation_log.log_operation(
+                operator_id=reviewer_id,
+                operator_name=operator_name,
+                operator_display_name=operator_display_name,
+                op_type=LogOperationType.INTAKE,
+                action="request_modification",
+                target_type="intake",
+                target_id=intake_dto.id,
+                guild_id=intake_dto.guild_id,
+                detail=f"审核意见: {review_comment[:100]}" if review_comment else None,
+            )
+            await uow.commit()
 
         # 修改审核帖首楼内容/标题/TAG 并发送修改公示
         view = IntakeReviewView(self.bot, intake_dto)
@@ -195,7 +295,11 @@ class IntakeReviewService:
     # -------------------------
 
     async def edit_intake(
-        self, intake_id: int, dto: "IntakeSubmissionDto"
+        self,
+        intake_id: int,
+        dto: "IntakeSubmissionDto",
+        operator_name: str = "",
+        operator_display_name: str = "",
     ) -> ProposalIntakeDto:
         """提案人修改草案"""
         # 更新提案内容
@@ -225,6 +329,19 @@ class IntakeReviewService:
             await uow.intake.update_intake(intake)
 
             intake_dto = ProposalIntakeDto.model_validate(intake)
+
+            # 写入操作日志
+            await uow.operation_log.log_operation(
+                operator_id=dto.author_id,
+                operator_name=operator_name,
+                operator_display_name=operator_display_name,
+                op_type=LogOperationType.INTAKE,
+                action="author_edit",
+                target_type="intake",
+                target_id=intake_dto.id,
+                guild_id=dto.guild_id,
+                detail=f"修改后标题: {dto.title[:50]}",
+            )
             await uow.commit()
 
         # 修改审核帖首楼内容并发送修改公示

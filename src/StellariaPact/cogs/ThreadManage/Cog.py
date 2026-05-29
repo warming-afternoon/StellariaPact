@@ -8,13 +8,15 @@ import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.ThreadManage.dto.UpdateProposalContentDto import UpdateProposalContentDto
-from StellariaPact.cogs.ThreadManage.views.EditProposalContentModal import EditProposalContentModal
+from StellariaPact.cogs.ThreadManage.dto.UpdateProposalContentDto import \
+    UpdateProposalContentDto
+from StellariaPact.cogs.ThreadManage.views.EditProposalContentModal import \
+    EditProposalContentModal
 from StellariaPact.dto import ProposalDto
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share import UnitOfWork, safeDefer
 from StellariaPact.share.auth.RoleGuard import RoleGuard
-from StellariaPact.share.enums.OperationType import OperationType
+from StellariaPact.share.enums.LogOperationType import LogOperationType
 
 if TYPE_CHECKING:
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -112,7 +114,7 @@ class ThreadManageCog(commands.Cog):
                 operator_id=interaction.user.id,
                 operator_name=interaction.user.name,
                 operator_display_name=interaction.user.display_name,
-                op_type=OperationType.PROPOSAL,
+                op_type=LogOperationType.PROPOSAL,
                 action="set_special",
                 target_type="proposal",
                 target_id=proposal.id,
@@ -159,7 +161,7 @@ class ThreadManageCog(commands.Cog):
                 operator_id=interaction.user.id,
                 operator_name=interaction.user.name,
                 operator_display_name=interaction.user.display_name,
-                op_type=OperationType.PROPOSAL,
+                op_type=LogOperationType.PROPOSAL,
                 action="unset_special",
                 target_type="proposal",
                 target_id=proposal.id,

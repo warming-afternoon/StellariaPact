@@ -7,17 +7,21 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import IntakeEmbedBuilder
+from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import \
+    IntakeEmbedBuilder
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.ProposalIntake import ProposalIntake
 from StellariaPact.share import DiscordUtils
-from StellariaPact.share.UnitOfWork import UnitOfWork
 from StellariaPact.share.enums import IntakeStatus, ProposalStatus
+from StellariaPact.share.enums.LogOperationType import LogOperationType
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import IntakeSubmissionDto
-    from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import IntakeDiscordHelper
+    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import \
+        IntakeSubmissionDto
+    from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import \
+        IntakeDiscordHelper
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
@@ -106,7 +110,11 @@ class IntakeDraftService:
     # -------------------------
 
     async def process_submit_intake(
-        self, dto: "IntakeSubmissionDto", discord_helper: "IntakeDiscordHelper"
+        self,
+        dto: "IntakeSubmissionDto",
+        discord_helper: "IntakeDiscordHelper",
+        operator_name: str = "",
+        operator_display_name: str = "",
     ) -> ProposalIntakeDto:
         """草案提交"""
         allowed, message = await self.check_submission_limit(dto.guild_id)
@@ -136,6 +144,20 @@ class IntakeDraftService:
                     created = await uow.intake.create_intake(new_intake)
                     intake_dto = ProposalIntakeDto.model_validate(created)
                     created_intake = created
+
+                    # 写入操作日志
+                    await uow.operation_log.log_operation(
+                        operator_id=dto.author_id,
+                        operator_name=operator_name,
+                        operator_display_name=operator_display_name,
+                        op_type=LogOperationType.INTAKE,
+                        action="submit",
+                        target_type="intake",
+                        target_id=intake_dto.id,
+                        guild_id=dto.guild_id,
+                        detail=f"标题: {dto.title[:50]}",
+                    )
+
                     await uow.commit()
                     break
             except Exception as e:

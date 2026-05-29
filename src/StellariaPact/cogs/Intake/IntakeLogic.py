@@ -9,7 +9,8 @@ from .services.IntakeTransitionService import IntakeTransitionService
 from .services.IntakeVoteService import IntakeVoteService
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import IntakeSubmissionDto
+    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import \
+        IntakeSubmissionDto
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 
@@ -55,29 +56,81 @@ class IntakeLogic:
     # 草案提交流程路由 → IntakeDraftService
     # -------------------------
 
-    async def process_submit_intake(self, dto: "IntakeSubmissionDto"):
+    async def process_submit_intake(
+        self,
+        dto: "IntakeSubmissionDto",
+        operator_name: str = "",
+        operator_display_name: str = "",
+    ):
         """草案提交"""
-        return await self.draft_service.process_submit_intake(dto, self.discord_helper)
+        return await self.draft_service.process_submit_intake(
+            dto, self.discord_helper,
+            operator_name=operator_name,
+            operator_display_name=operator_display_name,
+        )
 
     # -------------------------
     # 审核流程路由 → IntakeReviewService
     # -------------------------
 
-    async def approve_intake(self, thread_id: int, reviewer_id: int, review_comment: str):
+    async def approve_intake(
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        operator_name: str = "",
+        operator_display_name: str = "",
+    ):
         """草案审核 - 通过（双管理审核）。"""
-        return await self.review_service.approve_intake(thread_id, reviewer_id, review_comment)
+        return await self.review_service.approve_intake(
+            thread_id, reviewer_id, review_comment,
+            operator_name=operator_name,
+            operator_display_name=operator_display_name,
+        )
 
-    async def reject_intake(self, thread_id: int, reviewer_id: int, review_comment: str):
+    async def reject_intake(
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        operator_name: str = "",
+        operator_display_name: str = "",
+    ):
         """草案审核 - 拒绝"""
-        return await self.review_service.reject_intake(thread_id, reviewer_id, review_comment)
+        return await self.review_service.reject_intake(
+            thread_id, reviewer_id, review_comment,
+            operator_name=operator_name,
+            operator_display_name=operator_display_name,
+        )
 
-    async def edit_intake(self, intake_id: int, dto):
+    async def edit_intake(
+        self,
+        intake_id: int,
+        dto,
+        operator_name: str = "",
+        operator_display_name: str = "",
+    ):
         """提案人修改草案"""
-        return await self.review_service.edit_intake(intake_id, dto)
+        return await self.review_service.edit_intake(
+            intake_id, dto,
+            operator_name=operator_name,
+            operator_display_name=operator_display_name,
+        )
 
-    async def request_modification_intake(self, thread_id: int, reviewer_id: int, review_comment: str):
+    async def request_modification_intake(
+        self,
+        thread_id: int,
+        reviewer_id: int,
+        review_comment: str,
+        operator_name: str = "",
+        operator_display_name: str = "",
+    ):
         """草案审核 - 需要修改"""
-        return await self.review_service.request_modification_intake(thread_id, reviewer_id, review_comment)
+        return await self.review_service.request_modification_intake(
+            thread_id, reviewer_id, review_comment,
+            operator_name=operator_name,
+            operator_display_name=operator_display_name,
+        )
 
     # -------------------------
     # 投票与转段路由 → IntakeVoteService / IntakeTransitionService
