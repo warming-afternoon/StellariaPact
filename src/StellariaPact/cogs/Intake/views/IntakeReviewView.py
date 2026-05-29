@@ -7,8 +7,6 @@ from discord.ui import Button, View
 
 from StellariaPact.cogs.Intake.views.IntakeEditModal import IntakeEditModal
 from StellariaPact.cogs.Intake.views.IntakeReviewModal import IntakeReviewModal
-from StellariaPact.cogs.Intake.views.IntakeSecondReviewModal import \
-    IntakeSecondReviewModal
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums import IntakeStatus
@@ -151,16 +149,23 @@ class IntakeReviewView(View):
                     await interaction.response.send_message("❌ 找不到相关草案记录，无法执行操作。", ephemeral=True)
                     return
 
-                # 批准操作: 检查是否为二审，二审弹出 IntakeSecondReviewModal
+                # 批准操作: 检查是否为二审，二审跳过审核意见弹窗
                 if action == "approved":
                     if intake.reviewer_id is not None and intake.reviewer_id != interaction.user.id:
-                        # 第二位管理审核：弹出 Modal，展示第一位管理意见，收集第二位管理意见
-                        modal = IntakeSecondReviewModal(
-                            self.bot,
-                            first_reviewer_id=intake.reviewer_id,
-                            first_review_comment=intake.review_comment or "（无）",
+                        # 第二位管理审核：展示第一位管理意见作为参考，不要求填写审核意见
+                        await interaction.response.defer(ephemeral=True)
+                        comment_preview = (
+                            intake.review_comment
+                            if intake.review_comment
+                            else "（无）"
                         )
-                        await interaction.response.send_modal(modal)
+                        await interaction.followup.send(
+                            f"📋 **第一位管理 <@{intake.reviewer_id}> 的审核意见（只读参考）：**\n"
+                            f">>> {comment_preview}\n\n"
+                            f"✅ 正在处理批准...",
+                            ephemeral=True,
+                        )
+                        self.bot.dispatch("intake_approved", interaction, "")
                         return
 
         modal = IntakeReviewModal(self.bot, action)
