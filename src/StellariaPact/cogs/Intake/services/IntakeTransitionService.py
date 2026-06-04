@@ -119,11 +119,37 @@ class IntakeTransitionService:
             tag_key="discussion",
         )
         applied_tags = [discussion_tag] if discussion_tag else []
-        thread_with_message = await discussion_forum.create_thread(
-            name=f"[讨论中] {intake_dto.title}",
-            content=discussion_content,
-            applied_tags=applied_tags,
-        )
+        try:
+            thread_with_message = await discussion_forum.create_thread(
+                name=f"[讨论中] {intake_dto.title}",
+                content=discussion_content,
+                applied_tags=applied_tags,
+            )
+        except discord.HTTPException as e:
+            if e.code == 160006:
+                logger.error(
+                    f"创建讨论帖失败：讨论区 {discussion_forum_id} 活跃帖子已达上限。"
+                    f"（Intake ID: {intake_id}, 标题: {intake_dto.title}）"
+                )
+                # 回滚草案状态到 SUPPORT_COLLECTING，避免数据库永久不一致
+                async with UnitOfWork(self.bot.db_handler) as uow:
+                    intake_to_rollback = await uow.intake.get_intake_by_id(
+                        intake_id, for_update=True
+                    )
+                    if intake_to_rollback and intake_to_rollback.status == IntakeStatus.APPROVED:
+                        intake_to_rollback.status = IntakeStatus.SUPPORT_COLLECTING
+                        await uow.intake.update_intake(intake_to_rollback)
+                        await uow.commit()
+                        logger.info(
+                            f"已将 Intake {intake_id} 状态从 APPROVED 回滚至 SUPPORT_COLLECTING，"
+                            f"因讨论区活跃帖子已达上限。"
+                        )
+                raise ValueError(
+                    "支持已记录，但创建讨论帖失败：讨论区活跃帖子已达上限。"
+                    "请联系管理员归档旧帖后，再次点击支持按钮触发立案。"
+                ) from e
+            raise
+
         discussion_thread = thread_with_message.thread
         discussion_thread_id = discussion_thread.id
 
@@ -287,11 +313,25 @@ class IntakeTransitionService:
             tag_key="discussion",
         )
         applied_tags = [discussion_tag] if discussion_tag else []
-        thread_with_message = await discussion_forum.create_thread(
-            name=f"[讨论中] {intake_dto.title}",
-            content=discussion_content,
-            applied_tags=applied_tags,
-        )
+        try:
+            thread_with_message = await discussion_forum.create_thread(
+                name=f"[讨论中] {intake_dto.title}",
+                content=discussion_content,
+                applied_tags=applied_tags,
+            )
+        except discord.HTTPException as e:
+            if e.code == 160006:
+                logger.error(
+                    f"创建讨论帖失败（转段确认向后兼容路径）："
+                    f"讨论区 {discussion_forum_id} 活跃帖子已达上限。"
+                    f"（Intake ID: {intake_id}, 标题: {intake_dto.title}）"
+                )
+                raise ValueError(
+                    "创建讨论帖失败：讨论区活跃帖子已达上限。"
+                    "请联系管理员归档旧帖后重新确认转段。"
+                ) from e
+            raise
+
         discussion_thread_id = thread_with_message.thread.id
 
         # 自动在讨论帖二楼发送参与准则
