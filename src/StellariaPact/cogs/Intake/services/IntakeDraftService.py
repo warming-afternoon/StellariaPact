@@ -192,12 +192,42 @@ class IntakeDraftService:
         title_prefix = discord_helper.get_title_prefix_for_status(IntakeStatus.PENDING_REVIEW)
         thread_name = f"{title_prefix} {intake_dto.title}" if title_prefix else intake_dto.title
 
-        thread_with_message = await review_forum.create_thread(
-            name=thread_name,
-            content=content,
-            view=IntakeReviewView(self.bot, intake_dto),
-            applied_tags=applied_tags,
-        )
+        try:
+            thread_with_message = await review_forum.create_thread(
+                name=thread_name,
+                content=content,
+                view=IntakeReviewView(self.bot, intake_dto),
+                applied_tags=applied_tags,
+            )
+        except discord.HTTPException as e:
+            if e.code == 160006:
+                # 清理数据库中已创建但缺少审核帖的孤立草案记录
+                try:
+                    async with UnitOfWork(self.bot.db_handler) as uow:
+                        orphaned = await uow.intake.get_intake_by_id(
+                            intake_dto.id, for_update=True
+                        )
+                        if orphaned and orphaned.status == IntakeStatus.PENDING_REVIEW:
+                            orphaned.status = IntakeStatus.REJECTED
+                            orphaned.review_comment = (
+                                "系统自动标记：创建审核帖时论坛活跃帖子已达上限"
+                            )
+                            await uow.intake.update_intake(orphaned)
+                            await uow.commit()
+                except Exception as cleanup_err:
+                    logger.error(
+                        f"清理孤立草案记录时出错 (Intake ID: {intake_dto.id}): {cleanup_err}"
+                    )
+
+                logger.error(
+                    f"创建审核帖失败：审核区 {review_forum_id} 活跃帖子已达上限。"
+                    f"（Intake ID: {intake_dto.id}, 标题: {intake_dto.title}）"
+                )
+                raise ValueError(
+                    "审核区活跃帖子已达上限，无法创建审核帖。"
+                    "请联系管理员归档旧帖后重新提交。"
+                ) from e
+            raise
 
         # 回写 review_thread_id
         assert intake_dto.id is not None
