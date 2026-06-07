@@ -250,7 +250,13 @@ class Moderation(commands.Cog):
             role_display_names = {}
             for role_key, role_id_str in result_dto.role_display_names.items():
                 role = interaction.guild.get_role(int(role_id_str))
-                role_display_names[role_key] = role.name if role else role_key
+                base_name = role.name if role else role_key
+                display_name = base_name
+                counter = 2
+                while display_name in role_display_names.values():
+                    display_name = f"{base_name} {counter}"
+                    counter += 1
+                role_display_names[role_key] = display_name
 
             qo = BuildConfirmationEmbedQo(
                 context=result_dto.session_dto.context,
@@ -279,7 +285,7 @@ class Moderation(commands.Cog):
                 pings = []
                 if moderator_role_id:
                     pings.append(f"<@&{moderator_role_id}>")
-                if auditor_role_id:
+                if auditor_role_id and auditor_role_id != moderator_role_id:
                     pings.append(f"<@&{auditor_role_id}>")
 
                 if pings:
