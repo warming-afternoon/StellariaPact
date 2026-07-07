@@ -10,7 +10,7 @@ from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 from StellariaPact.models import Announcement
-from StellariaPact.services.VoteSessionService import VoteSessionService
+from StellariaPact.repository.VoteSessionService import VoteSessionRepository
 from StellariaPact.share import DiscordUtils, StellariaPactBot, StringUtils, UnitOfWork
 from StellariaPact.share.enums import ProposalStatus, VoteDuration
 
@@ -544,7 +544,7 @@ class ModerationLogic:
                             vote_session.id
                         )
 
-                    vote_details = VoteSessionService.get_vote_details_dto(
+                    vote_details = VoteSessionRepository.get_vote_details_dto(
                         vote_session, vote_options
                     )
 

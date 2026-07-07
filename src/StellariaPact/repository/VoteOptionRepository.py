@@ -7,7 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from StellariaPact.models.VoteOption import VoteOption
 
 
-class VoteOptionService:
+class VoteOptionRepository:
     """
     提供处理投票选项 (`VoteOption`) 相关数据库操作的服务。
     """

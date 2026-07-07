@@ -7,9 +7,9 @@ from StellariaPact.qo.announcement import CreateAnnouncementQo
 from StellariaPact.models.Announcement import Announcement
 
 
-class AnnouncementService:
+class AnnouncementRepository:
     """
-    处理公示相关的业务逻辑。
+    处理公示相关的数据库操作。
     """
 
     def __init__(self, session: AsyncSession):

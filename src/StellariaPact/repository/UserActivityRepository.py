@@ -10,9 +10,9 @@ from StellariaPact.models.UserActivity import UserActivity
 logger = logging.getLogger(__name__)
 
 
-class UserActivityService:
+class UserActivityRepository:
     """
-    提供处理用户活动表 (`UserActivity`) 相关数据库操作
+    提供处理用户活动表相关数据库操作
     """
 
     def __init__(self, session: AsyncSession):

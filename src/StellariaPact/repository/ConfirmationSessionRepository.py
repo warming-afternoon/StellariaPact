@@ -12,9 +12,9 @@ from StellariaPact.share.enums.ConfirmationStatus import ConfirmationStatus
 logger = logging.getLogger(__name__)
 
 
-class ConfirmationSessionService:
+class ConfirmationSessionRepository:
     """
-    提供处理确认会话相关数据库操作的服务。
+    处理确认会话相关数据库操作。
     """
 
     def __init__(self, session: AsyncSession):

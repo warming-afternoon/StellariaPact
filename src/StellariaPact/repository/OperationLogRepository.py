@@ -8,8 +8,8 @@ from StellariaPact.models.OperationLog import OperationLog
 logger = logging.getLogger(__name__)
 
 
-class OperationLogService:
-    """操作记录服务"""
+class OperationLogRepository:
+    """处理操作记录相关的数据库操作"""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -46,7 +46,7 @@ class OperationLogService:
         statement = (
             select(OperationLog)
             .where(OperationLog.target_type == target_type, OperationLog.target_id == target_id)
-            .order_by(OperationLog.created_at.desc())
+            .order_by(OperationLog.created_at.desc())  # type: ignore
         )
         result = await self.session.exec(statement)
         return list(result.all())

@@ -13,7 +13,7 @@ from StellariaPact.qo.user_vote import RecordVoteQo
 from StellariaPact.qo.vote_session import AdjustVoteTimeQo
 from StellariaPact.dto import ConfirmationSessionDto, UserActivityDto, VoteSessionDto
 from StellariaPact.models.VoteSession import VoteSession
-from StellariaPact.services.VoteSessionService import VoteSessionService
+from StellariaPact.repository.VoteSessionService import VoteSessionRepository
 from StellariaPact.share import StellariaPactBot, TimeUtils, UnitOfWork
 from StellariaPact.share.auth import RoleGuard
 
@@ -100,7 +100,7 @@ class VotingLogic:
             vote_options = None
             if updated_session.id:
                 vote_options = await uow.vote_option.get_vote_options(updated_session.id)
-            return VoteSessionService.get_vote_details_dto(updated_session, vote_options)
+            return VoteSessionRepository.get_vote_details_dto(updated_session, vote_options)
 
     async def get_vote_details(self, message_id: int) -> VoteDetailDto:
         """
@@ -114,7 +114,7 @@ class VotingLogic:
             vote_options = None
             if vote_session.id:
                 vote_options = await uow.vote_option.get_vote_options(vote_session.id)
-            return VoteSessionService.get_vote_details_dto(vote_session, vote_options)
+            return VoteSessionRepository.get_vote_details_dto(vote_session, vote_options)
 
     async def _get_combined_eligibility_data(
         self, uow: UnitOfWork, user_id: int, thread_id: int, vote_session: VoteSession
@@ -196,7 +196,7 @@ class VotingLogic:
             vote_options = None
             if final_session.id:
                 vote_options = await uow.vote_option.get_vote_options(final_session.id)
-            return VoteSessionService.get_vote_details_dto(final_session, vote_options)
+            return VoteSessionRepository.get_vote_details_dto(final_session, vote_options)
 
     async def toggle_realtime(self, message_id: int) -> VoteDetailDto:
         """切换指定投票的实时票数状态。"""
@@ -214,7 +214,7 @@ class VotingLogic:
             vote_options = None
             if final_session.id:
                 vote_options = await uow.vote_option.get_vote_options(final_session.id)
-            return VoteSessionService.get_vote_details_dto(final_session, vote_options)
+            return VoteSessionRepository.get_vote_details_dto(final_session, vote_options)
 
     async def toggle_notify(self, message_id: int) -> VoteDetailDto:
         """切换指定投票的结束通知状态。"""
@@ -232,7 +232,7 @@ class VotingLogic:
             vote_options = None
             if final_session.id:
                 vote_options = await uow.vote_option.get_vote_options(final_session.id)
-            return VoteSessionService.get_vote_details_dto(final_session, vote_options)
+            return VoteSessionRepository.get_vote_details_dto(final_session, vote_options)
 
     async def delete_vote_and_get_details(self, qo: DeleteVoteQo) -> VoteDetailDto:
         """
@@ -254,7 +254,7 @@ class VotingLogic:
             vote_options = None
             if updated_session.id:
                 vote_options = await uow.vote_option.get_vote_options(updated_session.id)
-            return VoteSessionService.get_vote_details_dto(updated_session, vote_options)
+            return VoteSessionRepository.get_vote_details_dto(updated_session, vote_options)
 
     async def handle_message_creation(self, qo: UpdateUserActivityQo) -> None:
         """处理消息创建事件，增加用户活跃度。"""
@@ -300,7 +300,7 @@ class VotingLogic:
                 if session.id:
                     vote_options = await uow.vote_option.get_vote_options(session.id)
                     details_to_update.append(
-                        VoteSessionService.get_vote_details_dto(session, vote_options)
+                        VoteSessionRepository.get_vote_details_dto(session, vote_options)
                     )
             return details_to_update
 
@@ -338,7 +338,7 @@ class VotingLogic:
             vote_options = None
             if final_session.id:
                 vote_options = await uow.vote_option.get_vote_options(final_session.id)
-            vote_details = VoteSessionService.get_vote_details_dto(final_session, vote_options)
+            vote_details = VoteSessionRepository.get_vote_details_dto(final_session, vote_options)
             self.bot.dispatch(
                 "vote_settings_changed",
                 thread_id,
@@ -374,7 +374,7 @@ class VotingLogic:
             vote_options = None
             if final_session.id:
                 vote_options = await uow.vote_option.get_vote_options(final_session.id)
-            vote_details = VoteSessionService.get_vote_details_dto(final_session, vote_options)
+            vote_details = VoteSessionRepository.get_vote_details_dto(final_session, vote_options)
             change_text = (
                 f"延长了 **{hours_to_adjust}** 小时"
                 if hours_to_adjust > 0
@@ -476,7 +476,7 @@ class VotingLogic:
 
             # 获取选项并转换为纯粹的 DTO
             vote_options = await uow.vote_option.get_vote_options(session.id)
-            return VoteSessionService.get_vote_details_dto(session, vote_options)
+            return VoteSessionRepository.get_vote_details_dto(session, vote_options)
 
     async def add_mirror_record_by_context(
         self,

@@ -21,7 +21,7 @@ from StellariaPact.share.enums import VoteSessionType
 logger = logging.getLogger(__name__)
 
 
-class VoteSessionService:
+class VoteSessionRepository:
     """
     提供处理投票会话 (`VoteSession`) 相关数据库操作的服务。
     """

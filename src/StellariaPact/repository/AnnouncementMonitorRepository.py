@@ -7,9 +7,9 @@ from StellariaPact.models.Announcement import Announcement
 from StellariaPact.models.AnnouncementChannelMonitor import AnnouncementChannelMonitor
 
 
-class AnnouncementMonitorService:
+class AnnouncementMonitorRepository:
     """
-    处理公示监控相关的业务逻辑。
+    处理公示监控相关的数据库操作。
     """
 
     def __init__(self, session: AsyncSession):

@@ -7,7 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from StellariaPact.models.PunishmentRecord import PunishmentRecord
 
 
-class PunishmentRecordService:
+class PunishmentRecordRepository:
     """处罚历史的写入与查询服务。"""
 
     def __init__(self, session: AsyncSession):

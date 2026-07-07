@@ -12,9 +12,9 @@ from StellariaPact.share.enums.ProposalStatus import ProposalStatus
 logger = logging.getLogger(__name__)
 
 
-class ProposalService:
+class ProposalRepository:
     """
-    提供处理提案相关数据库操作的服务。
+    处理提案相关数据库操作。
     """
 
     def __init__(self, session: AsyncSession):

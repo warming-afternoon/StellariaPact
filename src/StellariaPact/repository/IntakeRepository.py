@@ -8,7 +8,7 @@ from StellariaPact.models import ProposalIntake
 from StellariaPact.share.enums import IntakeStatus
 
 
-class IntakeService:
+class IntakeRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 

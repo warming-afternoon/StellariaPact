@@ -6,17 +6,17 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 if TYPE_CHECKING:
-    from StellariaPact.services.AnnouncementMonitorService import AnnouncementMonitorService
-    from StellariaPact.services.AnnouncementService import AnnouncementService
-    from StellariaPact.services.ConfirmationSessionService import ConfirmationSessionService
-    from StellariaPact.services.IntakeService import IntakeService
-    from StellariaPact.services.OperationLogService import OperationLogService
-    from StellariaPact.services.ProposalService import ProposalService
-    from StellariaPact.services.PunishmentRecordService import PunishmentRecordService
-    from StellariaPact.services.UserActivityService import UserActivityService
-    from StellariaPact.services.UserVoteService import UserVoteService
-    from StellariaPact.services.VoteOptionService import VoteOptionService
-    from StellariaPact.services.VoteSessionService import VoteSessionService
+    from StellariaPact.repository.AnnouncementMonitorRepository import AnnouncementMonitorRepository
+    from StellariaPact.repository.AnnouncementRepository import AnnouncementRepository
+    from StellariaPact.repository.ConfirmationSessionRepository import ConfirmationSessionRepository
+    from StellariaPact.repository.IntakeRepository import IntakeRepository
+    from StellariaPact.repository.OperationLogRepository import OperationLogRepository
+    from StellariaPact.repository.ProposalRepository import ProposalRepository
+    from StellariaPact.repository.PunishmentRecordRepository import PunishmentRecordRepository
+    from StellariaPact.repository.UserActivityRepository import UserActivityRepository
+    from StellariaPact.repository.UserVoteRepository import UserVoteRepository
+    from StellariaPact.repository.VoteOptionRepository import VoteOptionRepository
+    from StellariaPact.repository.VoteSessionService import VoteSessionRepository
     from StellariaPact.share.DatabaseHandler import DatabaseHandler
 
 
@@ -103,104 +103,104 @@ class UnitOfWork:
     # --- 服务/仓库访问属性 ---
 
     @property
-    def vote_session(self) -> "VoteSessionService":
+    def vote_session(self) -> "VoteSessionRepository":
         """获取投票会话服务实例。"""
         if not hasattr(self, "_vote_session_service"):
-            from StellariaPact.services.VoteSessionService import VoteSessionService
+            from StellariaPact.repository.VoteSessionService import VoteSessionRepository
 
-            self._vote_session_service = VoteSessionService(self.session)
+            self._vote_session_service = VoteSessionRepository(self.session)
         return self._vote_session_service
 
     @property
-    def announcements(self) -> "AnnouncementService":
+    def announcements(self) -> "AnnouncementRepository":
         """获取公示服务实例。"""
         if not hasattr(self, "_announcement_service"):
-            from StellariaPact.services.AnnouncementService import AnnouncementService
+            from StellariaPact.repository.AnnouncementRepository import AnnouncementRepository
 
-            self._announcement_service = AnnouncementService(self.session)
+            self._announcement_service = AnnouncementRepository(self.session)
         return self._announcement_service
 
     @property
-    def announcement_monitors(self) -> "AnnouncementMonitorService":
+    def announcement_monitors(self) -> "AnnouncementMonitorRepository":
         """获取公示监控服务实例。"""
         if not hasattr(self, "_announcement_monitor_service"):
-            from StellariaPact.services.AnnouncementMonitorService import (
-                AnnouncementMonitorService,
+            from StellariaPact.repository.AnnouncementMonitorRepository import (
+                AnnouncementMonitorRepository,
             )
 
-            self._announcement_monitor_service = AnnouncementMonitorService(self.session)
+            self._announcement_monitor_service = AnnouncementMonitorRepository(self.session)
         return self._announcement_monitor_service
 
     @property
-    def user_activity(self) -> "UserActivityService":
+    def user_activity(self) -> "UserActivityRepository":
         """获取用户活动服务实例。"""
         if not hasattr(self, "_user_activity_service"):
-            from StellariaPact.services.UserActivityService import UserActivityService
+            from StellariaPact.repository.UserActivityRepository import UserActivityRepository
 
-            self._user_activity_service = UserActivityService(self.session)
+            self._user_activity_service = UserActivityRepository(self.session)
         return self._user_activity_service
 
     @property
-    def user_vote(self) -> "UserVoteService":
+    def user_vote(self) -> "UserVoteRepository":
         """获取用户投票服务实例。"""
         if not hasattr(self, "_user_vote_service"):
-            from StellariaPact.services.UserVoteService import UserVoteService
+            from StellariaPact.repository.UserVoteRepository import UserVoteRepository
 
-            self._user_vote_service = UserVoteService(self.session)
+            self._user_vote_service = UserVoteRepository(self.session)
         return self._user_vote_service
 
     @property
-    def vote_option(self) -> "VoteOptionService":
+    def vote_option(self) -> "VoteOptionRepository":
         """获取投票选项服务实例。"""
         if not hasattr(self, "_vote_option_service"):
-            from StellariaPact.services.VoteOptionService import VoteOptionService
+            from StellariaPact.repository.VoteOptionRepository import VoteOptionRepository
 
-            self._vote_option_service = VoteOptionService(self.session)
+            self._vote_option_service = VoteOptionRepository(self.session)
         return self._vote_option_service
 
     @property
-    def confirmation_session(self) -> "ConfirmationSessionService":
+    def confirmation_session(self) -> "ConfirmationSessionRepository":
         """获取确认会话服务实例。"""
         if not hasattr(self, "_confirmation_session_service"):
-            from StellariaPact.services.ConfirmationSessionService import (
-                ConfirmationSessionService,
+            from StellariaPact.repository.ConfirmationSessionRepository import (
+                ConfirmationSessionRepository,
             )
 
-            self._confirmation_session_service = ConfirmationSessionService(self.session)
+            self._confirmation_session_service = ConfirmationSessionRepository(self.session)
         return self._confirmation_session_service
 
     @property
-    def proposal(self) -> "ProposalService":
+    def proposal(self) -> "ProposalRepository":
         """获取提案服务实例。"""
         if not hasattr(self, "_proposal_service"):
-            from StellariaPact.services.ProposalService import ProposalService
+            from StellariaPact.repository.ProposalRepository import ProposalRepository
 
-            self._proposal_service = ProposalService(self.session)
+            self._proposal_service = ProposalRepository(self.session)
         return self._proposal_service
 
     @property
-    def intake(self) -> "IntakeService":
+    def intake(self) -> "IntakeRepository":
         """获取草案服务实例。"""
         if not hasattr(self, "_intake_service"):
-            from StellariaPact.services.IntakeService import IntakeService
+            from StellariaPact.repository.IntakeRepository import IntakeRepository
 
-            self._intake_service = IntakeService(self.session)
+            self._intake_service = IntakeRepository(self.session)
         return self._intake_service
 
     @property
-    def operation_log(self) -> "OperationLogService":
+    def operation_log(self) -> "OperationLogRepository":
         """获取操作记录服务实例。"""
         if not hasattr(self, "_operation_log_service"):
-            from StellariaPact.services.OperationLogService import OperationLogService
+            from StellariaPact.repository.OperationLogRepository import OperationLogRepository
 
-            self._operation_log_service = OperationLogService(self.session)
+            self._operation_log_service = OperationLogRepository(self.session)
         return self._operation_log_service
 
     @property
-    def punishment_record(self) -> "PunishmentRecordService":
+    def punishment_record(self) -> "PunishmentRecordRepository":
         """获取处罚历史服务实例。"""
         if not hasattr(self, "_punishment_record_service"):
-            from StellariaPact.services.PunishmentRecordService import PunishmentRecordService
+            from StellariaPact.repository.PunishmentRecordRepository import PunishmentRecordRepository
 
-            self._punishment_record_service = PunishmentRecordService(self.session)
+            self._punishment_record_service = PunishmentRecordRepository(self.session)
         return self._punishment_record_service

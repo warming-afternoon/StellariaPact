@@ -10,7 +10,7 @@ from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
 
 
-class UserVoteService:
+class UserVoteRepository:
     """
     提供处理用户投票记录 (`UserVote`) 相关数据库操作的服务。
     """
