@@ -6,6 +6,7 @@ from .Objection import Objection
 from .OperationLog import OperationLog
 from .Proposal import Proposal
 from .ProposalIntake import ProposalIntake
+from .PunishmentRecord import PunishmentRecord
 from .UserActivity import UserActivity
 from .UserVote import UserVote
 from .VoteMessageMirror import VoteMessageMirror
@@ -20,6 +21,7 @@ __all__ = [
     "Objection",
     "OperationLog",
     "Proposal",
+    "PunishmentRecord",
     "UserActivity",
     "UserVote",
     "VoteMessageMirror",

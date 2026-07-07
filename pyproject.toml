@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
-    "discord.py[speed]",
+    "discord.py[speed]>=2.6.3",
     "sqlmodel",
     "aiosqlite",
     "python-dotenv",

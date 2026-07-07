@@ -11,6 +11,7 @@ from .PunishmentEmbedBuilder import PunishmentEmbedBuilder
 
 logger = logging.getLogger(__name__)
 
+
 class PunishmentModal(discord.ui.Modal):
     """
     用于配置或修改用户处罚的模态框。
@@ -21,7 +22,7 @@ class PunishmentModal(discord.ui.Modal):
         bot: StellariaPactBot,
         target_user: discord.User | discord.Member,
         target_message: Optional[discord.Message] = None,
-        existing_activity: Optional[UserActivity] = None
+        existing_activity: Optional[UserActivity] = None,
     ):
         is_edit = existing_activity is not None
         super().__init__(title="修改处罚设置" if is_edit else "踢出/处罚提案成员", timeout=1700)
@@ -112,6 +113,18 @@ class PunishmentModal(discord.ui.Modal):
                     user_id=self.target_user.id,
                     thread_id=thread.id,
                     is_valid=is_voting_allowed,
+                    mute_end_time=mute_end_time,
+                )
+                await uow.punishment_record.create_record(
+                    guild_id=thread.guild.id,
+                    thread_id=thread.id,
+                    target_user_id=self.target_user.id,
+                    moderator_id=moderator.id,
+                    reason=reason,
+                    source_message_url=(
+                        self.target_message.jump_url if self.target_message is not None else None
+                    ),
+                    voting_allowed=is_voting_allowed,
                     mute_end_time=mute_end_time,
                 )
                 await uow.commit()

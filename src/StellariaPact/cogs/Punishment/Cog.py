@@ -4,13 +4,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.share import StellariaPactBot
+from StellariaPact.share import StellariaPactBot, UnitOfWork
 from StellariaPact.share.auth import RoleGuard
 
+from .views.PunishmentHistoryModal import PunishmentHistoryModal
 from .views.PunishmentModal import PunishmentModal
 from .views.RemovePunishmentModal import RemovePunishmentModal
 
 logger = logging.getLogger(__name__)
+
 
 class PunishmentCog(commands.Cog):
     """
@@ -36,12 +38,19 @@ class PunishmentCog(commands.Cog):
         self.remove_punishment_ctx = app_commands.ContextMenu(
             name="解除提案处罚",
             callback=self.remove_punishment_message,
-            type=discord.AppCommandType.message, # 消息右键
+            type=discord.AppCommandType.message,  # 消息右键
+        )
+
+        self.query_punishment_ctx = app_commands.ContextMenu(
+            name="查询帖子处罚",
+            callback=self.query_punishment_message,
+            type=discord.AppCommandType.message,
         )
 
     def cog_load(self) -> None:
         self.bot.tree.add_command(self.kick_proposal_ctx)
         self.bot.tree.add_command(self.remove_punishment_ctx)
+        self.bot.tree.add_command(self.query_punishment_ctx)
         # self.bot.tree.add_command(self.manage_punishment_ctx)
 
     async def cog_unload(self) -> None:
@@ -52,6 +61,10 @@ class PunishmentCog(commands.Cog):
         self.bot.tree.remove_command(
             self.remove_punishment_ctx.name,
             type=self.remove_punishment_ctx.type,
+        )
+        self.bot.tree.remove_command(
+            self.query_punishment_ctx.name,
+            type=self.query_punishment_ctx.type,
         )
         # self.bot.tree.remove_command(
         #     self.manage_punishment_ctx.name,
@@ -71,10 +84,7 @@ class PunishmentCog(commands.Cog):
 
         # 弹出 Modal，传入目标作者
         modal = RemovePunishmentModal(self.bot, target_member)
-        await self.bot.api_scheduler.submit(
-            interaction.response.send_modal(modal),
-            priority=1
-        )
+        await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
 
     @RoleGuard.requireRoles("councilModerator", "stewards")
     async def kick_proposal_message(
@@ -94,6 +104,36 @@ class PunishmentCog(commands.Cog):
         )
         await self.bot.api_scheduler.submit(
             coro=interaction.response.send_modal(modal),
+            priority=1,
+        )
+
+    @RoleGuard.requireRoles("councilModerator", "stewards")
+    async def query_punishment_message(
+        self,
+        interaction: discord.Interaction,
+        message: discord.Message,
+    ):
+        """[议事督导/管理组] 查询消息作者在当前帖子中的处罚历史。"""
+        thread = interaction.channel
+        if not isinstance(thread, discord.Thread):
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message(
+                    "此命令只能在提案帖子内使用。",
+                    ephemeral=True,
+                ),
+                priority=1,
+            )
+            return
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            total, records = await uow.punishment_record.get_summary(
+                thread_id=thread.id,
+                target_user_id=message.author.id,
+            )
+            modal = PunishmentHistoryModal(message.author, total, records)
+
+        await self.bot.api_scheduler.submit(
+            interaction.response.send_modal(modal),
             priority=1,
         )
 

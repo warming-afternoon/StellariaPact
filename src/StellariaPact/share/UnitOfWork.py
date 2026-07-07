@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from StellariaPact.services.IntakeService import IntakeService
     from StellariaPact.services.OperationLogService import OperationLogService
     from StellariaPact.services.ProposalService import ProposalService
+    from StellariaPact.services.PunishmentRecordService import PunishmentRecordService
     from StellariaPact.services.UserActivityService import UserActivityService
     from StellariaPact.services.UserVoteService import UserVoteService
     from StellariaPact.services.VoteOptionService import VoteOptionService
@@ -194,3 +195,12 @@ class UnitOfWork:
 
             self._operation_log_service = OperationLogService(self.session)
         return self._operation_log_service
+
+    @property
+    def punishment_record(self) -> "PunishmentRecordService":
+        """获取处罚历史服务实例。"""
+        if not hasattr(self, "_punishment_record_service"):
+            from StellariaPact.services.PunishmentRecordService import PunishmentRecordService
+
+            self._punishment_record_service = PunishmentRecordService(self.session)
+        return self._punishment_record_service
