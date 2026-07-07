@@ -13,7 +13,7 @@ from StellariaPact.qo.user_vote import RecordVoteQo
 from StellariaPact.qo.vote_session import AdjustVoteTimeQo
 from StellariaPact.dto import ConfirmationSessionDto, UserActivityDto, VoteSessionDto
 from StellariaPact.models.VoteSession import VoteSession
-from StellariaPact.repository.VoteSessionService import VoteSessionRepository
+from StellariaPact.repository.VoteSessionRepository import VoteSessionRepository
 from StellariaPact.share import StellariaPactBot, TimeUtils, UnitOfWork
 from StellariaPact.share.auth import RoleGuard
 

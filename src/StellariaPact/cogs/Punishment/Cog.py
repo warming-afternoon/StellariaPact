@@ -42,7 +42,7 @@ class PunishmentCog(commands.Cog):
         )
 
         self.query_punishment_ctx = app_commands.ContextMenu(
-            name="查询帖子处罚",
+            name="查询提案处罚记录",
             callback=self.query_punishment_message,
             type=discord.AppCommandType.message,
         )

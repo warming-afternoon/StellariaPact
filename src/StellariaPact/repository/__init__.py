@@ -7,7 +7,7 @@ from .ProposalRepository import ProposalRepository
 from .UserActivityRepository import UserActivityRepository
 from .UserVoteRepository import UserVoteRepository
 from .VoteOptionRepository import VoteOptionRepository
-from .VoteSessionService import VoteSessionRepository
+from .VoteSessionRepository import VoteSessionRepository
 
 __all__ = [
     "AnnouncementMonitorRepository",

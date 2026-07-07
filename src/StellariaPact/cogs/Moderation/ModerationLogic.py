@@ -10,7 +10,7 @@ from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 from StellariaPact.models import Announcement
-from StellariaPact.repository.VoteSessionService import VoteSessionRepository
+from StellariaPact.repository.VoteSessionRepository import VoteSessionRepository
 from StellariaPact.share import DiscordUtils, StellariaPactBot, StringUtils, UnitOfWork
 from StellariaPact.share.enums import ProposalStatus, VoteDuration
 

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from StellariaPact.repository.UserActivityRepository import UserActivityRepository
     from StellariaPact.repository.UserVoteRepository import UserVoteRepository
     from StellariaPact.repository.VoteOptionRepository import VoteOptionRepository
-    from StellariaPact.repository.VoteSessionService import VoteSessionRepository
+    from StellariaPact.repository.VoteSessionRepository import VoteSessionRepository
     from StellariaPact.share.DatabaseHandler import DatabaseHandler
 
 
@@ -106,7 +106,7 @@ class UnitOfWork:
     def vote_session(self) -> "VoteSessionRepository":
         """获取投票会话服务实例。"""
         if not hasattr(self, "_vote_session_service"):
-            from StellariaPact.repository.VoteSessionService import VoteSessionRepository
+            from StellariaPact.repository.VoteSessionRepository import VoteSessionRepository
 
             self._vote_session_service = VoteSessionRepository(self.session)
         return self._vote_session_service

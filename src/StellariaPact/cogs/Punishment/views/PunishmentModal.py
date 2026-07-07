@@ -147,7 +147,7 @@ class PunishmentModal(discord.ui.Modal):
                 mute_end_time=mute_end_time,
             )
             await self.bot.api_scheduler.submit(thread.send(embed=embed), priority=5)
-            await interaction.followup.send("处罚配置已成功更新并公示。", ephemeral=True)
+            await interaction.followup.send("已成功处罚并公示。", ephemeral=True)
 
         except Exception as e:
             logger.error(f"处理处罚模态框时发生错误: {e}", exc_info=True)
