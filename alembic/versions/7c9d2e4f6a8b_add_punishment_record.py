@@ -17,6 +17,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # 检查表是否已存在（可能已被 SQLModel.metadata.create_all() 创建）
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    if "punishment_record" in inspector.get_table_names():
+        return
     op.create_table(
         "punishment_record",
         sa.Column("id", sa.Integer(), nullable=False),

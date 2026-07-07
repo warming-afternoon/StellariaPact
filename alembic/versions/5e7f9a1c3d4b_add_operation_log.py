@@ -20,6 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # 检查表是否已存在（可能已被 SQLModel.metadata.create_all() 创建）
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    if "operation_log" in inspector.get_table_names():
+        return
     op.create_table(
         "operation_log",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
