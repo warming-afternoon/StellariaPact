@@ -6,7 +6,7 @@ import discord
 from sqlalchemy.exc import IntegrityError
 
 from StellariaPact.cogs.Moderation.dto import ExecuteProposalResultDto
-from StellariaPact.cogs.Moderation.qo import CreateConfirmationSessionQo
+from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 from StellariaPact.models import Announcement

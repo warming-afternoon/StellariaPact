@@ -7,8 +7,8 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Voting.dto import AdjustVoteTimeDto, OptionResult, VoteDetailDto, VoterInfo
-from StellariaPact.cogs.Voting.qo import AdjustVoteTimeQo, CreateVoteSessionQo
+from StellariaPact.dto.vote_session import AdjustVoteTimeDto, OptionResult, VoteDetailDto, VoterInfo
+from StellariaPact.qo.vote_session import AdjustVoteTimeQo, CreateVoteSessionQo
 from StellariaPact.dto import VoteSessionDto
 from StellariaPact.models.Objection import Objection
 from StellariaPact.models.Proposal import Proposal

@@ -1303,7 +1303,7 @@ requires-dist = [
     { name = "aiorun" },
     { name = "aiosqlite" },
     { name = "alembic", marker = "extra == 'dev'" },
-    { name = "discord-py", extras = ["speed"], specifier = "==2.6.3" },
+    { name = "discord-py", extras = ["speed"], specifier = ">=2.6.3" },
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pyhumps" },
     { name = "python-dotenv" },

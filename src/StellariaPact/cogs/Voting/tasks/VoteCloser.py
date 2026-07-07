@@ -4,7 +4,7 @@ import random
 
 from discord.ext import commands, tasks
 
-from StellariaPact.cogs.Voting.dto import VoteDetailDto
+from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import VoteSessionDto
 from StellariaPact.share import StellariaPactBot, UnitOfWork

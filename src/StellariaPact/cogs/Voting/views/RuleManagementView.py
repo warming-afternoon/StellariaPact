@@ -2,7 +2,7 @@ import logging
 
 import discord
 
-from StellariaPact.cogs.Voting.dto import VoteDetailDto
+from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.cogs.Voting.views import AdjustTimeModal, ConfirmationView, ReopenVoteModal
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
 from StellariaPact.share import StellariaPactBot, safeDefer

@@ -11,8 +11,7 @@ from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import \
     IntakeEmbedBuilder
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.cogs.Intake.views.IntakeSupportView import IntakeSupportView
-from StellariaPact.cogs.Voting.qo.CreateVoteSessionQo import \
-    CreateVoteSessionQo
+from StellariaPact.qo.vote_session import CreateVoteSessionQo
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share import DiscordUtils
 from StellariaPact.share.enums import (IntakeStatus, LogOperationType,

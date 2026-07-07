@@ -8,7 +8,7 @@ import discord
 from sqlalchemy import func, select
 
 from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import IntakeEmbedBuilder
-from StellariaPact.cogs.Moderation.qo import CreateConfirmationSessionQo
+from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.Proposal import Proposal

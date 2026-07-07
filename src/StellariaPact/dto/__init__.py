@@ -9,17 +9,22 @@ from .UserActivityDto import UserActivityDto
 from .UserVoteDto import UserVoteDto
 from .VoteMessageMirrorDto import VoteMessageMirrorDto
 from .VoteSessionDto import VoteSessionDto
+from .vote_session import AdjustVoteTimeDto, OptionResult, VoteDetailDto, VoterInfo
 
 __all__ = [
+    "AdjustVoteTimeDto",
     "AnnouncementDto",
     "ConfirmationSessionDto",
     "HandleSupportObjectionResultDto",
     "ObjectionDto",
     "ObjectionDetailsDto",
     "ObjectionVotePanelDto",
+    "OptionResult",
     "ProposalDto",
     "UserActivityDto",
     "UserVoteDto",
+    "VoteDetailDto",
     "VoteMessageMirrorDto",
     "VoteSessionDto",
+    "VoterInfo",
 ]

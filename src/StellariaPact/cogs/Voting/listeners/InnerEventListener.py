@@ -6,8 +6,9 @@ from typing import Literal
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.dto import VoteDetailDto
-from StellariaPact.cogs.Voting.qo import DeleteVoteQo, RecordVoteQo
+from StellariaPact.cogs.Voting.qo import DeleteVoteQo
+from StellariaPact.dto.vote_session import VoteDetailDto
+from StellariaPact.qo.user_vote import RecordVoteQo
 from StellariaPact.cogs.Voting.views import (
     CreateOptionModal,
     ObjectionSupportView,

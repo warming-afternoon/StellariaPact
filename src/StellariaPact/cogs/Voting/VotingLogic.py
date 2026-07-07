@@ -5,14 +5,12 @@ from typing import List, Optional
 
 import discord
 
-from StellariaPact.cogs.Voting.dto import VoteDetailDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
-from StellariaPact.cogs.Voting.qo import (
-    AdjustVoteTimeQo,
-    DeleteVoteQo,
-    RecordVoteQo,
-    UpdateUserActivityQo,
-)
+from StellariaPact.cogs.Voting.qo import DeleteVoteQo
+from StellariaPact.dto.vote_session import VoteDetailDto
+from StellariaPact.qo.user_activity import UpdateUserActivityQo
+from StellariaPact.qo.user_vote import RecordVoteQo
+from StellariaPact.qo.vote_session import AdjustVoteTimeQo
 from StellariaPact.dto import ConfirmationSessionDto, UserActivityDto, VoteSessionDto
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.services.VoteSessionService import VoteSessionService

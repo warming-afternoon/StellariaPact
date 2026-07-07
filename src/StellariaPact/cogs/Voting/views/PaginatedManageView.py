@@ -4,7 +4,7 @@ from functools import partial
 
 import discord
 
-from StellariaPact.cogs.Voting.dto import OptionResult
+from StellariaPact.dto.vote_session import OptionResult
 from StellariaPact.cogs.Voting.views import DeleteOptionModal
 from StellariaPact.share import StellariaPactBot, safeDefer
 

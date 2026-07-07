@@ -9,7 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from StellariaPact.cogs.Notification.dto.AdjustTimeDto import AdjustTimeDto
-from StellariaPact.cogs.Notification.qo.CreateAnnouncementQo import CreateAnnouncementQo
+from StellariaPact.qo.announcement import CreateAnnouncementQo
 from StellariaPact.cogs.Notification.views.AnnouncementEmbedBuilder import AnnouncementEmbedBuilder
 from StellariaPact.cogs.Notification.views.AnnouncementModal import AnnouncementModal
 from StellariaPact.share import (

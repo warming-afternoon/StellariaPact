@@ -5,9 +5,7 @@ from sqlalchemy import update
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Moderation.qo.CreateConfirmationSessionQo import (
-    CreateConfirmationSessionQo,
-)
+from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
 from StellariaPact.share.enums.ConfirmationStatus import ConfirmationStatus
 

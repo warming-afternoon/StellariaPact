@@ -6,7 +6,7 @@ from typing import Optional
 
 import discord
 
-from StellariaPact.cogs.Voting.dto import OptionResult, VoteDetailDto
+from StellariaPact.dto.vote_session import OptionResult, VoteDetailDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 

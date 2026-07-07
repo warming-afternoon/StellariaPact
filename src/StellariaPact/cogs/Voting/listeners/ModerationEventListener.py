@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 import discord
 from discord.ext import commands
 
-from StellariaPact.cogs.Voting.dto import OptionResult, VoteDetailDto
-from StellariaPact.cogs.Voting.qo import CreateVoteSessionQo
+from StellariaPact.dto.vote_session import OptionResult, VoteDetailDto
+from StellariaPact.qo.vote_session import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views import VoteEmbedBuilder, VoteView, VotingChannelView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import ProposalDto

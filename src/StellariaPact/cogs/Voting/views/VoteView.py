@@ -1,6 +1,6 @@
 import discord
 
-from StellariaPact.cogs.Voting.dto import VoteDetailDto
+from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.share import StellariaPactBot, safeDefer
 
 
