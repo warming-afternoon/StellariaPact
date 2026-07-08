@@ -126,17 +126,21 @@ class IntakeDiscordHelper:
             review_body = ProposalContentFormatter.format_review_body(
                 intake_dto, submitted_ts, id_label="议案ID"
             )
-            lines = [
-                review_body,
+            status_block = "\n".join([
                 "",
                 f"{status_emoji} **状态：** {status_text}\n",
                 f"💬 **审核意见：** {intake_dto.review_comment or '（无）'}",
-            ]
-
+            ])
             if extra_note:
-                lines.extend(["", f"ℹ️ {extra_note}"])
+                status_block += f"\n\nℹ️ {extra_note}"
 
-            await msg.edit(content="\n".join(lines), embed=None, view=view)
+            # 截断控制：Discord 消息内容上限 2000 字符
+            max_len = 2000
+            if len(review_body) + len(status_block) > max_len:
+                max_body_len = max_len - len(status_block) - len("……")
+                review_body = review_body[:max_body_len] + "……"
+
+            await msg.edit(content=review_body + status_block, embed=None, view=view)
 
             if notify_proposer and intake_dto.reviewer_id and intake_dto.reviewed_at:
                 notify_lines = [

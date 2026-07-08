@@ -177,6 +177,41 @@ class IntakeCog(commands.Cog):
         modal = IntakeEditReviewModal(self.bot, intake_dto)
         await interaction.response.send_modal(modal)
 
+    @app_commands.command(name="刷新草案显示", description="根据数据库当前数据刷新审核帖首楼内容、标签和标题")
+    async def refresh_intake_display(self, interaction: Interaction, intake_id: int | None = None):
+        """刷新草案审核帖的显示"""
+        await interaction.response.defer(ephemeral=True)
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            if intake_id is not None:
+                intake = await uow.intake.get_intake_by_id(intake_id)
+            elif interaction.channel and isinstance(interaction.channel, discord.Thread):
+                intake = await uow.intake.get_intake_by_review_thread_id(interaction.channel.id)
+            else:
+                await interaction.followup.send(
+                    "❌ 请提供草案 ID，或在审核帖内执行此命令。", ephemeral=True
+                )
+                return
+
+            if not intake:
+                await interaction.followup.send(
+                    "❌ 找不到对应的草案记录。", ephemeral=True
+                )
+                return
+
+            intake_dto = ProposalIntakeDto.model_validate(intake)
+
+        # 根据状态决定是否显示审核按钮
+        if intake_dto.status in (IntakeStatus.PENDING_REVIEW, IntakeStatus.MODIFICATION_REQUIRED):
+            view = IntakeReviewView(self.bot, intake_dto)
+        else:
+            view = None
+
+        await self.logic.discord_helper.update_review_thread_message(intake_dto, view=view)
+        await self.logic.discord_helper.update_review_thread_tags(intake_dto)
+        await interaction.followup.send("✅ 草案显示已刷新。", ephemeral=True)
+
+
 async def setup(bot: StellariaPactBot):
     intake_cog = IntakeCog(bot)
     await bot.add_cog(intake_cog)
