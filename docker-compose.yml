@@ -9,6 +9,7 @@ services:
     init: true
     env_file:
       - .env
+    command: ["python", "-m", "StellariaPact"]
     volumes:
       - ./config.json:/app/config.json:ro
       - ./data:/app/data
