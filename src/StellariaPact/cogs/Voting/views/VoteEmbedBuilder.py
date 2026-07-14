@@ -6,9 +6,9 @@ from typing import Optional
 
 import discord
 
-from StellariaPact.dto.vote_session import OptionResult, VoteDetailDto
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
+from StellariaPact.dto.vote_session import OptionResult, VoteDetailDto
 
 logger = logging.getLogger(__name__)
 
@@ -406,7 +406,11 @@ class VoteEmbedBuilder:
                     inline=False,
                 )
         else:
-            desc = f"{vote_details.description}\n\n暂无选项" if vote_details.description else "暂无选项"
+            desc = (
+                f"{vote_details.description}\n\n暂无选项"
+                if vote_details.description
+                else "暂无选项"
+            )
             normal_embed.description = desc
             if vote_details.realtime_flag:
                 normal_embed.add_field(
@@ -536,7 +540,11 @@ class VoteEmbedBuilder:
             embeds.append(normal_embed)
         else:
             # 没有普通选项时，显示总票数汇总
-            desc = f"{vote_details.description}\n\n暂无选项" if vote_details.description else "暂无选项"
+            desc = (
+                f"{vote_details.description}\n\n暂无选项"
+                if vote_details.description
+                else "暂无选项"
+            )
             normal_embed = discord.Embed(
                 title="普通投票",
                 description=desc,
@@ -589,6 +597,7 @@ class VoteEmbedBuilder:
         realtime_flag: bool,
         ui_style: int = 1,
         max_choices_per_user: int = 999999,
+        description: str | None = None,
     ) -> discord.Embed:
         """
         构建分页管理视图的 Embed。
@@ -597,7 +606,12 @@ class VoteEmbedBuilder:
         """
         summary = "普通投票" if option_type == 0 else "异议投票"
         title = f"对 {jump_url} 的" + summary
-        embed = discord.Embed(title=title, description="", color=discord.Color.blurple())
+        embed_description = description if option_type == 0 and description else None
+        embed = discord.Embed(
+            title=title,
+            description=embed_description,
+            color=discord.Color.blurple(),
+        )
 
         # 若多选项数不等于默认值且为普通投票，添加提醒字段
         if option_type == 0 and max_choices_per_user != 999999:

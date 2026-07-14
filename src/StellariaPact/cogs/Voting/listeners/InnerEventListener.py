@@ -7,8 +7,6 @@ import discord
 from discord.ext import commands
 
 from StellariaPact.cogs.Voting.qo import DeleteVoteQo
-from StellariaPact.dto.vote_session import VoteDetailDto
-from StellariaPact.qo.user_vote import RecordVoteQo
 from StellariaPact.cogs.Voting.views import (
     CreateOptionModal,
     ObjectionSupportView,
@@ -25,6 +23,8 @@ from StellariaPact.dto import (
     VoteMessageMirrorDto,
     VoteSessionDto,
 )
+from StellariaPact.dto.vote_session import VoteDetailDto
+from StellariaPact.qo.user_vote import RecordVoteQo
 from StellariaPact.share import (
     DiscordUtils,
     PermissionGuard,
@@ -628,7 +628,9 @@ class InnerEventListener(commands.Cog):
             logger.error(f"同步投票面板时出错: {e}", exc_info=True)
 
     @commands.Cog.listener()
-    async def on_objection_support_clicked(self, interaction: discord.Interaction, action: str = "support"):
+    async def on_objection_support_clicked(
+        self, interaction: discord.Interaction, action: str = "support"
+    ):
         """处理由 ObjectionSupportView 视图传来的点击事件"""
         try:
             if not interaction.message:
@@ -766,6 +768,7 @@ class InnerEventListener(commands.Cog):
                 vote_details.realtime_flag,
                 ui_style=vote_details.ui_style,
                 max_choices_per_user=vote_details.max_choices_per_user,
+                description=vote_details.description,
             )
             await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
 
@@ -788,6 +791,7 @@ class InnerEventListener(commands.Cog):
                 objection_options,
                 vote_details.realtime_flag,
                 max_choices_per_user=vote_details.max_choices_per_user,
+                description=vote_details.description,
             )
             await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
 
@@ -1029,6 +1033,7 @@ class InnerEventListener(commands.Cog):
                 realtime_flag=vote_details.realtime_flag,
                 ui_style=vote_details.ui_style,
                 max_choices_per_user=vote_details.max_choices_per_user,
+                description=vote_details.description,
             )
 
             if view is not None:
