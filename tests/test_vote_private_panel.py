@@ -1,10 +1,15 @@
 import unittest
+from collections.abc import Awaitable
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
+
+import discord
 
 from StellariaPact.cogs.Voting.listeners.InnerEventListener import InnerEventListener
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
-from StellariaPact.dto.vote_session import OptionResult
+from StellariaPact.dto.vote_session import OptionResult, VoteDetailDto
+from StellariaPact.share import StellariaPactBot
 
 
 class VotePrivatePanelTests(unittest.TestCase):
@@ -67,16 +72,33 @@ class VotePrivatePanelRefreshTests(unittest.IsolatedAsyncioTestCase):
             total_votes=64,
         )
 
-        async def submit(awaitable, priority):
+        async def submit(awaitable: Awaitable[Any], priority: int) -> Any:
             return await awaitable
 
-        bot = SimpleNamespace(api_scheduler=SimpleNamespace(submit=submit))
-        interaction = SimpleNamespace(
-            message=object(),
-            edit_original_response=AsyncMock(),
+        bot = cast(
+            StellariaPactBot,
+            SimpleNamespace(api_scheduler=SimpleNamespace(submit=submit)),
         )
-        vote_details = SimpleNamespace(
+        edit_original_response = AsyncMock()
+        interaction = cast(
+            discord.Interaction,
+            SimpleNamespace(
+                message=object(),
+                edit_original_response=edit_original_response,
+            ),
+        )
+        vote_details = VoteDetailDto(
             guild_id=1,
+            context_thread_id=2,
+            objection_id=None,
+            voting_channel_message_id=None,
+            is_anonymous=True,
+            notify_flag=True,
+            end_time=None,
+            context_message_id=None,
+            status=1,
+            total_choices=1,
+            options=[option],
             normal_options=[option],
             objection_options=[],
             realtime_flag=True,
@@ -94,8 +116,10 @@ class VotePrivatePanelRefreshTests(unittest.IsolatedAsyncioTestCase):
             option_type=0,
         )
 
-        interaction.edit_original_response.assert_awaited_once()
-        refreshed_embed = interaction.edit_original_response.await_args.kwargs["embeds"][0]
+        edit_original_response.assert_awaited_once()
+        awaited_call = edit_original_response.await_args
+        assert awaited_call is not None
+        refreshed_embed = awaited_call.kwargs["embeds"][0]
         self.assertEqual(refreshed_embed.description, description)
 
 
