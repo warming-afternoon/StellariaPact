@@ -6,6 +6,57 @@ import discord
 
 class PunishmentEmbedBuilder:
     @staticmethod
+    def create_global_voting_restriction_embed(
+        moderator: discord.Member,
+        target_user: discord.User | discord.Member,
+        reason: str,
+        origin_guild_name: str,
+        evidence_url: str | None = None,
+    ) -> discord.Embed:
+        """创建永久剥夺投票资格的公示/私信 Embed。"""
+        embed = discord.Embed(
+            title="永久投票资格限制",
+            description=(
+                f"**目标用户**: {target_user.mention}\n"
+                "**处理方式**: 永久剥夺提案投票资格\n"
+                "**影响范围**: 普通投票、异议投票、异议创建附议\n"
+                f"**来源服务器**: {origin_guild_name}"
+            ),
+            color=discord.Color.dark_red(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(name="处罚理由", value=reason, inline=False)
+        embed.add_field(name="操作人员", value=moderator.mention, inline=True)
+        if evidence_url:
+            embed.set_image(url=evidence_url)
+        return embed
+
+    @staticmethod
+    def create_global_voting_restriction_lifted_embed(
+        moderator: discord.Member,
+        target_user: discord.User | discord.Member,
+        reason: str,
+        origin_guild_name: str,
+        original_created_at: datetime,
+    ) -> discord.Embed:
+        """创建解除永久投票资格限制的公示/私信 Embed。"""
+        original_timestamp = int(original_created_at.timestamp())
+        embed = discord.Embed(
+            title="永久投票资格限制已解除",
+            description=(
+                f"**目标用户**: {target_user.mention}\n"
+                "**处理方式**: 恢复提案投票资格\n"
+                f"**原处罚时间**: <t:{original_timestamp}:F>\n"
+                f"**来源服务器**: {origin_guild_name}"
+            ),
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(name="解除理由", value=reason, inline=False)
+        embed.add_field(name="操作人员", value=moderator.mention, inline=True)
+        return embed
+
+    @staticmethod
     def create_punishment_embed(
         moderator: discord.Member,
         target_user: discord.User | discord.Member,
