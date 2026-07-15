@@ -107,11 +107,16 @@ class IntakeTransitionService:
             executor=intake_dto.executor,
             heading_level=2,
         )
-        discussion_content = (
-            f"{discussion_body}\n\n"
-            f"*讨论帖创建时间: <t:{created_ts}:f>*\n\n"
+        # 截断控制：Discord 消息内容上限 2000 字符
+        max_len = 2000
+        boilerplate = (
+            f"\n\n*讨论帖创建时间: <t:{created_ts}:f>*\n\n"
             f"🔒 **此讨论帖暂为锁定状态，待提案委员确认后将解锁开放发言。**"
         )
+        if len(discussion_body) + len(boilerplate) > max_len:
+            max_body_len = max_len - len(boilerplate) - len("……")
+            discussion_body = discussion_body[:max_body_len] + "……"
+        discussion_content = f"{discussion_body}{boilerplate}"
         tags_config = self.bot.config.get("tags", {})
         discussion_tag = self.discord_helper.resolve_forum_tag(
             forum=discussion_forum,
@@ -305,7 +310,13 @@ class IntakeTransitionService:
             executor=intake_dto.executor,
             heading_level=2,
         )
-        discussion_content = f"{discussion_body}\n\n*讨论帖创建时间: <t:{created_ts}:f>*"
+        # 截断控制：Discord 消息内容上限 2000 字符
+        max_len = 2000
+        boilerplate = f"\n\n*讨论帖创建时间: <t:{created_ts}:f>*"
+        if len(discussion_body) + len(boilerplate) > max_len:
+            max_body_len = max_len - len(boilerplate) - len("……")
+            discussion_body = discussion_body[:max_body_len] + "……"
+        discussion_content = f"{discussion_body}{boilerplate}"
         tags_config = self.bot.config.get("tags", {})
         discussion_tag = self.discord_helper.resolve_forum_tag(
             forum=discussion_forum,
