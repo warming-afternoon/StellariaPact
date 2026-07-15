@@ -2,6 +2,7 @@ from .Announcement import Announcement
 from .AnnouncementChannelMonitor import AnnouncementChannelMonitor
 from .BaseModel import BaseModel
 from .ConfirmationSession import ConfirmationSession
+from .GlobalVotingRestriction import GlobalVotingRestriction
 from .Objection import Objection
 from .OperationLog import OperationLog
 from .Proposal import Proposal
@@ -18,6 +19,7 @@ __all__ = [
     "AnnouncementChannelMonitor",
     "BaseModel",
     "ConfirmationSession",
+    "GlobalVotingRestriction",
     "Objection",
     "OperationLog",
     "Proposal",

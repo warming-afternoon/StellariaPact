@@ -7,12 +7,12 @@ import discord
 
 from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo import DeleteVoteQo
+from StellariaPact.dto import ConfirmationSessionDto, UserActivityDto, VoteSessionDto
 from StellariaPact.dto.vote_session import VoteDetailDto
+from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.qo.user_activity import UpdateUserActivityQo
 from StellariaPact.qo.user_vote import RecordVoteQo
 from StellariaPact.qo.vote_session import AdjustVoteTimeQo
-from StellariaPact.dto import ConfirmationSessionDto, UserActivityDto, VoteSessionDto
-from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.repository.VoteSessionRepository import VoteSessionRepository
 from StellariaPact.share import StellariaPactBot, TimeUtils, UnitOfWork
 from StellariaPact.share.auth import RoleGuard
@@ -60,6 +60,11 @@ class VotingLogic:
             if not vote_session:
                 raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
 
+            if await uow.global_voting_restriction.is_restricted(qo.user_id):
+                raise PermissionError(
+                    "你的投票资格已被永久剥夺，无法新增或修改投票；已有投票仍可撤回。"
+                )
+
             # 检查资格
             is_eligible, _, _ = await self._get_combined_eligibility_data(
                 uow, qo.user_id, qo.thread_id, vote_session
@@ -83,13 +88,8 @@ class VotingLogic:
                     v.choice_index == qo.choice_index for v in current_supports
                 )
                 # 如果是新的支持票，且已达上限，则阻拦
-                max_choices_per_user = getattr(
-                    vote_session, "max_choices_per_user", 999999
-                )
-                if (
-                    not already_supported
-                    and len(current_supports) >= max_choices_per_user
-                ):
+                max_choices_per_user = getattr(vote_session, "max_choices_per_user", 999999)
+                if not already_supported and len(current_supports) >= max_choices_per_user:
                     raise PermissionError(
                         f"您最多只能支持 {max_choices_per_user} 个选项。请先撤回其他支持。"
                     )
@@ -466,9 +466,7 @@ class VotingLogic:
 
             # 查额外镜像
             if not session:
-                session = await uow.vote_session.get_details_by_mirror_message_id(
-                    message_id
-                )
+                session = await uow.vote_session.get_details_by_mirror_message_id(message_id)
 
             # 如果都没找到
             if not session or not session.id:
@@ -518,9 +516,7 @@ class VotingLogic:
         # 身份组校验
         valid_roles = ["councilModerator", "executionAuditor", "stewards", "communityBuilder"]
         if not RoleGuard.hasRoles(interaction, *valid_roles):
-            raise PermissionError(
-                "❌ 你没有权限参与异议附议。需要提案组/社区建设者身份组。"
-            )
+            raise PermissionError("❌ 你没有权限参与异议附议。需要提案组/社区建设者身份组。")
 
         session_dto = None
         is_completed = False
@@ -547,12 +543,16 @@ class VotingLogic:
 
             # ======= 根据 action 分流处理 =======
             if action == "support":
+                if await uow.global_voting_restriction.is_restricted(user_id):
+                    raise PermissionError(
+                        "你的投票资格已被永久剥夺，无法参与异议附议；已有附议仍可撤回。"
+                    )
                 if user_id in parties.values():
                     raise ValueError("你已经支持过该异议了。")
 
                 # 调用服务层增加支持者
                 session = await uow.confirmation_session.add_objection_supporter(session, user_id)
-                is_completed = (session.status == 1)
+                is_completed = session.status == 1
 
                 # 如果凑齐 3 人完成，把异议写入关联的主投票面板 VoteOption 表
                 if is_completed:
@@ -577,7 +577,7 @@ class VotingLogic:
                         option_type=1,
                         text=reason_text,
                         creator_id=creator_id,
-                        creator_name=creator_name
+                        creator_name=creator_name,
                     )
 
                     # 更新主会话选项总数
@@ -594,7 +594,9 @@ class VotingLogic:
                     raise ValueError("你是异议发起人，无法撤回支持。")
 
                 # 移除支持者
-                session = await uow.confirmation_session.remove_objection_supporter(session, user_id)
+                session = await uow.confirmation_session.remove_objection_supporter(
+                    session, user_id
+                )
                 is_completed = False
 
             # 转换为 DTO 返回

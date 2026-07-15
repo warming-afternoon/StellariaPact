@@ -1,6 +1,7 @@
 from .AnnouncementMonitorRepository import AnnouncementMonitorRepository
 from .AnnouncementRepository import AnnouncementRepository
 from .ConfirmationSessionRepository import ConfirmationSessionRepository
+from .GlobalVotingRestrictionRepository import GlobalVotingRestrictionRepository
 from .IntakeRepository import IntakeRepository
 from .OperationLogRepository import OperationLogRepository
 from .ProposalRepository import ProposalRepository
@@ -13,6 +14,7 @@ __all__ = [
     "AnnouncementMonitorRepository",
     "AnnouncementRepository",
     "ConfirmationSessionRepository",
+    "GlobalVotingRestrictionRepository",
     "IntakeRepository",
     "OperationLogRepository",
     "ProposalRepository",

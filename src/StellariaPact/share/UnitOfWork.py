@@ -6,9 +6,16 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 if TYPE_CHECKING:
-    from StellariaPact.repository.AnnouncementMonitorRepository import AnnouncementMonitorRepository
+    from StellariaPact.repository.AnnouncementMonitorRepository import (
+        AnnouncementMonitorRepository,
+    )
     from StellariaPact.repository.AnnouncementRepository import AnnouncementRepository
-    from StellariaPact.repository.ConfirmationSessionRepository import ConfirmationSessionRepository
+    from StellariaPact.repository.ConfirmationSessionRepository import (
+        ConfirmationSessionRepository,
+    )
+    from StellariaPact.repository.GlobalVotingRestrictionRepository import (
+        GlobalVotingRestrictionRepository,
+    )
     from StellariaPact.repository.IntakeRepository import IntakeRepository
     from StellariaPact.repository.OperationLogRepository import OperationLogRepository
     from StellariaPact.repository.ProposalRepository import ProposalRepository
@@ -200,7 +207,22 @@ class UnitOfWork:
     def punishment_record(self) -> "PunishmentRecordRepository":
         """获取处罚历史服务实例。"""
         if not hasattr(self, "_punishment_record_service"):
-            from StellariaPact.repository.PunishmentRecordRepository import PunishmentRecordRepository
+            from StellariaPact.repository.PunishmentRecordRepository import (
+                PunishmentRecordRepository,
+            )
 
             self._punishment_record_service = PunishmentRecordRepository(self.session)
         return self._punishment_record_service
+
+    @property
+    def global_voting_restriction(self) -> "GlobalVotingRestrictionRepository":
+        """获取机器人全局投票资格限制服务实例。"""
+        if not hasattr(self, "_global_voting_restriction_service"):
+            from StellariaPact.repository.GlobalVotingRestrictionRepository import (
+                GlobalVotingRestrictionRepository,
+            )
+
+            self._global_voting_restriction_service = GlobalVotingRestrictionRepository(
+                self.session
+            )
+        return self._global_voting_restriction_service
