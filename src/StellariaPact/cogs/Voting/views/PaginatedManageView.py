@@ -4,8 +4,8 @@ from functools import partial
 
 import discord
 
-from StellariaPact.dto.vote_session import OptionResult
 from StellariaPact.cogs.Voting.views import DeleteOptionModal
+from StellariaPact.dto.vote_session import OptionResult
 from StellariaPact.share import StellariaPactBot, safeDefer
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,8 @@ class PaginatedManageView(discord.ui.View):
                     btn = discord.ui.Button(
                         label=f"撤回支持选项 {opt.choice_index}",
                         style=discord.ButtonStyle.primary,
-                        row=row
+                        row=row,
+                        disabled=not opt.is_active,
                     )
                     btn.callback = partial(
                         self._cast_vote, choice=None, choice_index=opt.choice_index
@@ -82,7 +83,8 @@ class PaginatedManageView(discord.ui.View):
                     btn = discord.ui.Button(
                         label=f"支持选项 {opt.choice_index}",
                         style=discord.ButtonStyle.primary,
-                        row=row
+                        row=row,
+                        disabled=not opt.is_active,
                     )
                     btn.callback = partial(
                         self._cast_vote, choice=1, choice_index=opt.choice_index
@@ -90,7 +92,11 @@ class PaginatedManageView(discord.ui.View):
                 self.add_item(btn)
 
                 # 如果是创建人，添加删除按钮
-                if opt.creator_id == self.interaction.user.id and opt.option_id is not None:
+                if (
+                    opt.is_active
+                    and opt.creator_id == self.interaction.user.id
+                    and opt.option_id is not None
+                ):
                     del_btn = discord.ui.Button(
                         label=f"删除选项 {opt.choice_index}",
                         style=discord.ButtonStyle.danger,
@@ -104,7 +110,8 @@ class PaginatedManageView(discord.ui.View):
                 btn_app = discord.ui.Button(
                     label=f"赞成{prefix} {opt.choice_index}",
                     style=discord.ButtonStyle.success,
-                    row=i
+                    row=i,
+                    disabled=not opt.is_active,
                 )
                 btn_app.callback = partial(
                     self._cast_vote, choice=1, choice_index=opt.choice_index
@@ -113,7 +120,8 @@ class PaginatedManageView(discord.ui.View):
                 btn_rej = discord.ui.Button(
                     label=f"反对{prefix} {opt.choice_index}",
                     style=discord.ButtonStyle.danger,
-                    row=i
+                    row=i,
+                    disabled=not opt.is_active,
                 )
                 btn_rej.callback = partial(
                     self._cast_vote, choice=0, choice_index=opt.choice_index
@@ -122,7 +130,8 @@ class PaginatedManageView(discord.ui.View):
                 btn_abs = discord.ui.Button(
                     label=f"{prefix} {opt.choice_index} 弃票",
                     style=discord.ButtonStyle.secondary,
-                    row=i
+                    row=i,
+                    disabled=not opt.is_active,
                 )
                 btn_abs.callback = partial(
                     self._cast_vote, choice=None, choice_index=opt.choice_index
@@ -133,7 +142,11 @@ class PaginatedManageView(discord.ui.View):
                 self.add_item(btn_abs)
 
                 # 如果是创建人，添加删除按钮
-                if opt.creator_id == self.interaction.user.id and opt.option_id is not None:
+                if (
+                    opt.is_active
+                    and opt.creator_id == self.interaction.user.id
+                    and opt.option_id is not None
+                ):
                     btn_del = discord.ui.Button(
                         label=f"删除{prefix}",
                         style=discord.ButtonStyle.danger,

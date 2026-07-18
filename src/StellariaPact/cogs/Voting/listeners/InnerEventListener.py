@@ -458,8 +458,11 @@ class InnerEventListener(commands.Cog):
             # 在数据库中软删除并获取更新后的 DTO
             vote_details = await self.logic.delete_vote_option(message_id, option_id)
 
-            # 若删除的是异议选项，且当前已无任何异议选项，则派发事件恢复提案到 "讨论中"
-            if option_type == 1 and not vote_details.objection_options:
+            # 历史异议仍会展示；只有不存在进行中的异议时才恢复讨论状态。
+            has_active_objection = any(
+                option.is_active for option in vote_details.objection_options
+            )
+            if option_type == 1 and not has_active_objection:
                 self.bot.dispatch(
                     "proposal_objection_cleared",
                     thread_id=thread_id,

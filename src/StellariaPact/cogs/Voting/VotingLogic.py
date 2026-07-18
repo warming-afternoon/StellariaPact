@@ -65,6 +65,16 @@ class VotingLogic:
                     "你的投票资格已被永久剥夺，无法新增或修改投票；已有投票仍可撤回。"
                 )
 
+            if vote_session.status != 1 or vote_session.id is None:
+                raise PermissionError("该投票已结束，无法继续投票。")
+
+            active_options = await uow.vote_option.get_active_options_by_type(
+                vote_session.id, qo.option_type
+            )
+            active_choice_indices = {option.choice_index for option in active_options}
+            if qo.choice_index not in active_choice_indices:
+                raise PermissionError("该投票选项已结束或不存在。")
+
             # 检查资格
             is_eligible, _, _ = await self._get_combined_eligibility_data(
                 uow, qo.user_id, qo.thread_id, vote_session
@@ -82,6 +92,7 @@ class VotingLogic:
                         v.user_id == qo.user_id
                         and v.choice == 1
                         and v.option_type == qo.option_type
+                        and v.choice_index in active_choice_indices
                     )
                 ]
                 already_supported = any(
@@ -242,6 +253,15 @@ class VotingLogic:
             vote_session = await uow.vote_session.get_vote_session_with_details(qo.message_id)
             if not vote_session:
                 raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
+
+            if vote_session.status != 1 or vote_session.id is None:
+                raise PermissionError("该投票已结束，无法撤票。")
+
+            option = await uow.vote_option.get_active_option(
+                vote_session.id, qo.option_type, qo.choice_index
+            )
+            if not option:
+                raise PermissionError("该投票选项已结束或不存在，无法撤票。")
 
             updated_session = await uow.user_vote.delete_vote(
                 user_id=qo.user_id,
@@ -425,6 +445,14 @@ class VotingLogic:
             vote_session = await uow.vote_session.get_vote_session_with_details(message_id)
             if not vote_session or not vote_session.id:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
+            if vote_session.status != 1:
+                raise PermissionError("该投票已结束，不能删除选项。")
+
+            option = await uow.vote_option.get_option_by_id(option_id)
+            if not option or option.session_id != vote_session.id:
+                raise ValueError("找不到该投票会话中的指定选项。")
+            if option.voting_status != 1:
+                raise PermissionError("已结束的投票选项不能删除。")
 
             # 获取当前所有选项（包括即将被删除的）
             all_options = await uow.vote_option.get_vote_options(vote_session.id)

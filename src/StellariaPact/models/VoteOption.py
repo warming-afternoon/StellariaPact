@@ -6,6 +6,7 @@ from sqlmodel import Field
 
 from StellariaPact.models.BaseModel import BaseModel
 from StellariaPact.share.database_types import UTCDateTime
+from StellariaPact.share.enums import VoteOptionStatus
 
 
 class VoteOption(BaseModel, table=True):
@@ -48,6 +49,20 @@ class VoteOption(BaseModel, table=True):
 
     data_status: int = Field(default=1, index=True, description="数据状态: 0-已删除, 1-正常")
     """数据状态: 0-已删除, 1-正常"""
+
+    voting_status: int = Field(
+        default=VoteOptionStatus.ACTIVE,
+        index=True,
+        description="投票状态: 0-已结束, 1-进行中",
+    )
+    """选项的投票状态，与逻辑删除状态分离。"""
+
+    closed_at: Optional[datetime] = Field(
+        default=None,
+        sa_type=UTCDateTime,
+        description="选项结束投票的时间",
+    )
+    """选项结束投票的时间。"""
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
