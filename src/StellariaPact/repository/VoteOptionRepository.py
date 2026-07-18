@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List, Optional, Sequence
 
 from sqlalchemy import func
@@ -5,6 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from StellariaPact.models.VoteOption import VoteOption
+from StellariaPact.share.enums import VoteOptionStatus
 
 
 class VoteOptionRepository:
@@ -32,7 +34,8 @@ class VoteOptionRepository:
                 choice_text=text,
                 creator_id=creator_id,
                 creator_name=creator_name,
-                data_status=1
+                data_status=1,
+                voting_status=VoteOptionStatus.ACTIVE,
             )
             self.session.add(new_option)
         await self.session.flush()
@@ -59,7 +62,8 @@ class VoteOptionRepository:
             choice_text=text,
             creator_id=creator_id,
             creator_name=creator_name,
-            data_status=1
+            data_status=1,
+            voting_status=VoteOptionStatus.ACTIVE,
         )
         self.session.add(new_option)
         await self.session.flush()
@@ -87,6 +91,43 @@ class VoteOptionRepository:
         ).order_by(VoteOption.choice_index) # type: ignore
         return (await self.session.exec(statement)).all()
 
+    async def get_active_options_by_type(
+        self, session_id: int, option_type: int
+    ) -> Sequence[VoteOption]:
+        """获取指定类型且仍可投票的选项。"""
+        statement = (
+            select(VoteOption)
+            .where(
+                VoteOption.session_id == session_id,
+                VoteOption.option_type == option_type,
+                VoteOption.data_status == 1,
+                VoteOption.voting_status == VoteOptionStatus.ACTIVE,
+            )
+            .order_by(VoteOption.choice_index)  # type: ignore
+        )
+        return (await self.session.exec(statement)).all()
+
+    async def get_active_option(
+        self, session_id: int, option_type: int, choice_index: int
+    ) -> Optional[VoteOption]:
+        """按会话、类型和索引获取进行中的选项。"""
+        statement = select(VoteOption).where(
+            VoteOption.session_id == session_id,
+            VoteOption.option_type == option_type,
+            VoteOption.choice_index == choice_index,
+            VoteOption.data_status == 1,
+            VoteOption.voting_status == VoteOptionStatus.ACTIVE,
+        )
+        return (await self.session.exec(statement)).one_or_none()
+
+    async def get_option_by_id(self, option_id: int) -> Optional[VoteOption]:
+        """获取未被逻辑删除的选项。"""
+        statement = select(VoteOption).where(
+            VoteOption.id == option_id,
+            VoteOption.data_status == 1,
+        )
+        return (await self.session.exec(statement)).one_or_none()
+
     async def get_options_by_session_ids(
         self, session_ids: list[int], option_type: int
     ) -> Sequence[VoteOption]:
@@ -105,10 +146,45 @@ class VoteOptionRepository:
         )
         return (await self.session.exec(statement)).all()
 
+    async def get_active_options_by_session_ids(
+        self, session_ids: list[int], option_type: int
+    ) -> Sequence[VoteOption]:
+        """批量获取多个会话下进行中的特定类型选项。"""
+        if not session_ids:
+            return []
+
+        statement = (
+            select(VoteOption)
+            .where(
+                VoteOption.session_id.in_(session_ids),  # type: ignore
+                VoteOption.option_type == option_type,
+                VoteOption.data_status == 1,
+                VoteOption.voting_status == VoteOptionStatus.ACTIVE,
+            )
+            .order_by(VoteOption.session_id, VoteOption.choice_index)  # type: ignore
+        )
+        return (await self.session.exec(statement)).all()
+
+    async def close_active_options(
+        self, session_ids: list[int], option_type: int
+    ) -> Sequence[VoteOption]:
+        """结束指定会话中所有进行中的特定类型选项。"""
+        options = await self.get_active_options_by_session_ids(session_ids, option_type)
+        closed_at = datetime.now(timezone.utc)
+        for option in options:
+            option.voting_status = VoteOptionStatus.CLOSED
+            option.closed_at = closed_at
+            self.session.add(option)
+        if options:
+            await self.session.flush()
+        return options
+
     async def delete_option(self, option_id: int):
         """逻辑删除特定选项"""
         option = await self.session.get(VoteOption, option_id)
         if option:
+            if option.voting_status != VoteOptionStatus.ACTIVE:
+                raise ValueError("已结束的投票选项不能删除。")
             option.data_status = 0
             self.session.add(option)
             await self.session.flush()

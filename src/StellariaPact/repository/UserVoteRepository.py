@@ -1,13 +1,15 @@
 from typing import Optional, Sequence
 
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.qo.user_vote import RecordVoteQo
 from StellariaPact.dto.UserVoteDto import UserVoteDto
 from StellariaPact.models.UserVote import UserVote
+from StellariaPact.models.VoteOption import VoteOption
 from StellariaPact.models.VoteSession import VoteSession
+from StellariaPact.qo.user_vote import RecordVoteQo
+from StellariaPact.share.enums import VoteOptionStatus
 
 
 class UserVoteRepository:
@@ -102,10 +104,25 @@ class UserVoteRepository:
         if not session_ids:
             return 0
 
-        # 找到用户在这些会话中的所有投票
-        votes_statement = select(UserVote).where(
-            UserVote.user_id == user_id,
-            UserVote.session_id.in_(session_ids),  # type: ignore
+        # 只撤销仍在进行中的选项上的投票。已结束异议必须保持不变。
+        votes_statement = (
+            select(UserVote)
+            .join(
+                VoteOption,
+                and_(
+                    UserVote.session_id == VoteOption.session_id,
+                    UserVote.option_type == VoteOption.option_type,
+                    UserVote.choice_index == VoteOption.choice_index,
+                ),
+            )
+            .join(VoteSession, UserVote.session_id == VoteSession.id)
+            .where(
+                UserVote.user_id == user_id,
+                UserVote.session_id.in_(session_ids),  # type: ignore
+                VoteSession.status == 1,
+                VoteOption.data_status == 1,
+                VoteOption.voting_status == VoteOptionStatus.ACTIVE,
+            )
         )
         votes_result = await self.session.exec(votes_statement)
         votes_to_delete = votes_result.all()

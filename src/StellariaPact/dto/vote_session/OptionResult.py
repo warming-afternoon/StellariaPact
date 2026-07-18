@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -15,3 +16,5 @@ class OptionResult(BaseModel):
     approve_votes: int = Field(..., description="赞成票数")
     reject_votes: int = Field(..., description="反对票数")
     total_votes: int = Field(..., description="总票数")
+    is_active: bool = Field(default=True, description="该选项是否仍可投票")
+    closed_at: Optional[datetime] = Field(default=None, description="该选项的结束时间")

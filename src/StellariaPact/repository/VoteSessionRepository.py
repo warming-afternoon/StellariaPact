@@ -7,16 +7,21 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.dto.vote_session import AdjustVoteTimeDto, OptionResult, VoteDetailDto, VoterInfo
-from StellariaPact.qo.vote_session import AdjustVoteTimeQo, CreateVoteSessionQo
 from StellariaPact.dto import VoteSessionDto
+from StellariaPact.dto.vote_session import (
+    AdjustVoteTimeDto,
+    OptionResult,
+    VoteDetailDto,
+    VoterInfo,
+)
 from StellariaPact.models.Objection import Objection
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteMessageMirror import VoteMessageMirror
 from StellariaPact.models.VoteOption import VoteOption
 from StellariaPact.models.VoteSession import VoteSession
-from StellariaPact.share.enums import VoteSessionType
+from StellariaPact.qo.vote_session import AdjustVoteTimeQo, CreateVoteSessionQo
+from StellariaPact.share.enums import VoteOptionStatus, VoteSessionType
 
 logger = logging.getLogger(__name__)
 
@@ -329,6 +334,12 @@ class VoteSessionRepository:
                     approve_votes=approve,
                     reject_votes=reject,
                     total_votes=approve + reject,
+                    is_active=(
+                        vote_session_model.status == 1
+                        and
+                        option_model.voting_status == VoteOptionStatus.ACTIVE
+                    ),
+                    closed_at=option_model.closed_at,
                 )
 
                 option_results.append(option_result)

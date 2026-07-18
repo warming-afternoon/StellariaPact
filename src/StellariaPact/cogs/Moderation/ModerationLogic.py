@@ -6,13 +6,13 @@ import discord
 from sqlalchemy.exc import IntegrityError
 
 from StellariaPact.cogs.Moderation.dto import ExecuteProposalResultDto
-from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 from StellariaPact.models import Announcement
+from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.repository.VoteSessionRepository import VoteSessionRepository
-from StellariaPact.share import DiscordUtils, StellariaPactBot, StringUtils, UnitOfWork
-from StellariaPact.share.enums import ProposalStatus, VoteDuration
+from StellariaPact.share import DiscordUtils, StellariaPactBot, UnitOfWork
+from StellariaPact.share.enums import ProposalStatus
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,9 @@ class ModerationLogic:
                 return
 
             session_ids = [s.id for s in sessions if s.id is not None]
-            objection_options = await uow.vote_option.get_options_by_session_ids(session_ids, 1)
+            objection_options = await uow.vote_option.get_active_options_by_session_ids(
+                session_ids, 1
+            )
             if not objection_options:
                 return
 
@@ -300,7 +302,9 @@ class ModerationLogic:
     #     # 检查帖子是否由 Bot 自己创建
     #     # 如果是 Bot 创建的，说明是 Intake 模块流程自动生成的，数据库中已有记录，无需重复处理
     #     if self.bot.user and thread.owner_id == self.bot.user.id:
-    #         logger.info(f"帖子 {thread.id} 由 Bot 创建 (Intake 流程)，跳过 Moderation 自动发现。")
+    #         logger.info(
+    #             f"帖子 {thread.id} 由 Bot 创建 (Intake 流程)，跳过自动发现。"
+    #         )
     #         return
 
     #     try:
@@ -487,7 +491,7 @@ class ModerationLogic:
         """
         session_message_ids_to_refresh: list[int] = []
 
-        # 更新提案状态；必要时清理异议选项
+        # 更新提案状态；必要时结束当前异议选项
         async with UnitOfWork(self.bot.db_handler) as uow:
             proposal = await uow.proposal.get_proposal_by_id(proposal_id)
             if not proposal:
@@ -496,27 +500,24 @@ class ModerationLogic:
                 )
                 return None
 
-            # 清理异议选项的条件：当前状态为“异议中”，且目标状态为“讨论中”
-            needs_objection_cleanup = (
+            # 当“异议中”的提案重新讨论时，只结束进行中的异议。
+            needs_objection_closure = (
                 proposal.status == ProposalStatus.UNDER_OBJECTION
                 and new_status == ProposalStatus.DISCUSSION
             )
 
-            if needs_objection_cleanup:
+            if needs_objection_closure:
                 sessions = await uow.vote_session.get_all_sessions_in_thread_with_details(
                     proposal.discussion_thread_id
                 )
                 session_ids = [s.id for s in sessions if s.id is not None]
-                objection_options = await uow.vote_option.get_options_by_session_ids(
-                    session_ids, 1
-                )
-
-                for option in objection_options:
-                    assert option.id is not None
-                    await uow.vote_option.delete_option(option.id)
+                closed_options = await uow.vote_option.close_active_options(session_ids, 1)
+                affected_session_ids = {option.session_id for option in closed_options}
 
                 session_message_ids_to_refresh = [
-                    s.context_message_id for s in sessions if s.context_message_id is not None
+                    s.context_message_id
+                    for s in sessions
+                    if s.id in affected_session_ids and s.context_message_id is not None
                 ]
 
             proposal.status = new_status

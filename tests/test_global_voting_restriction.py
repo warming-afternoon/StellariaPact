@@ -140,12 +140,15 @@ class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
                 user_vote_repository.record_vote.assert_not_awaited()
 
     async def test_restricted_user_can_withdraw_existing_vote(self) -> None:
-        vote_session = SimpleNamespace(id=1)
+        vote_session = SimpleNamespace(id=1, status=1)
         vote_session_repository = SimpleNamespace(
             get_vote_session_with_details=AsyncMock(return_value=vote_session)
         )
         user_vote_repository = SimpleNamespace(delete_vote=AsyncMock(return_value=vote_session))
-        vote_option_repository = SimpleNamespace(get_vote_options=AsyncMock(return_value=[]))
+        vote_option_repository = SimpleNamespace(
+            get_active_option=AsyncMock(return_value=object()),
+            get_vote_options=AsyncMock(return_value=[]),
+        )
         uow = _FakeUnitOfWork(
             vote_session=vote_session_repository,
             user_vote=user_vote_repository,

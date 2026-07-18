@@ -32,6 +32,25 @@ class VoteEmbedBuilder:
             )
 
     @staticmethod
+    def _objection_field_name(option: OptionResult) -> str:
+        status = "" if option.is_active else "🔒 已结束 | "
+        return f"{status}异议 {option.choice_index}: {option.choice_text}"
+
+    @staticmethod
+    def _objection_field_value(option: OptionResult, realtime_flag: bool) -> str:
+        lines: list[str] = []
+        # 已结束异议是历史快照，即使不实时展示也要公布最终票数。
+        if realtime_flag or not option.is_active:
+            lines.append(
+                f"✅ 赞成异议: {option.approve_votes} | "
+                f"❌ 反对异议: {option.reject_votes}"
+            )
+        if not option.is_active and option.closed_at:
+            closed_ts = int(option.closed_at.timestamp())
+            lines.append(f"结束时间: <t:{closed_ts}:F>")
+        return "\n".join(lines)
+
+    @staticmethod
     def create_confirmation_embed(title: str, description: str) -> discord.Embed:
         """创建一个通用的、用于二次确认的 Embed。"""
         return discord.Embed(
@@ -438,13 +457,11 @@ class VoteEmbedBuilder:
                 color=discord.Color.orange(),
             )
             for opt in objection_options:
-                if vote_details.realtime_flag:
-                    value = f"✅ 赞成异议: {opt.approve_votes} | ❌ 反对异议: {opt.reject_votes}"
-                else:
-                    value = ""
                 objection_embed.add_field(
-                    name=f"异议 {opt.choice_index}: {opt.choice_text}",
-                    value=value,
+                    name=VoteEmbedBuilder._objection_field_name(opt),
+                    value=VoteEmbedBuilder._objection_field_value(
+                        opt, vote_details.realtime_flag
+                    ),
                     inline=False,
                 )
             embeds.append(objection_embed)
@@ -498,11 +515,10 @@ class VoteEmbedBuilder:
 
         # --- 普通投票 Embed ---
         # 普通选项来源：优先使用 normal_options，回退到 options
-        normal_options = (
-            vote_details.normal_options
-            if vote_details.normal_options
-            else vote_details.options
-        )
+        normal_options = vote_details.normal_options
+        if not normal_options and not vote_details.objection_options:
+            # 只有无分类的旧数据才回退到扁平选项，避免把异议当成普通票。
+            normal_options = vote_details.options
         if normal_options:
             normal_embed = discord.Embed(
                 title="普通投票",
@@ -576,13 +592,11 @@ class VoteEmbedBuilder:
                 color=discord.Color.orange(),
             )
             for opt in objection_options:
-                if vote_details.realtime_flag:
-                    val = f"✅ 赞成异议: {opt.approve_votes} | ❌ 反对异议: {opt.reject_votes}"
-                else:
-                    val = ""
                 objection_embed.add_field(
-                    name=f"异议 {opt.choice_index}: {opt.choice_text}",
-                    value=val,
+                    name=VoteEmbedBuilder._objection_field_name(opt),
+                    value=VoteEmbedBuilder._objection_field_value(
+                        opt, vote_details.realtime_flag
+                    ),
                     inline=False,
                 )
             embeds.append(objection_embed)
@@ -632,12 +646,14 @@ class VoteEmbedBuilder:
                 )
             else:
                 # 显示选项标题和文本
+                option_label = "选项" if option_type == 0 else "异议"
+                status_label = "" if opt.is_active else "🔒 已结束 | "
                 embed.add_field(
-                    name=f"**选项 {opt.choice_index}** :",
+                    name=f"**{status_label}{option_label} {opt.choice_index}** :",
                     value=f"{opt.choice_text}",
                     inline=False,
                 )
-            if realtime_flag:
+            if realtime_flag or not opt.is_active:
                 # 简洁样式仅显示支持人数（已在标题中显示，跳过）
                 if ui_style == 2 and option_type == 0:
                     pass  # 支持人数已在标题中显示
