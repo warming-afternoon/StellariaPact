@@ -302,9 +302,15 @@ class IntakeDiscordHelper:
             role_id = roles_config.get(role_key)
             if role_id and guild:
                 role = guild.get_role(int(role_id))
-                role_display_names[role_key] = role.name if role else role_key
+                base_name = role.name if role else role_key
             else:
-                role_display_names[role_key] = role_key
+                base_name = role_key
+            display_name = base_name
+            counter = 2
+            while display_name in role_display_names.values():
+                display_name = f"{base_name} {counter}"
+                counter += 1
+            role_display_names[role_key] = display_name
 
         qo = BuildConfirmationEmbedQo(
             context=session_dto.context,
@@ -322,7 +328,7 @@ class IntakeDiscordHelper:
         auditor_role_id = roles_config.get("executionAuditor")
         if moderator_role_id:
             pings.append(f"<@&{moderator_role_id}>")
-        if auditor_role_id:
+        if auditor_role_id and auditor_role_id != moderator_role_id:
             pings.append(f"<@&{auditor_role_id}>")
         content = " ".join(pings) if pings else None
 
