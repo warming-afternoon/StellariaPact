@@ -144,6 +144,10 @@ class IntakeLogic:
         """处理因支持票不足而过期的草案。"""
         return await self.vote_service.close_expired_intake(intake_id)
 
+    async def refresh_support_message(self, intake_id: int) -> bool:
+        """按数据库当前状态刷新草案支持票面板。"""
+        return await self.vote_service.refresh_support_message(intake_id)
+
     async def handle_intake_transition_confirmed(self, intake_id: int):
         """转段确认完成后：解锁讨论帖或建立讨论帖（向后兼容）。"""
         return await self.transition_service.handle_intake_transition_confirmed(intake_id)

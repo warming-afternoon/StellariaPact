@@ -74,12 +74,35 @@ class IntakeVoteService:
         elif action == "promoted":
             msg = f"🎉 收到支持！该草案已达到 **{count}** 票支持，已开启讨论贴"
         elif action == "already_processed":
-            msg = f"👌 阶段已修改，当前总票数为 **{count}** 票"
+            if result.intake and result.intake.status == IntakeStatus.REJECTED:
+                msg = f"⏰ 支持票收集已结束，最终总票数为 **{count}** 票"
+            else:
+                msg = f"👌 阶段已修改，当前总票数为 **{count}** 票"
         else:
             msg = "操作成功"
 
         await interaction.followup.send(msg, ephemeral=True)
         return action, count
+
+    async def refresh_support_message(self, intake_id: int) -> bool:
+        """从数据库重新读取草案和票数，并同步公示频道中的支持票面板。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            intake = await uow.intake.get_intake_by_id(intake_id)
+            if not intake or not intake.voting_message_id:
+                return False
+
+            count_stmt = (
+                select(func.count(UserVote.id))  # type: ignore
+                .join(VoteSession, UserVote.session_id == VoteSession.id)  # type: ignore
+                .where(VoteSession.intake_id == intake_id)  # type: ignore
+                .where(VoteSession.session_type == VoteSessionType.INTAKE_SUPPORT)  # type: ignore
+            )
+            current_votes = (await uow.session.execute(count_stmt)).scalar_one() or 0
+            intake_dto = ProposalIntakeDto.model_validate(intake)
+
+        return await self.discord_helper.update_support_message(
+            intake_dto, current_votes
+        )
 
     # -------------------------
     # 投票状态切换处理（DB 层）
@@ -114,7 +137,7 @@ class IntakeVoteService:
             return SupportToggleDbResultDto(
                 action="already_processed",
                 count=current_votes or 0,
-                intake=None,
+                intake=ProposalIntakeDto.model_validate(intake),
                 need_promote=False,
                 intake_id=intake_id,
             )

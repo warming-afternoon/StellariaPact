@@ -177,9 +177,12 @@ class IntakeCog(commands.Cog):
         modal = IntakeEditReviewModal(self.bot, intake_dto)
         await interaction.response.send_modal(modal)
 
-    @app_commands.command(name="刷新草案显示", description="根据数据库当前数据刷新审核帖首楼内容、标签和标题")
+    @app_commands.command(
+        name="刷新草案显示",
+        description="根据数据库刷新审核帖和支持票面板",
+    )
     async def refresh_intake_display(self, interaction: Interaction, intake_id: int | None = None):
-        """刷新草案审核帖的显示"""
+        """刷新草案审核帖和公示频道支持票面板的显示。"""
         await interaction.response.defer(ephemeral=True)
 
         async with UnitOfWork(self.bot.db_handler) as uow:
@@ -209,7 +212,15 @@ class IntakeCog(commands.Cog):
 
         await self.logic.discord_helper.update_review_thread_message(intake_dto, view=view)
         await self.logic.discord_helper.update_review_thread_tags(intake_dto)
-        await interaction.followup.send("✅ 草案显示已刷新。", ephemeral=True)
+        support_refreshed = await self.logic.refresh_support_message(intake_dto.id)
+        support_result = (
+            "支持票面板已同步。"
+            if support_refreshed
+            else "该草案没有可刷新的支持票面板，或面板更新失败，请检查 Bot 日志。"
+        )
+        await interaction.followup.send(
+            f"✅ 草案显示已刷新；{support_result}", ephemeral=True
+        )
 
 
 async def setup(bot: StellariaPactBot):
