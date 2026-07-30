@@ -223,28 +223,50 @@ class IntakeDiscordHelper:
     # 更新公示频道的支持票收集面板
     # -------------------------
 
-    async def update_support_message(self, intake: ProposalIntakeDto, current_votes: int):
-        """更新公示频道中的发布票收集面板"""
+    async def update_support_message(
+        self, intake: ProposalIntakeDto, current_votes: int
+    ) -> bool:
+        """按数据库中的草案状态同步公示频道支持票面板。"""
         if not intake.voting_message_id:
-            return
+            return False
 
         channels_config = self.bot.config.get("channels", {})
         channel = await DiscordUtils.fetch_channel(
             self.bot, channels_config.get("objection_publicity")
         )
         if not isinstance(channel, discord.TextChannel):
-            return
+            return False
 
         try:
             msg = await channel.fetch_message(intake.voting_message_id)
-            embed = IntakeEmbedBuilder.build_support_embed(intake, current_votes=current_votes)
-            await msg.edit(embed=embed, view=IntakeSupportView(self.bot))
+            if intake.status == IntakeStatus.SUPPORT_COLLECTING:
+                embed = IntakeEmbedBuilder.build_support_embed(
+                    intake, current_votes=current_votes
+                )
+                view = IntakeSupportView(self.bot)
+            elif intake.status == IntakeStatus.APPROVED:
+                embed = IntakeEmbedBuilder.build_support_result_embed(
+                    intake,
+                    success=True,
+                    thread_id=intake.discussion_thread_id,
+                    current_votes=current_votes,
+                )
+                view = None
+            else:
+                embed = IntakeEmbedBuilder.build_support_result_embed(
+                    intake, success=False, current_votes=current_votes
+                )
+                view = None
+
+            await msg.edit(embed=embed, view=view)
+            return True
         except discord.NotFound:
             logger.warning(f"找不到支持票消息 {intake.voting_message_id}，跳过更新。")
         except discord.Forbidden:
             logger.error(f"没有权限编辑支持票消息 {intake.voting_message_id}。")
         except Exception as e:
             logger.warning(f"更新支持票面板失败 {intake.voting_message_id}: {e}")
+        return False
 
     # -------------------------
     # 讨论帖参与准则
