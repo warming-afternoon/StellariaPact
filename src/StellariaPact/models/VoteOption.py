@@ -6,7 +6,7 @@ from sqlmodel import Field
 
 from StellariaPact.models.BaseModel import BaseModel
 from StellariaPact.share.database_types import UTCDateTime
-from StellariaPact.share.enums import VoteOptionStatus
+from StellariaPact.share.enums import ObjectionResolutionType, VoteOptionStatus
 
 
 class VoteOption(BaseModel, table=True):
@@ -63,6 +63,18 @@ class VoteOption(BaseModel, table=True):
         description="选项结束投票的时间",
     )
     """选项结束投票的时间。"""
+
+    resolution_type: int = Field(
+        default=ObjectionResolutionType.NORMAL,
+        description="异议处理类型: 1-正常流程, 2-恶意违规",
+    )
+    """异议处理类型；普通选项及尚未分类的历史数据默认为正常流程。"""
+
+    resolution_description: Optional[str] = Field(
+        default=None,
+        description="异议处理描述",
+    )
+    """异议关闭时记录的可选处理描述。"""
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

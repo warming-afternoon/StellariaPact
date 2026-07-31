@@ -5,8 +5,8 @@ from sqlalchemy import update
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
+from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.share.enums.ConfirmationStatus import ConfirmationStatus
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,7 @@ class ConfirmationSessionRepository:
             required_roles=qo.required_roles,
             confirmed_parties=confirmed_parties,
             reason=qo.reason,
+            payload=qo.payload,
         )
         self.session.add(session)
         await self.session.flush()

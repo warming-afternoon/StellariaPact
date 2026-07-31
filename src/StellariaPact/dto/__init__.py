@@ -1,8 +1,12 @@
+# ruff: noqa: I001
+
 from .AnnouncementDto import AnnouncementDto
 from .ConfirmationSessionDto import ConfirmationSessionDto
 from .HandleSupportObjectionResultDto import HandleSupportObjectionResultDto
 from .ObjectionDetailsDto import ObjectionDetailsDto
 from .ObjectionDto import ObjectionDto
+from .ObjectionSelectionDto import ObjectionSelectionDto
+from .ObjectionViolationRecordDto import ObjectionViolationRecordDto
 from .ObjectionVotePanelDto import ObjectionVotePanelDto
 from .ProposalDto import ProposalDto
 from .UserActivityDto import UserActivityDto
@@ -18,6 +22,8 @@ __all__ = [
     "HandleSupportObjectionResultDto",
     "ObjectionDto",
     "ObjectionDetailsDto",
+    "ObjectionSelectionDto",
+    "ObjectionViolationRecordDto",
     "ObjectionVotePanelDto",
     "OptionResult",
     "ProposalDto",

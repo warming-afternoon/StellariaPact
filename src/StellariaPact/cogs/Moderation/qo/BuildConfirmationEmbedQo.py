@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from StellariaPact.share import BaseDto
 
@@ -15,3 +15,4 @@ class BuildConfirmationEmbedQo(BaseDto):
     required_roles: List[str]
     role_display_names: Dict[str, str] = {}
     reason: str | None = None
+    payload: dict[str, Any] | None = None
