@@ -281,6 +281,46 @@ class VotingLogic:
         async with UnitOfWork(self.bot.db_handler) as uow:
             await uow.user_activity.update_user_activity(qo)
 
+    @staticmethod
+    async def remove_active_user_votes_in_thread(
+        uow: UnitOfWork,
+        user_id: int,
+        thread_id: int,
+    ) -> List[VoteDetailDto]:
+        """
+        移除用户在指定帖子内仍处于进行状态的全部投票。
+
+        该方法使用调用方提供的工作单元，以便资格变更、处罚记录和清票能够
+        在同一事务中完成。已结束的投票会话和已关闭的投票选项不会被修改。
+        """
+        all_sessions_in_thread = (
+            await uow.vote_session.get_all_sessions_in_thread_with_details(thread_id)
+        )
+        session_ids = [session.id for session in all_sessions_in_thread if session.id is not None]
+
+        deleted_count = await uow.user_vote.delete_all_user_votes_in_thread(
+            user_id=user_id,
+            session_ids=session_ids,
+        )
+        if deleted_count == 0:
+            return []
+
+        # 查询前先刷新删除操作，确保构建出的票数详情是最新状态。
+        await uow.flush()
+        uow.session.expire_all()
+        all_sessions_in_thread = (
+            await uow.vote_session.get_all_sessions_in_thread_with_details(thread_id)
+        )
+
+        details_to_update: List[VoteDetailDto] = []
+        for session in all_sessions_in_thread:
+            if session.id:
+                vote_options = await uow.vote_option.get_vote_options(session.id)
+                details_to_update.append(
+                    VoteSessionRepository.get_vote_details_dto(session, vote_options)
+                )
+        return details_to_update
+
     async def handle_message_deletion(
         self, qo: UpdateUserActivityQo
     ) -> Optional[List[VoteDetailDto]]:
@@ -297,32 +337,12 @@ class VotingLogic:
             if EligibilityService.is_eligible(user_activity_dto):
                 return None
 
-            # 找到该帖子下的所有投票会话 ID
-            all_sessions_in_thread = (
-                await uow.vote_session.get_all_sessions_in_thread_with_details(qo.thread_id)
+            details_to_update = await self.remove_active_user_votes_in_thread(
+                uow=uow,
+                user_id=qo.user_id,
+                thread_id=qo.thread_id,
             )
-            session_ids = [s.id for s in all_sessions_in_thread if s.id is not None]
-
-            # 尝试删除用户在这些会话中的所有投票
-            deleted_count = await uow.user_vote.delete_all_user_votes_in_thread(
-                user_id=qo.user_id, session_ids=session_ids
-            )
-
-            if deleted_count == 0:
-                return None
-
-            # 重新获取会话以确保数据最新
-            all_sessions_in_thread = (
-                await uow.vote_session.get_all_sessions_in_thread_with_details(qo.thread_id)
-            )
-            details_to_update: List[VoteDetailDto] = []
-            for session in all_sessions_in_thread:
-                if session.id:
-                    vote_options = await uow.vote_option.get_vote_options(session.id)
-                    details_to_update.append(
-                        VoteSessionRepository.get_vote_details_dto(session, vote_options)
-                    )
-            return details_to_update
+            return details_to_update or None
 
     async def reopen_vote(
         self,

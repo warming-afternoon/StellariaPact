@@ -230,14 +230,15 @@ class IntakeDiscordHelper:
         if not intake.voting_message_id:
             return False
 
-        channels_config = self.bot.config.get("channels", {})
-        channel = await DiscordUtils.fetch_channel(
-            self.bot, channels_config.get("objection_publicity")
-        )
-        if not isinstance(channel, discord.TextChannel):
-            return False
-
         try:
+            channels_config = self.bot.config.get("channels", {})
+            channel = await DiscordUtils.fetch_channel(
+                self.bot, channels_config.get("objection_publicity")
+            )
+            if not isinstance(channel, discord.TextChannel):
+                logger.warning("公示频道类型不是文本频道，无法更新支持票面板。")
+                return False
+
             msg = await channel.fetch_message(intake.voting_message_id)
             if intake.status == IntakeStatus.SUPPORT_COLLECTING:
                 embed = IntakeEmbedBuilder.build_support_embed(

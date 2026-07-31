@@ -7,11 +7,9 @@ import discord
 from sqlalchemy import func, select, update
 
 from StellariaPact.cogs.Intake.dto.SupportToggleDbResultDto import SupportToggleDbResultDto
-from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import IntakeEmbedBuilder
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
-from StellariaPact.share import DiscordUtils
 from StellariaPact.share.UnitOfWork import UnitOfWork
 from StellariaPact.share.enums import IntakeStatus, VoteSessionType
 
@@ -259,11 +257,6 @@ class IntakeVoteService:
 
             intake_dto = ProposalIntakeDto.model_validate(intake)
             voting_message_id = intake.voting_message_id
-            fail_embed = None
-            if voting_message_id:
-                fail_embed = IntakeEmbedBuilder.build_support_result_embed(
-                    intake_dto, success=False, current_votes=current_votes
-                )
 
         # 更新审核帖首楼的审核信息
         await self.discord_helper.update_review_thread_message(
@@ -274,20 +267,12 @@ class IntakeVoteService:
         await self.discord_helper.update_review_thread_tags(intake_dto)
 
         # 更新公示频道的消息
-        if not voting_message_id or not fail_embed:
-            return
-
-        channels_config = self.bot.config.get("channels", {})
-        objection_publicity_channel_id = channels_config.get("objection_publicity")
-        if not objection_publicity_channel_id:
-            return
-
-        channel = await DiscordUtils.fetch_channel(self.bot, objection_publicity_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
-
-        try:
-            msg = await channel.fetch_message(voting_message_id)
-            await msg.edit(embed=fail_embed, view=None)
-        except Exception as e:
-            logger.warning(f"无法更新过期的投票消息 {voting_message_id}: {e}")
+        if voting_message_id:
+            updated = await self.discord_helper.update_support_message(
+                intake_dto, current_votes
+            )
+            if not updated:
+                logger.warning(
+                    f"草案 {intake_id} 已过期，但支持票面板 "
+                    f"{voting_message_id} 未能同步。"
+                )

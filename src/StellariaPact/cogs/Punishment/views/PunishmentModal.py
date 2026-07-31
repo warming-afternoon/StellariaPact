@@ -5,8 +5,9 @@ from typing import Optional
 import discord
 
 from StellariaPact.models.UserActivity import UserActivity
-from StellariaPact.share import StellariaPactBot, UnitOfWork, safeDefer
+from StellariaPact.share import StellariaPactBot, safeDefer
 
+from ..logic.PunishmentLogic import PunishmentLogic
 from .PunishmentEmbedBuilder import PunishmentEmbedBuilder
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ class PunishmentModal(discord.ui.Modal):
         super().__init__(title="修改处罚设置" if is_edit else "踢出/处罚提案成员", timeout=1700)
 
         self.bot = bot
+        self.logic = PunishmentLogic(bot)
         self.target_user = target_user
         self.target_message = target_message
 
@@ -107,27 +109,19 @@ class PunishmentModal(discord.ui.Modal):
             if mute_minutes > 0:
                 mute_end_time = datetime.now(timezone.utc) + timedelta(minutes=mute_minutes)
 
-            # 数据库操作 (覆盖更新)
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                await uow.user_activity.update_user_validation_status(
-                    user_id=self.target_user.id,
-                    thread_id=thread.id,
-                    is_valid=is_voting_allowed,
-                    mute_end_time=mute_end_time,
-                )
-                await uow.punishment_record.create_record(
-                    guild_id=thread.guild.id,
-                    thread_id=thread.id,
-                    target_user_id=self.target_user.id,
-                    moderator_id=moderator.id,
-                    reason=reason,
-                    source_message_url=(
-                        self.target_message.jump_url if self.target_message is not None else None
-                    ),
-                    voting_allowed=is_voting_allowed,
-                    mute_end_time=mute_end_time,
-                )
-                await uow.commit()
+            # 资格状态、处罚记录和进行中投票的清理在同一事务内完成。
+            vote_details_to_update = await self.logic.apply_thread_punishment(
+                guild_id=thread.guild.id,
+                thread_id=thread.id,
+                target_user_id=self.target_user.id,
+                moderator_id=moderator.id,
+                reason=reason,
+                source_message_url=(
+                    self.target_message.jump_url if self.target_message is not None else None
+                ),
+                voting_allowed=is_voting_allowed,
+                mute_end_time=mute_end_time,
+            )
 
             # 派发事件更新内存缓存
             self.bot.dispatch(
@@ -136,6 +130,8 @@ class PunishmentModal(discord.ui.Modal):
                 self.target_user.id,
                 mute_end_time,
             )
+            for vote_details in vote_details_to_update:
+                self.bot.dispatch("vote_details_updated", vote_details)
 
             # 发送公示
             embed = PunishmentEmbedBuilder.create_punishment_embed(
