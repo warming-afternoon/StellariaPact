@@ -3,7 +3,9 @@ from datetime import datetime
 
 import discord
 
+from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto.UserActivityDto import UserActivityDto
+from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.share import StellariaPactBot, UnitOfWork
 
 from ..views.PunishmentEmbedBuilder import PunishmentEmbedBuilder
@@ -14,6 +16,55 @@ logger = logging.getLogger(__name__)
 class PunishmentLogic:
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
+
+    async def apply_thread_punishment(
+        self,
+        *,
+        guild_id: int,
+        thread_id: int,
+        target_user_id: int,
+        moderator_id: int,
+        reason: str,
+        source_message_url: str | None,
+        voting_allowed: bool,
+        mute_end_time: datetime | None,
+    ) -> list[VoteDetailDto]:
+        """
+        应用帖子内处罚，并在剥夺投票资格时清除该用户仍在进行中的投票。
+
+        资格状态、处罚记录和活动票删除在同一事务内完成。返回需要同步刷新
+        的投票详情；没有活动票被删除时返回空列表。
+        """
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.user_activity.update_user_validation_status(
+                user_id=target_user_id,
+                thread_id=thread_id,
+                is_valid=voting_allowed,
+                mute_end_time=mute_end_time,
+            )
+            await uow.punishment_record.create_record(
+                guild_id=guild_id,
+                thread_id=thread_id,
+                target_user_id=target_user_id,
+                moderator_id=moderator_id,
+                reason=reason,
+                source_message_url=source_message_url,
+                voting_allowed=voting_allowed,
+                mute_end_time=mute_end_time,
+            )
+
+            vote_details_to_update: list[VoteDetailDto] = []
+            if not voting_allowed:
+                vote_details_to_update = (
+                    await VotingLogic.remove_active_user_votes_in_thread(
+                        uow=uow,
+                        user_id=target_user_id,
+                        thread_id=thread_id,
+                    )
+                )
+
+            await uow.commit()
+            return vote_details_to_update
 
     async def apply_global_voting_restriction(
         self,
