@@ -7,7 +7,7 @@ from StellariaPact.cogs.Moderation.ModerationLogic import ModerationLogic
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 from StellariaPact.share import DiscordUtils
-from StellariaPact.share.enums import ProposalStatus
+from StellariaPact.share.enums import ObjectionResolutionType, ProposalStatus
 
 if TYPE_CHECKING:
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -40,6 +40,40 @@ class ModerationListener(commands.Cog):
         try:
             proposal_dto: ProposalDto | None = None
             target_status: ProposalStatus | None = None
+            payload = session.payload or {}
+
+            if session.context == "proposal_objection_removal":
+                raw_objections = payload.get("objections", [])
+                option_ids = [
+                    int(item["id"])
+                    for item in raw_objections
+                    if isinstance(item, dict) and item.get("id") is not None
+                ]
+                resolution_type = int(
+                    payload.get(
+                        "resolution_type",
+                        ObjectionResolutionType.MALICIOUS,
+                    )
+                )
+                proposal_dto, restored_discussion = (
+                    await self.logic.execute_objection_removal(
+                        proposal_id=session.target_id,
+                        option_ids=option_ids,
+                        resolution_type=resolution_type,
+                        resolution_description=session.reason,
+                    )
+                )
+                if (
+                    proposal_dto
+                    and restored_discussion
+                    and proposal_dto.discussion_thread_id
+                ):
+                    await self._update_thread_status_after_confirmation(
+                        proposal_dto.discussion_thread_id,
+                        proposal_dto.title,
+                        ProposalStatus.DISCUSSION,
+                    )
+                return
 
             target_status_map = {
                 "proposal_execution": ProposalStatus.EXECUTING,
@@ -53,8 +87,19 @@ class ModerationListener(commands.Cog):
                 logger.warning(f"未知的确认上下文: {session.context}")
                 return
 
+            resolution_type = int(
+                payload.get(
+                    "resolution_type",
+                    ObjectionResolutionType.NORMAL,
+                )
+            )
             proposal_dto = await self.logic.proposal_status_change(
-                session.target_id, target_status
+                session.target_id,
+                target_status,
+                resolution_type=resolution_type,
+                resolution_description=(
+                    session.reason if session.context == "proposal_rediscuss" else None
+                ),
             )
 
             if proposal_dto and target_status is not None and proposal_dto.discussion_thread_id:

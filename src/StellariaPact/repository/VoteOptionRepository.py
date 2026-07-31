@@ -5,8 +5,10 @@ from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from StellariaPact.dto import ObjectionViolationRecordDto
 from StellariaPact.models.VoteOption import VoteOption
-from StellariaPact.share.enums import VoteOptionStatus
+from StellariaPact.models.VoteSession import VoteSession
+from StellariaPact.share.enums import ObjectionResolutionType, VoteOptionStatus
 
 
 class VoteOptionRepository:
@@ -165,19 +167,152 @@ class VoteOptionRepository:
         )
         return (await self.session.exec(statement)).all()
 
+    async def get_latest_active_objections_in_thread(
+        self, thread_id: int, limit: int = 25
+    ) -> Sequence[VoteOption]:
+        """获取帖子中最新的进行中异议。"""
+        statement = (
+            select(VoteOption)
+            .join(VoteSession, VoteSession.id == VoteOption.session_id)  # type: ignore[arg-type]
+            .where(
+                VoteSession.context_thread_id == thread_id,
+                VoteOption.option_type == 1,
+                VoteOption.data_status == 1,
+                VoteOption.voting_status == VoteOptionStatus.ACTIVE,
+            )
+            .order_by(VoteOption.created_at.desc(), VoteOption.id.desc())  # type: ignore
+            .limit(limit)
+        )
+        return (await self.session.exec(statement)).all()
+
+    async def get_active_objections_by_ids_in_thread(
+        self, thread_id: int, option_ids: list[int]
+    ) -> Sequence[VoteOption]:
+        """按 ID 获取属于指定帖子的进行中异议。"""
+        if not option_ids:
+            return []
+        statement = (
+            select(VoteOption)
+            .join(VoteSession, VoteSession.id == VoteOption.session_id)  # type: ignore[arg-type]
+            .where(
+                VoteSession.context_thread_id == thread_id,
+                VoteOption.id.in_(option_ids),  # type: ignore[union-attr]
+                VoteOption.option_type == 1,
+                VoteOption.data_status == 1,
+                VoteOption.voting_status == VoteOptionStatus.ACTIVE,
+            )
+            .order_by(VoteOption.created_at.desc(), VoteOption.id.desc())  # type: ignore
+        )
+        return (await self.session.exec(statement)).all()
+
     async def close_active_options(
-        self, session_ids: list[int], option_type: int
+        self,
+        session_ids: list[int],
+        option_type: int,
+        resolution_type: int = ObjectionResolutionType.NORMAL,
+        resolution_description: str | None = None,
     ) -> Sequence[VoteOption]:
         """结束指定会话中所有进行中的特定类型选项。"""
         options = await self.get_active_options_by_session_ids(session_ids, option_type)
+        return await self._close_options(
+            options,
+            resolution_type=resolution_type,
+            resolution_description=resolution_description,
+        )
+
+    async def close_active_objections_by_ids(
+        self,
+        session_ids: list[int],
+        option_ids: list[int],
+        resolution_type: int,
+        resolution_description: str | None,
+    ) -> Sequence[VoteOption]:
+        """关闭仍在进行中的指定异议；已关闭记录不会被覆盖。"""
+        if not session_ids or not option_ids:
+            return []
+        statement = (
+            select(VoteOption)
+            .where(
+                VoteOption.session_id.in_(session_ids),  # type: ignore[union-attr]
+                VoteOption.id.in_(option_ids),  # type: ignore[union-attr]
+                VoteOption.option_type == 1,
+                VoteOption.data_status == 1,
+                VoteOption.voting_status == VoteOptionStatus.ACTIVE,
+            )
+            .order_by(VoteOption.session_id, VoteOption.choice_index)  # type: ignore
+        )
+        options = (await self.session.exec(statement)).all()
+        return await self._close_options(
+            options,
+            resolution_type=resolution_type,
+            resolution_description=resolution_description,
+        )
+
+    async def _close_options(
+        self,
+        options: Sequence[VoteOption],
+        *,
+        resolution_type: int,
+        resolution_description: str | None,
+    ) -> Sequence[VoteOption]:
+        """写入关闭状态和处理分类。"""
         closed_at = datetime.now(timezone.utc)
         for option in options:
             option.voting_status = VoteOptionStatus.CLOSED
             option.closed_at = closed_at
+            option.resolution_type = resolution_type
+            option.resolution_description = resolution_description
             self.session.add(option)
         if options:
             await self.session.flush()
         return options
+
+    async def get_malicious_objection_summary(
+        self,
+        *,
+        guild_id: int,
+        creator_id: int,
+        limit: int = 4,
+    ) -> tuple[int, list[ObjectionViolationRecordDto]]:
+        """查询服务器内某用户被认定为恶意违规的异议。"""
+        filters = (
+            VoteSession.guild_id == guild_id,
+            VoteOption.creator_id == creator_id,
+            VoteOption.option_type == 1,
+            VoteOption.data_status == 1,
+            VoteOption.voting_status == VoteOptionStatus.CLOSED,
+            VoteOption.resolution_type == ObjectionResolutionType.MALICIOUS,
+            VoteOption.closed_at.is_not(None),  # type: ignore[union-attr]
+        )
+        count_statement = (
+            select(func.count(VoteOption.id))
+            .join(VoteSession, VoteSession.id == VoteOption.session_id)  # type: ignore[arg-type]
+            .where(*filters)
+        )
+        total = (await self.session.exec(count_statement)).one()
+
+        details_statement = (
+            select(VoteOption, VoteSession)
+            .join(VoteSession, VoteSession.id == VoteOption.session_id)  # type: ignore[arg-type]
+            .where(*filters)
+            .order_by(VoteOption.closed_at.desc(), VoteOption.id.desc())  # type: ignore
+            .limit(limit)
+        )
+        rows = (await self.session.exec(details_statement)).all()
+        records = [
+            ObjectionViolationRecordDto(
+                option_id=option.id,  # type: ignore[arg-type]
+                choice_text=option.choice_text,
+                resolution_description=option.resolution_description,
+                created_at=option.created_at,
+                closed_at=option.closed_at,  # type: ignore[arg-type]
+                guild_id=session.guild_id,
+                thread_id=session.context_thread_id,
+                context_message_id=session.context_message_id,
+            )
+            for option, session in rows
+        ]
+        return total, records
 
     async def delete_option(self, option_id: int):
         """逻辑删除特定选项"""

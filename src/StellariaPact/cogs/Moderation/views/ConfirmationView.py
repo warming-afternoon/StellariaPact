@@ -109,6 +109,8 @@ class ConfirmationView(discord.ui.View):
                 confirmed_parties=updated_session.confirmed_parties or {},
                 required_roles=updated_session.required_roles,
                 role_display_names=role_display_names,
+                reason=updated_session.reason,
+                payload=updated_session.payload,
             )
             embed = ModerationEmbedBuilder.build_confirmation_embed(qo, self.bot.user)
             # 使用 DTO 替代 ORM 实例，避免事务外访问问题
@@ -182,6 +184,8 @@ class ConfirmationView(discord.ui.View):
                 confirmed_parties=updated_session.confirmed_parties or {},
                 required_roles=updated_session.required_roles,
                 role_display_names=role_display_names,
+                reason=updated_session.reason,
+                payload=updated_session.payload,
             )
 
             if not self.bot.user:

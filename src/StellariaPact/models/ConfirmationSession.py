@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from sqlalchemy import Column, Index, text
 from sqlmodel import Field
@@ -47,6 +47,13 @@ class ConfirmationSession(BaseModel, table=True):
 
     reason: str | None = Field(default=None, description="执行此操作的原因")
     """执行此操作的原因"""
+
+    payload: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON_TYPE, nullable=True),
+        description="确认完成后执行操作所需的结构化参数",
+    )
+    """确认操作的持久化结构化参数。"""
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

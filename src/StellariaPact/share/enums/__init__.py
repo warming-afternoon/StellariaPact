@@ -1,6 +1,7 @@
 from .ConfirmationStatus import ConfirmationStatus
 from .IntakeStatus import IntakeStatus
 from .LogOperationType import LogOperationType
+from .ObjectionResolutionType import ObjectionResolutionType
 from .ObjectionStatus import ObjectionStatus
 from .ProposalStatus import ProposalStatus
 from .VoteDuration import VoteDuration
@@ -11,6 +12,7 @@ __all__ = [
     "ConfirmationStatus",
     "IntakeStatus",
     "LogOperationType",
+    "ObjectionResolutionType",
     "ObjectionStatus",
     "ProposalStatus",
     "VoteDuration",

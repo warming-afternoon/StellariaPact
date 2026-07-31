@@ -45,6 +45,11 @@ class ModerationEmbedBuilder:
                 ConfirmationStatus.COMPLETED.value: "✅ 确认完成：提案已恢复为讨论中",
                 ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
             },
+            "proposal_objection_removal": {
+                ConfirmationStatus.PENDING.value: "⏳ 流程确认中：移除异议",
+                ConfirmationStatus.COMPLETED.value: "✅ 确认完成：异议已移除",
+                ConfirmationStatus.CANCELED.value: "❌ 操作已取消",
+            },
         }
         color_map = {
             ConfirmationStatus.PENDING.value: discord.Color.yellow(),
@@ -90,6 +95,41 @@ class ModerationEmbedBuilder:
         # 如果存在原因，则显示
         if qo.reason:
             embed.add_field(name="原因", value=qo.reason, inline=False)
+
+        if qo.context in {"proposal_rediscuss", "proposal_objection_removal"}:
+            payload = qo.payload or {}
+            resolution_type = int(payload.get("resolution_type", 1))
+            resolution_label = "恶意违规" if resolution_type == 2 else "正常流程"
+            embed.add_field(name="异议处理类型", value=resolution_label, inline=False)
+
+            if qo.context == "proposal_rediscuss":
+                embed.add_field(
+                    name="处理范围",
+                    value="确认完成时帖子内全部仍在进行中的异议",
+                    inline=False,
+                )
+            else:
+                objection_lines = [
+                    f"- {discord.utils.escape_markdown(str(item.get('text', '未知异议')))[:160]}"
+                    for item in payload.get("objections", [])
+                    if isinstance(item, dict)
+                ]
+                chunks: list[str] = []
+                current = ""
+                for line in objection_lines:
+                    candidate = f"{current}\n{line}".strip()
+                    if current and len(candidate) > 1000:
+                        chunks.append(current)
+                        current = line
+                    else:
+                        current = candidate
+                if current:
+                    chunks.append(current)
+                for index, chunk in enumerate(chunks, start=1):
+                    field_name = (
+                        "所选异议" if index == 1 else f"所选异议（续 {index}）"
+                    )
+                    embed.add_field(name=field_name, value=chunk, inline=False)
 
         return embed
 

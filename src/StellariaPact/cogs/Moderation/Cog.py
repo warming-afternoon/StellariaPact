@@ -11,12 +11,18 @@ from StellariaPact.cogs.Moderation.qo import BuildConfirmationEmbedQo
 from StellariaPact.cogs.Moderation.thread_manager import ProposalThreadManager
 from StellariaPact.cogs.Moderation.views.AbandonReasonModal import AbandonReasonModal
 from StellariaPact.cogs.Moderation.views.ConfirmationView import ConfirmationView
+from StellariaPact.cogs.Moderation.views.MaliciousObjectionHistoryModal import (
+    MaliciousObjectionHistoryModal,
+)
 from StellariaPact.cogs.Moderation.views.ModerationEmbedBuilder import ModerationEmbedBuilder
+from StellariaPact.cogs.Moderation.views.ObjectionRemovalModal import (
+    ObjectionRemovalModal,
+)
 from StellariaPact.cogs.Moderation.views.SelfAbandonReasonModal import SelfAbandonReasonModal
 from StellariaPact.dto import ProposalDto
 from StellariaPact.share import StellariaPactBot, UnitOfWork, safeDefer
 from StellariaPact.share.auth import RoleGuard
-from StellariaPact.share.enums import ProposalStatus
+from StellariaPact.share.enums import ObjectionResolutionType, ProposalStatus
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +34,94 @@ class Moderation(commands.Cog):
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
+        self.remove_objection_ctx = app_commands.ContextMenu(
+            name="提案组移除异议",
+            callback=self.remove_objections_from_message,
+            type=discord.AppCommandType.message,
+        )
+        self.view_malicious_objections_ctx = app_commands.ContextMenu(
+            name="查看恶意违规异议",
+            callback=self.view_malicious_objections_for_user,
+            type=discord.AppCommandType.user,
+        )
 
     def cog_load(self) -> None:
         """在 Cog 被添加到 Bot 后，进行依赖注入和初始化"""
         self.logic: ModerationLogic = ModerationLogic(self.bot)
         self.thread_manager = ProposalThreadManager(self.bot.config)
+        self.bot.tree.add_command(self.remove_objection_ctx)
+        self.bot.tree.add_command(self.view_malicious_objections_ctx)
 
     async def cog_unload(self):
-        pass
+        self.bot.tree.remove_command(
+            self.remove_objection_ctx.name,
+            type=self.remove_objection_ctx.type,
+        )
+        self.bot.tree.remove_command(
+            self.view_malicious_objections_ctx.name,
+            type=self.view_malicious_objections_ctx.type,
+        )
+
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
+    async def remove_objections_from_message(
+        self,
+        interaction: discord.Interaction,
+        message: discord.Message,
+    ) -> None:
+        """在提案帖内打开异议多选移除表单。"""
+        if not isinstance(interaction.channel, discord.Thread) or not interaction.guild:
+            await interaction.response.send_message(
+                "此指令只能在提案帖子内使用。",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            options = await self.logic.get_latest_active_objections(
+                interaction.channel.id
+            )
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+            return
+
+        if not options:
+            await interaction.response.send_message(
+                "当前帖子没有进行中的异议。",
+                ephemeral=True,
+            )
+            return
+
+        modal = ObjectionRemovalModal(self, options)
+        await self.bot.api_scheduler.submit(
+            interaction.response.send_modal(modal),
+            priority=1,
+        )
+
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
+    async def view_malicious_objections_for_user(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+    ) -> None:
+        """查看当前服务器内用户最近的恶意违规异议。"""
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "此指令只能在服务器内使用。",
+                ephemeral=True,
+            )
+            return
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            total, records = await uow.vote_option.get_malicious_objection_summary(
+                guild_id=interaction.guild.id,
+                creator_id=member.id,
+                limit=4,
+            )
+        modal = MaliciousObjectionHistoryModal(member, total, records)
+        await self.bot.api_scheduler.submit(
+            interaction.response.send_modal(modal),
+            priority=1,
+        )
 
     @app_commands.command(
         name="进入执行", description="[议事督导+执行监理] 将讨论中的提案变更为执行中"
@@ -185,10 +271,28 @@ class Moderation(commands.Cog):
         name="重新讨论", description="[议事督导+执行监理] 将任何状态的提案恢复为讨论中"
     )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
-    @app_commands.rename(notify_roles="通知相关方")
-    @app_commands.describe(notify_roles="是否在发起确认时通知督导和监理组 (默认为是)")
+    @app_commands.rename(
+        notify_roles="通知相关方",
+        resolution_type="类型",
+        description="描述",
+    )
+    @app_commands.describe(
+        notify_roles="是否在发起确认时通知督导和监理组 (默认为是)",
+        resolution_type="异议处理类型，默认正常流程",
+        description="异议处理描述（可选，最多 500 字）",
+    )
+    @app_commands.choices(
+        resolution_type=[
+            app_commands.Choice(name="正常流程", value=1),
+            app_commands.Choice(name="恶意违规", value=2),
+        ]
+    )
     async def rediscuss_proposal(
-        self, interaction: discord.Interaction, notify_roles: bool = True
+        self,
+        interaction: discord.Interaction,
+        notify_roles: bool = True,
+        resolution_type: app_commands.Choice[int] | None = None,
+        description: app_commands.Range[str, 1, 500] | None = None,
     ):
         """
         将提案变更为重新讨论中状态。
@@ -197,8 +301,29 @@ class Moderation(commands.Cog):
             interaction (discord.Interaction): 命令交互对象。
             notify_roles (bool): 是否通知相关方，默认为是。
         """
+        selected_type = (
+            resolution_type.value
+            if resolution_type is not None
+            else int(ObjectionResolutionType.NORMAL)
+        )
+
+        async def rediscuss_handler(
+            channel_id: int,
+            guild_id: int,
+            user_id: int,
+            user_role_ids: set[int],
+        ) -> ExecuteProposalResultDto | None:
+            return await self.logic.handle_rediscuss_proposal(
+                channel_id=channel_id,
+                guild_id=guild_id,
+                user_id=user_id,
+                user_role_ids=user_role_ids,
+                resolution_type=selected_type,
+                description=description.strip() if description else None,
+            )
+
         await self._handle_confirmation_command(
-            interaction, self.logic.handle_rediscuss_proposal, notify_roles
+            interaction, rediscuss_handler, notify_roles
         )
 
     # -------------------------
@@ -259,6 +384,8 @@ class Moderation(commands.Cog):
                 confirmed_parties=result_dto.session_dto.confirmed_parties,
                 required_roles=result_dto.session_dto.required_roles,
                 role_display_names=role_display_names,
+                reason=result_dto.session_dto.reason,
+                payload=result_dto.session_dto.payload,
             )
 
             if not self.bot.user:
@@ -332,3 +459,35 @@ class Moderation(commands.Cog):
             )
 
         await self._handle_confirmation_command(interaction, abandon_handler, notify_roles)
+
+    async def _initiate_objection_removal_confirmation(
+        self,
+        *,
+        interaction: discord.Interaction,
+        option_ids: list[int],
+        resolution_type: int,
+        description: str | None,
+    ) -> None:
+        """为右键移除异议操作发起提案组双重确认。"""
+
+        async def removal_handler(
+            channel_id: int,
+            guild_id: int,
+            user_id: int,
+            user_role_ids: set[int],
+        ) -> ExecuteProposalResultDto | None:
+            return await self.logic.handle_remove_objections(
+                channel_id=channel_id,
+                guild_id=guild_id,
+                user_id=user_id,
+                user_role_ids=user_role_ids,
+                option_ids=option_ids,
+                resolution_type=resolution_type,
+                description=description,
+            )
+
+        await self._handle_confirmation_command(
+            interaction,
+            removal_handler,
+            notify_roles=True,
+        )

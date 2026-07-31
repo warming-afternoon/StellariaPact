@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, List
 
 from StellariaPact.share import BaseDto
 
@@ -15,3 +15,4 @@ class CreateConfirmationSessionQo(BaseDto):
     initiator_role_keys: List[str]
     message_id: int | None = None
     reason: str | None = None
+    payload: dict[str, Any] | None = None

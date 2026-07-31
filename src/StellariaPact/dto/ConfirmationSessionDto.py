@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -41,6 +41,12 @@ class ConfirmationSessionDto(BaseDto):
 
     reason: Optional[str] = Field(default=None, description="执行此操作的原因")
     """执行此操作的原因"""
+
+    payload: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="确认完成后执行操作所需的结构化参数",
+    )
+    """确认操作的持久化结构化参数。"""
 
     created_at: datetime = Field(description="创建时间")
     """创建时间"""
