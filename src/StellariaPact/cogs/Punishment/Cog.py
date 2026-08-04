@@ -15,6 +15,9 @@ from StellariaPact.share.auth import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 
 from .logic.PunishmentLogic import PunishmentLogic
+from .views.GlobalProposalPunishmentHistoryModal import (
+    GlobalProposalPunishmentHistoryModal,
+)
 from .views.PunishmentEmbedBuilder import PunishmentEmbedBuilder
 from .views.PunishmentHistoryModal import PunishmentHistoryModal
 from .views.PunishmentModal import PunishmentModal
@@ -57,10 +60,17 @@ class PunishmentCog(commands.Cog):
             type=discord.AppCommandType.message,
         )
 
+        self.query_global_proposal_punishment_ctx = app_commands.ContextMenu(
+            name="查看全局提案处罚",
+            callback=self.query_global_proposal_punishment_user,
+            type=discord.AppCommandType.user,
+        )
+
     def cog_load(self) -> None:
         self.bot.tree.add_command(self.kick_proposal_ctx)
         self.bot.tree.add_command(self.remove_punishment_ctx)
         self.bot.tree.add_command(self.query_punishment_ctx)
+        self.bot.tree.add_command(self.query_global_proposal_punishment_ctx)
         # self.bot.tree.add_command(self.manage_punishment_ctx)
 
     async def cog_unload(self) -> None:
@@ -75,6 +85,10 @@ class PunishmentCog(commands.Cog):
         self.bot.tree.remove_command(
             self.query_punishment_ctx.name,
             type=self.query_punishment_ctx.type,
+        )
+        self.bot.tree.remove_command(
+            self.query_global_proposal_punishment_ctx.name,
+            type=self.query_global_proposal_punishment_ctx.type,
         )
         # self.bot.tree.remove_command(
         #     self.manage_punishment_ctx.name,
@@ -484,6 +498,35 @@ class PunishmentCog(commands.Cog):
                 target_user_id=message.author.id,
             )
             modal = PunishmentHistoryModal(message.author, total, records)
+
+        await self.bot.api_scheduler.submit(
+            interaction.response.send_modal(modal),
+            priority=1,
+        )
+
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor", "stewards")
+    async def query_global_proposal_punishment_user(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+    ) -> None:
+        """查看目标用户在机器人全局范围内的全部提案处罚历史摘要。"""
+        if interaction.guild is None:
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message(
+                    "此指令只能在服务器内使用。",
+                    ephemeral=True,
+                ),
+                priority=1,
+            )
+            return
+
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            total, records = await uow.global_proposal_punishment.get_summary(
+                member.id,
+                limit=4,
+            )
+            modal = GlobalProposalPunishmentHistoryModal(member, total, records)
 
         await self.bot.api_scheduler.submit(
             interaction.response.send_modal(modal),
