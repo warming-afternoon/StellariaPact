@@ -35,6 +35,27 @@ def print_error(message):
     print_color(f"❌ {message}", "91")  # Red
 
 
+def get_current_database_version():
+    """获取当前数据库的 Alembic 版本。"""
+    try:
+        result = subprocess.run(
+            ["alembic", "current"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        return result.stdout.strip()
+    except FileNotFoundError:
+        print_error("错误：'alembic' 命令未找到。")
+        print_error("请确保 Alembic 已通过 uv 安装在项目的开发依赖中。")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print_error("获取当前数据库版本失败。")
+        print(e.stderr)
+        sys.exit(1)
+
+
 def main():
     """执行完整的数据库迁移流程"""
     print_info("=" * 50)
@@ -58,6 +79,14 @@ def main():
         print_error(f"备份数据库时发生错误: {e}")
         sys.exit(1)
 
+    # 迁移前校验并输出当前数据库版本
+    current_version = get_current_database_version()
+    if not current_version:
+        print_error("当前数据库没有 Alembic 版本号，已中断迁移。")
+        print_warning("请人工判断数据库版本，切换到正确版本后重试。")
+        sys.exit(1)
+    print_info(f"当前数据库版本: {current_version}")
+
     # 运行 Alembic 迁移
     print_info("准备执行 Alembic 数据库迁移...")
     print_warning("这将更新数据库结构。请勿中断此过程。")
@@ -77,10 +106,7 @@ def main():
         print_success("数据库迁移成功完成！")
 
         # 输出当前数据库版本
-        current_result = subprocess.run(
-            ["alembic", "current"], check=True, capture_output=True, text=True, encoding="utf-8"
-        )
-        print_info(f"当前数据库版本: {current_result.stdout.strip()}")
+        print_info(f"迁移后数据库版本: {get_current_database_version()}")
     except FileNotFoundError:
         print_error("错误：'alembic' 命令未找到。")
         print_error("请确保 Alembic 已通过 uv 安装在项目的开发依赖中。")
