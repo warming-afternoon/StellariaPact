@@ -50,10 +50,13 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
                     reason="测试",
                     evidence_url=None,
                     evidence_filename=None,
+                    moderator_name="moderator",
+                    moderator_display_name="管理者",
                 )
 
     async def test_apply_punishment_returns_local_expiry_after_commit(self) -> None:
         """创建处罚提交后应返回局部截止时间，不再读取已过期的 ORM 属性。"""
+
         class ExpiringPunishment:
             """模拟提交后禁止读取属性的 ORM 实体。"""
 
@@ -67,6 +70,7 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
                 return None
 
         punishment = ExpiringPunishment()
+        punishment.id = 77
         captured_expiry = None
 
         async def create_punishment(**kwargs):
@@ -83,6 +87,7 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
             global_proposal_punishment=SimpleNamespace(
                 create_punishment=AsyncMock(side_effect=create_punishment)
             ),
+            operation_log=SimpleNamespace(log_operation=AsyncMock()),
             commit=AsyncMock(side_effect=commit),
         )
         logic = PunishmentLogic(SimpleNamespace(db_handler=object()))  # type: ignore
@@ -100,10 +105,13 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
                 reason="测试处罚",
                 evidence_url=None,
                 evidence_filename=None,
+                moderator_name="moderator",
+                moderator_display_name="管理者",
             )
 
-        self.assertEqual(result, captured_expiry)
+        self.assertEqual(result, (77, captured_expiry))
         uow.commit.assert_awaited_once()
+        uow.operation_log.log_operation.assert_awaited_once()
 
     async def test_cache_loader_converts_orm_records_inside_unit_of_work(self) -> None:
         """启动缓存加载应在会话关闭前把 ORM 记录转换成普通元组。"""
@@ -135,9 +143,7 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self):
                 self.closed = False
                 self.global_proposal_punishment = SimpleNamespace(
-                    get_active_by_type=AsyncMock(
-                        return_value=[SessionBoundPunishment(self)]
-                    )
+                    get_active_by_type=AsyncMock(return_value=[SessionBoundPunishment(self)])
                 )
 
             async def __aenter__(self):
@@ -191,19 +197,13 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
             ),
             add=Mock(),
         )
-        punishment_repository = SimpleNamespace(
-            is_restricted=AsyncMock(return_value=True)
-        )
+        punishment_repository = SimpleNamespace(is_restricted=AsyncMock(return_value=True))
         uow = SimpleNamespace(
-            intake=SimpleNamespace(
-                get_intake_by_voting_message_id=AsyncMock(return_value=intake)
-            ),
+            intake=SimpleNamespace(get_intake_by_voting_message_id=AsyncMock(return_value=intake)),
             session=session,
             global_proposal_punishment=punishment_repository,
         )
-        service = IntakeVoteService(
-            SimpleNamespace(), SimpleNamespace(), SimpleNamespace()
-        )  # type: ignore
+        service = IntakeVoteService(SimpleNamespace(), SimpleNamespace(), SimpleNamespace())  # type: ignore
 
         with self.assertRaisesRegex(PermissionError, "无法新增草案支持票"):
             await service.handle_support_toggle(uow, user_id=10, message_id=20)  # type: ignore
@@ -234,12 +234,11 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
             )
 
         interaction.followup.send.assert_awaited_once()
-        self.assertIn(
-            "无法创建异议", interaction.followup.send.await_args.args[0]
-        )
+        self.assertIn("无法创建异议", interaction.followup.send.await_args.args[0])
 
     async def test_global_punishment_deletes_messages_only_in_proposal_threads(self) -> None:
         """全局发言限制只删除正式提案讨论帖消息，不影响其他帖子。"""
+
         class FakeThread:
             def __init__(self, thread_id: int):
                 self.id = thread_id
@@ -247,9 +246,7 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
         listener = object.__new__(PunishmentListener)
         listener.bot = SimpleNamespace(db_handler=object())
         listener.active_mutes = {}
-        listener.active_proposal_violations = {
-            10: datetime.now(timezone.utc) + timedelta(days=1)
-        }
+        listener.active_proposal_violations = {10: datetime.now(timezone.utc) + timedelta(days=1)}
         message = SimpleNamespace(
             author=SimpleNamespace(id=10, bot=False),
             channel=FakeThread(30),

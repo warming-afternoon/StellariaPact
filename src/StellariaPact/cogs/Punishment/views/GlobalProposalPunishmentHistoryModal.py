@@ -41,9 +41,7 @@ class GlobalProposalPunishmentHistoryModal(discord.ui.Modal):
 
         # Discord Modal 最多容纳五个顶层组件：一条摘要和最近四条记录。
         for index, record in enumerate(records[:4], start=1):
-            self.add_item(
-                discord.ui.TextDisplay(self._format_record(index, record, current_time))
-            )
+            self.add_item(discord.ui.TextDisplay(self._format_record(index, record, current_time)))
 
     @classmethod
     def _format_record(
@@ -57,17 +55,18 @@ class GlobalProposalPunishmentHistoryModal(discord.ui.Modal):
         status = cls._get_status(record, now)
         reason = discord.utils.escape_markdown(record.reason)
         created_at = cls._format_time(record.created_at)
-        expires_at = (
-            cls._format_time(record.expires_at) if record.expires_at else "永久有效"
-        )
-        source_link = (
-            f"[查看来源频道](https://discord.com/channels/"
-            f"{record.origin_guild_id}/{record.origin_channel_id})"
-        )
-        evidence_link = (
-            f" · [查看处罚依据]({record.evidence_url})" if record.evidence_url else ""
-        )
-
+        expires_at = cls._format_time(record.expires_at) if record.expires_at else "永久有效"
+        if record.punishment_message_id is not None:
+            punishment_link = (
+                f"[查看处罚公示](https://discord.com/channels/"
+                f"{record.origin_guild_id}/{record.origin_channel_id}/"
+                f"{record.punishment_message_id})"
+            )
+        else:
+            punishment_link = (
+                f"[查看来源频道](https://discord.com/channels/"
+                f"{record.origin_guild_id}/{record.origin_channel_id})"
+            )
         lines = [
             f"### {index}. {type_label} · {status}",
             f"**处罚理由：** {reason}",
@@ -75,22 +74,33 @@ class GlobalProposalPunishmentHistoryModal(discord.ui.Modal):
             f"**生效时间：** {created_at}",
             f"**截止时间：** {expires_at}",
         ]
-        if record.lifted_at:
+        if record.lifted_at and record.lift_reason != "处罚自然到期后归档":
             lift_reason = discord.utils.escape_markdown(record.lift_reason or "未填写")
-            lifted_by = (
-                f"<@{record.lifted_by_id}>" if record.lifted_by_id is not None else "未知"
-            )
+            lifted_by = f"<@{record.lifted_by_id}>" if record.lifted_by_id is not None else "未知"
             lines.append(
                 f"**解除/覆盖：** {lifted_by} 于 {cls._format_time(record.lifted_at)}"
                 f"（{lift_reason}）"
             )
-        lines.append(f"{source_link}{evidence_link}")
+        links = [punishment_link]
+        if (
+            record.resolution_guild_id is not None
+            and record.resolution_channel_id is not None
+            and record.resolution_message_id is not None
+        ):
+            links.append(
+                f"[查看解除公示](https://discord.com/channels/"
+                f"{record.resolution_guild_id}/{record.resolution_channel_id}/"
+                f"{record.resolution_message_id})"
+            )
+        lines.append(" · ".join(links))
         return "\n".join(lines)
 
     @staticmethod
     def _get_status(record: GlobalProposalPunishment, now: datetime) -> str:
         """根据解除、覆盖和到期字段实时计算处罚状态。"""
         if record.lifted_at is not None:
+            if record.lift_reason == "处罚自然到期后归档":
+                return "已到期"
             return "已覆盖" if "覆盖" in (record.lift_reason or "") else "已解除"
         if record.expires_at is not None and record.expires_at <= now:
             return "已到期"

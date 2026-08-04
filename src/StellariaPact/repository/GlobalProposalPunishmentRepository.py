@@ -73,9 +73,7 @@ class GlobalProposalPunishmentRepository:
         return False
 
     async def is_proposal_violation_restricted(self, target_user_id: int) -> bool:
-        return await self.get_active(
-            target_user_id, PunishmentType.PROPOSAL_VIOLATION
-        ) is not None
+        return await self.get_active(target_user_id, PunishmentType.PROPOSAL_VIOLATION) is not None
 
     async def create_punishment(
         self,
@@ -89,19 +87,18 @@ class GlobalProposalPunishmentRepository:
         expires_at: datetime | None = None,
         evidence_url: str | None = None,
         evidence_filename: str | None = None,
-        replace_existing: bool = False,
     ) -> GlobalProposalPunishment:
         type_value = str(punishment_type)
         unresolved = await self.get_unresolved(target_user_id, type_value)
         if unresolved is not None:
-            if not replace_existing:
+            now = datetime.now(timezone.utc)
+            if unresolved.expires_at is None or unresolved.expires_at > now:
                 raise GlobalProposalPunishmentAlreadyActiveError(
                     f"用户 {target_user_id} 已存在有效的同类型处罚。"
                 )
-            now = datetime.now(timezone.utc)
-            unresolved.lifted_by_id = moderator_id
-            unresolved.lift_reason = "被新的同类型处罚覆盖"
-            unresolved.lifted_at = now
+            unresolved.lifted_by_id = None
+            unresolved.lift_reason = "处罚自然到期后归档"
+            unresolved.lifted_at = unresolved.expires_at
             self.session.add(unresolved)
             await self.session.flush()
 
@@ -144,6 +141,41 @@ class GlobalProposalPunishmentRepository:
         self.session.add(punishment)
         await self.session.flush()
         return punishment
+
+    async def set_punishment_message_id(
+        self,
+        punishment_id: int,
+        message_id: int,
+    ) -> None:
+        """保存原始处罚公示消息 ID。"""
+        punishment = await self.session.get(GlobalProposalPunishment, punishment_id)
+        if punishment is None:
+            raise GlobalProposalPunishmentNotFoundError(
+                f"找不到全局提案处罚记录 {punishment_id}。"
+            )
+        punishment.punishment_message_id = message_id
+        self.session.add(punishment)
+        await self.session.flush()
+
+    async def set_resolution_message(
+        self,
+        punishment_id: int,
+        *,
+        guild_id: int,
+        channel_id: int,
+        message_id: int,
+    ) -> None:
+        """保存解除公示消息的完整 Discord 位置。"""
+        punishment = await self.session.get(GlobalProposalPunishment, punishment_id)
+        if punishment is None:
+            raise GlobalProposalPunishmentNotFoundError(
+                f"找不到全局提案处罚记录 {punishment_id}。"
+            )
+        punishment.resolution_guild_id = guild_id
+        punishment.resolution_channel_id = channel_id
+        punishment.resolution_message_id = message_id
+        self.session.add(punishment)
+        await self.session.flush()
 
     async def get_active_by_type(
         self,

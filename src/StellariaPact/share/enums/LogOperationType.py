@@ -9,3 +9,6 @@ class LogOperationType(IntEnum):
 
     INTAKE = 2
     """草案操作"""
+
+    PUNISHMENT = 3
+    """全局提案处罚操作"""

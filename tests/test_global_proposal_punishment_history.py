@@ -59,12 +59,15 @@ class GlobalProposalPunishmentSummaryRepositoryTests(unittest.IsolatedAsyncioTes
             )
 
         self.assertEqual(total, 6)
-        self.assertEqual([record.reason for record in records], [
-            "目标记录 5",
-            "目标记录 4",
-            "目标记录 3",
-            "目标记录 2",
-        ])
+        self.assertEqual(
+            [record.reason for record in records],
+            [
+                "目标记录 5",
+                "目标记录 4",
+                "目标记录 3",
+                "目标记录 2",
+            ],
+        )
 
     @staticmethod
     def _build_record(
@@ -114,12 +117,13 @@ class GlobalProposalPunishmentHistoryModalTests(unittest.IsolatedAsyncioTestCase
         self.assertIsInstance(modal.children[0], discord.ui.TextDisplay)
         self.assertIn("暂无全局提案处罚记录", modal.children[0].content)
 
-    async def test_modal_displays_all_statuses_links_and_escaped_reasons(self) -> None:
-        """四条详情应覆盖全部状态，并正确展示链接及转义用户输入。"""
+    async def test_modal_displays_all_statuses_source_links_and_escaped_reasons(self) -> None:
+        """四条详情应覆盖全部状态，并仅展示来源链接及转义后的用户输入。"""
         records = [
             self._build_record(
                 punishment_type=PunishmentType.PERMANENT_VOTING,
                 reason="永久 *理由*",
+                punishment_message_id=50,
             ),
             self._build_record(
                 punishment_type=PunishmentType.PROPOSAL_VIOLATION,
@@ -133,6 +137,10 @@ class GlobalProposalPunishmentHistoryModalTests(unittest.IsolatedAsyncioTestCase
                 lifted_at=self.now - timedelta(hours=1),
                 lift_reason="复核后 _解除_",
                 lifted_by_id=22,
+                punishment_message_id=51,
+                resolution_guild_id=31,
+                resolution_channel_id=41,
+                resolution_message_id=61,
             ),
             self._build_record(
                 punishment_type=PunishmentType.PROPOSAL_VIOLATION,
@@ -163,7 +171,13 @@ class GlobalProposalPunishmentHistoryModalTests(unittest.IsolatedAsyncioTestCase
         self.assertIn(r"永久 \*理由\*", details)
         self.assertIn(r"复核后 \_解除\_", details)
         self.assertIn("https://discord.com/channels/30/40", details)
-        self.assertIn("https://example.com/evidence.png", details)
+        self.assertIn("https://discord.com/channels/30/40/50", details)
+        self.assertIn("https://discord.com/channels/31/41/61", details)
+        self.assertIn("查看处罚公示", details)
+        self.assertIn("查看解除公示", details)
+        self.assertIn("查看来源频道", details)
+        self.assertNotIn("查看处罚依据", details)
+        self.assertNotIn("https://example.com/evidence.png", details)
 
     def _build_record(
         self,
@@ -175,6 +189,10 @@ class GlobalProposalPunishmentHistoryModalTests(unittest.IsolatedAsyncioTestCase
         lift_reason: str | None = None,
         lifted_by_id: int | None = None,
         evidence_url: str | None = None,
+        punishment_message_id: int | None = None,
+        resolution_guild_id: int | None = None,
+        resolution_channel_id: int | None = None,
+        resolution_message_id: int | None = None,
     ) -> GlobalProposalPunishment:
         """按指定状态字段构造一条可展示的全局处罚记录。"""
         return GlobalProposalPunishment(
@@ -190,7 +208,32 @@ class GlobalProposalPunishmentHistoryModalTests(unittest.IsolatedAsyncioTestCase
             lifted_at=lifted_at,
             lift_reason=lift_reason,
             lifted_by_id=lifted_by_id,
+            punishment_message_id=punishment_message_id,
+            resolution_guild_id=resolution_guild_id,
+            resolution_channel_id=resolution_channel_id,
+            resolution_message_id=resolution_message_id,
         )
+
+    async def test_naturally_archived_record_stays_expired(self) -> None:
+        """自然到期归档只用于释放唯一索引，历史状态仍应显示已到期。"""
+        record = self._build_record(
+            punishment_type=PunishmentType.PROPOSAL_VIOLATION,
+            reason="已到期处罚",
+            expires_at=self.now - timedelta(days=1),
+            lifted_at=self.now - timedelta(days=1),
+            lift_reason="处罚自然到期后归档",
+        )
+
+        modal = GlobalProposalPunishmentHistoryModal(
+            self.target,  # type: ignore[arg-type]
+            1,
+            [record],
+            now=self.now,
+        )
+
+        self.assertIn("已到期", modal.children[1].content)
+        self.assertNotIn("已解除", modal.children[1].content)
+        self.assertNotIn("解除/覆盖", modal.children[1].content)
 
 
 class GlobalProposalPunishmentContextMenuTests(unittest.IsolatedAsyncioTestCase):

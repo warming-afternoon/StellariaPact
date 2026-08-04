@@ -131,7 +131,7 @@ class PunishmentCog(commands.Cog):
             return
 
         try:
-            await self.logic.apply_global_voting_restriction(
+            punishment_id = await self.logic.apply_global_voting_restriction(
                 target_user_id=target_user.id,
                 moderator_id=moderator.id,
                 origin_guild_id=guild.id,
@@ -139,6 +139,8 @@ class PunishmentCog(commands.Cog):
                 reason=reason.strip(),
                 evidence_url=evidence.url if evidence else None,
                 evidence_filename=evidence.filename if evidence else None,
+                moderator_name=moderator.name,
+                moderator_display_name=moderator.display_name,
             )
         except GlobalProposalPunishmentAlreadyActiveError:
             await interaction.followup.send(
@@ -158,9 +160,16 @@ class PunishmentCog(commands.Cog):
             origin_guild_name=guild.name,
             evidence_url=evidence.url if evidence else None,
         )
-        public_sent, dm_sent = await self._send_global_restriction_notifications(
-            interaction, target_user, embed
-        )
+        (
+            public_sent,
+            dm_sent,
+            public_message_id,
+        ) = await self._send_global_restriction_notifications(interaction, target_user, embed)
+        if public_message_id is not None:
+            await self._try_set_punishment_message_id(
+                punishment_id,
+                public_message_id,
+            )
         await interaction.followup.send(
             self._build_delivery_summary(
                 f"已永久剥夺 {target_user.mention} 的投票资格。",
@@ -195,10 +204,14 @@ class PunishmentCog(commands.Cog):
             return
 
         try:
-            original_created_at = await self.logic.lift_global_voting_restriction(
+            punishment_id, original_created_at = await self.logic.lift_global_voting_restriction(
                 target_user_id=target_user.id,
                 lifted_by_id=moderator.id,
                 lift_reason=reason.strip(),
+                moderator_name=moderator.name,
+                moderator_display_name=moderator.display_name,
+                guild_id=guild.id,
+                channel_id=interaction.channel_id,
             )
         except GlobalProposalPunishmentNotFoundError:
             await interaction.followup.send(
@@ -218,9 +231,18 @@ class PunishmentCog(commands.Cog):
             origin_guild_name=guild.name,
             original_created_at=original_created_at,
         )
-        public_sent, dm_sent = await self._send_global_restriction_notifications(
-            interaction, target_user, embed
-        )
+        (
+            public_sent,
+            dm_sent,
+            public_message_id,
+        ) = await self._send_global_restriction_notifications(interaction, target_user, embed)
+        if public_message_id is not None and interaction.channel_id is not None:
+            await self._try_set_resolution_message(
+                punishment_id,
+                guild_id=guild.id,
+                channel_id=interaction.channel_id,
+                message_id=public_message_id,
+            )
         await interaction.followup.send(
             self._build_delivery_summary(
                 f"已恢复 {target_user.mention} 的投票资格。",
@@ -278,7 +300,7 @@ class PunishmentCog(commands.Cog):
             return
 
         try:
-            expires_at = await self.logic.apply_proposal_violation_punishment(
+            punishment_id, expires_at = await self.logic.apply_proposal_violation_punishment(
                 target_user_id=target_user.id,
                 moderator_id=moderator.id,
                 origin_guild_id=guild.id,
@@ -287,15 +309,21 @@ class PunishmentCog(commands.Cog):
                 reason=reason.strip(),
                 evidence_url=evidence.url if evidence else None,
                 evidence_filename=evidence.filename if evidence else None,
+                moderator_name=moderator.name,
+                moderator_display_name=moderator.display_name,
             )
+        except GlobalProposalPunishmentAlreadyActiveError:
+            await interaction.followup.send(
+                f"用户 {target_user.mention} 已有正在生效的提案违规处罚，需解除后重新处罚。",
+                ephemeral=True,
+            )
+            return
         except Exception as exc:
             logger.error("创建全局提案违规处罚失败: %s", exc, exc_info=True)
             await interaction.followup.send("处理请求时发生错误，请联系技术人员。", ephemeral=True)
             return
 
-        self.bot.dispatch(
-            "proposal_violation_punishment_updated", target_user.id, expires_at
-        )
+        self.bot.dispatch("proposal_violation_punishment_updated", target_user.id, expires_at)
         embed = PunishmentEmbedBuilder.create_proposal_violation_embed(
             moderator=moderator,
             target_user=target_user,
@@ -305,9 +333,16 @@ class PunishmentCog(commands.Cog):
             expires_at=expires_at,
             evidence_url=evidence.url if evidence else None,
         )
-        public_sent, dm_sent = await self._send_global_restriction_notifications(
-            interaction, target_user, embed
-        )
+        (
+            public_sent,
+            dm_sent,
+            public_message_id,
+        ) = await self._send_global_restriction_notifications(interaction, target_user, embed)
+        if public_message_id is not None:
+            await self._try_set_punishment_message_id(
+                punishment_id,
+                public_message_id,
+            )
         await interaction.followup.send(
             self._build_delivery_summary(
                 f"已对 {target_user.mention} 执行 {days} 天提案违规处罚。",
@@ -341,10 +376,18 @@ class PunishmentCog(commands.Cog):
             return
 
         try:
-            created_at, expires_at = await self.logic.lift_proposal_violation_punishment(
+            (
+                punishment_id,
+                created_at,
+                expires_at,
+            ) = await self.logic.lift_proposal_violation_punishment(
                 target_user_id=target_user.id,
                 lifted_by_id=moderator.id,
                 lift_reason=reason.strip(),
+                moderator_name=moderator.name,
+                moderator_display_name=moderator.display_name,
+                guild_id=guild.id,
+                channel_id=interaction.channel_id,
             )
         except GlobalProposalPunishmentNotFoundError:
             await interaction.followup.send(
@@ -366,9 +409,18 @@ class PunishmentCog(commands.Cog):
             original_created_at=created_at,
             original_expires_at=expires_at,
         )
-        public_sent, dm_sent = await self._send_global_restriction_notifications(
-            interaction, target_user, embed
-        )
+        (
+            public_sent,
+            dm_sent,
+            public_message_id,
+        ) = await self._send_global_restriction_notifications(interaction, target_user, embed)
+        if public_message_id is not None and interaction.channel_id is not None:
+            await self._try_set_resolution_message(
+                punishment_id,
+                guild_id=guild.id,
+                channel_id=interaction.channel_id,
+                message_id=public_message_id,
+            )
         await interaction.followup.send(
             self._build_delivery_summary(
                 f"已提前解除 {target_user.mention} 的提案违规处罚。",
@@ -406,15 +458,20 @@ class PunishmentCog(commands.Cog):
         interaction: discord.Interaction,
         target_user: discord.Member,
         embed: discord.Embed,
-    ) -> tuple[bool, bool]:
+    ) -> tuple[bool, bool, int | None]:
         public_sent = False
         dm_sent = False
+        public_message_id = None
 
         channel = interaction.channel
         if channel is not None:
             try:
-                await self.bot.api_scheduler.submit(channel.send(embed=embed), priority=5)
+                public_message = await self.bot.api_scheduler.submit(
+                    channel.send(embed=embed),
+                    priority=5,
+                )
                 public_sent = True
+                public_message_id = getattr(public_message, "id", None)
             except Exception as exc:
                 logger.warning("发送全局投票资格限制公示失败: %s", exc, exc_info=True)
 
@@ -424,7 +481,47 @@ class PunishmentCog(commands.Cog):
         except Exception as exc:
             logger.warning("向用户 %s 发送处罚私信失败: %s", target_user.id, exc)
 
-        return public_sent, dm_sent
+        return public_sent, dm_sent, public_message_id
+
+    async def _try_set_punishment_message_id(
+        self,
+        punishment_id: int,
+        message_id: int,
+    ) -> None:
+        """尽力保存处罚公示消息 ID，不影响已完成的处罚和公示。"""
+        try:
+            await self.logic.set_punishment_message_id(punishment_id, message_id)
+        except Exception as exc:
+            logger.error(
+                "保存全局处罚 %s 的公示消息 ID 失败: %s",
+                punishment_id,
+                exc,
+                exc_info=True,
+            )
+
+    async def _try_set_resolution_message(
+        self,
+        punishment_id: int,
+        *,
+        guild_id: int,
+        channel_id: int,
+        message_id: int,
+    ) -> None:
+        """尽力保存解除公示位置，不影响已完成的解除和公示。"""
+        try:
+            await self.logic.set_resolution_message(
+                punishment_id,
+                guild_id=guild_id,
+                channel_id=channel_id,
+                message_id=message_id,
+            )
+        except Exception as exc:
+            logger.error(
+                "保存全局处罚 %s 的解除公示位置失败: %s",
+                punishment_id,
+                exc,
+                exc_info=True,
+            )
 
     @staticmethod
     def _build_delivery_summary(
