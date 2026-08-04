@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Iterable
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -172,3 +172,26 @@ class GlobalProposalPunishmentRepository:
             )
         )
         return list((await self.session.exec(statement)).all())
+
+    async def get_summary(
+        self,
+        target_user_id: int,
+        *,
+        limit: int = 4,
+    ) -> tuple[int, list[GlobalProposalPunishment]]:
+        """统计目标用户的全部处罚历史，并返回最近的指定条数。"""
+        user_filter = GlobalProposalPunishment.target_user_id == target_user_id
+        count_statement = select(func.count(GlobalProposalPunishment.id)).where(user_filter)
+        total = (await self.session.exec(count_statement)).one()
+
+        records_statement = (
+            select(GlobalProposalPunishment)
+            .where(user_filter)
+            .order_by(
+                GlobalProposalPunishment.created_at.desc(),
+                GlobalProposalPunishment.id.desc(),  # type: ignore[union-attr]
+            )
+            .limit(limit)
+        )
+        records = list((await self.session.exec(records_statement)).all())
+        return total, records
