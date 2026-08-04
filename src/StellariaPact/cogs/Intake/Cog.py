@@ -7,14 +7,11 @@ import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.Intake.listeners.IntakeEventListener import \
-    IntakeEventListenerCog
-from StellariaPact.cogs.Intake.views.IntakeEditReviewModal import \
-    IntakeEditReviewModal
+from StellariaPact.cogs.Intake.listeners.IntakeEventListener import IntakeEventListenerCog
+from StellariaPact.cogs.Intake.views.IntakeEditReviewModal import IntakeEditReviewModal
 from StellariaPact.cogs.Intake.views.IntakeReviewModal import IntakeReviewModal
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
-from StellariaPact.cogs.Intake.views.IntakeSubmissionView import \
-    IntakeSubmissionView
+from StellariaPact.cogs.Intake.views.IntakeSubmissionView import IntakeSubmissionView
 from StellariaPact.cogs.Intake.views.IntakeSupportView import IntakeSupportView
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share.auth.RoleGuard import RoleGuard
@@ -53,6 +50,12 @@ class IntakeCog(commands.Cog):
         """
         使用指令直接弹出提案提交流程的表单。
         """
+        if await self.logic.is_submission_restricted(interaction.user.id):
+            await interaction.response.send_message(
+                "你当前受到提案违规处罚，无法创建或提交提案草案。",
+                ephemeral=True,
+            )
+            return
         allowed, message = await self.logic.check_submission_limit(interaction.guild_id or 0)
         if not allowed:
             await interaction.response.send_message(message, ephemeral=True)
@@ -129,7 +132,10 @@ class IntakeCog(commands.Cog):
                 )
                 return
 
-            if intake.status not in (IntakeStatus.PENDING_REVIEW, IntakeStatus.MODIFICATION_REQUIRED):
+            if intake.status not in (
+                IntakeStatus.PENDING_REVIEW,
+                IntakeStatus.MODIFICATION_REQUIRED,
+            ):
                 await interaction.response.send_message(
                     "❌ 该草案当前不在可被拒绝的状态（可能已通过或已关闭）。", ephemeral=True
                 )

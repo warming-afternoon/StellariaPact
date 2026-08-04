@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import discord
 
@@ -7,6 +7,7 @@ from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto.UserActivityDto import UserActivityDto
 from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.share import StellariaPactBot, UnitOfWork
+from StellariaPact.share.enums import PunishmentType
 
 from ..views.PunishmentEmbedBuilder import PunishmentEmbedBuilder
 
@@ -79,11 +80,12 @@ class PunishmentLogic:
     ) -> None:
         """永久剥夺用户在本机器人范围内的投票资格。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.global_voting_restriction.create_restriction(
+            await uow.global_proposal_punishment.create_punishment(
                 target_user_id=target_user_id,
                 moderator_id=moderator_id,
                 origin_guild_id=origin_guild_id,
                 origin_channel_id=origin_channel_id,
+                punishment_type=PunishmentType.PERMANENT_VOTING,
                 reason=reason,
                 evidence_url=evidence_url,
                 evidence_filename=evidence_filename,
@@ -99,14 +101,68 @@ class PunishmentLogic:
     ) -> datetime:
         """解除用户的机器人全局投票资格限制。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            restriction = await uow.global_voting_restriction.lift_restriction(
+            restriction = await uow.global_proposal_punishment.lift_punishment(
                 target_user_id=target_user_id,
+                punishment_type=PunishmentType.PERMANENT_VOTING,
                 lifted_by_id=lifted_by_id,
                 lift_reason=lift_reason,
             )
             original_created_at = restriction.created_at
             await uow.commit()
             return original_created_at
+
+    async def apply_proposal_violation_punishment(
+        self,
+        *,
+        target_user_id: int,
+        moderator_id: int,
+        origin_guild_id: int,
+        origin_channel_id: int,
+        days: int,
+        reason: str,
+        evidence_url: str | None,
+        evidence_filename: str | None,
+    ) -> datetime:
+        """创建或覆盖用户的机器人全局提案违规处罚。"""
+        if not 1 <= days <= 30:
+            raise ValueError("提案违规处罚天数必须在 1 至 30 天之间。")
+        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.global_proposal_punishment.create_punishment(
+                target_user_id=target_user_id,
+                moderator_id=moderator_id,
+                origin_guild_id=origin_guild_id,
+                origin_channel_id=origin_channel_id,
+                punishment_type=PunishmentType.PROPOSAL_VIOLATION,
+                reason=reason,
+                expires_at=expires_at,
+                evidence_url=evidence_url,
+                evidence_filename=evidence_filename,
+                replace_existing=True,
+            )
+            await uow.commit()
+            return expires_at
+
+    async def lift_proposal_violation_punishment(
+        self,
+        *,
+        target_user_id: int,
+        lifted_by_id: int,
+        lift_reason: str,
+    ) -> tuple[datetime, datetime]:
+        """提前解除用户的机器人全局提案违规处罚。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            punishment = await uow.global_proposal_punishment.lift_punishment(
+                target_user_id=target_user_id,
+                punishment_type=PunishmentType.PROPOSAL_VIOLATION,
+                lifted_by_id=lifted_by_id,
+                lift_reason=lift_reason,
+            )
+            if punishment.expires_at is None:
+                raise ValueError("提案违规处罚缺少截止时间。")
+            result = (punishment.created_at, punishment.expires_at)
+            await uow.commit()
+            return result
 
     async def handle_remove_punishment(
         self,

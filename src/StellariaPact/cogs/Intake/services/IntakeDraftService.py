@@ -7,8 +7,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import \
-    IntakeEmbedBuilder
+from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import IntakeEmbedBuilder
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.ProposalIntake import ProposalIntake
@@ -18,10 +17,8 @@ from StellariaPact.share.enums.LogOperationType import LogOperationType
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import \
-        IntakeSubmissionDto
-    from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import \
-        IntakeDiscordHelper
+    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import IntakeSubmissionDto
+    from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import IntakeDiscordHelper
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
@@ -117,6 +114,12 @@ class IntakeDraftService:
         operator_display_name: str = "",
     ) -> ProposalIntakeDto:
         """草案提交"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            if await uow.global_proposal_punishment.is_proposal_violation_restricted(
+                dto.author_id
+            ):
+                raise PermissionError("你当前受到提案违规处罚，无法创建或提交提案草案。")
+
         allowed, message = await self.check_submission_limit(dto.guild_id)
         if not allowed:
             raise PermissionError(message)

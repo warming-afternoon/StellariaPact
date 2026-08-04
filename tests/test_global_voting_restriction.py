@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -13,11 +13,16 @@ from StellariaPact.cogs.Voting.qo import DeleteVoteQo
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
 from StellariaPact.qo.user_vote import RecordVoteQo
-from StellariaPact.repository.GlobalVotingRestrictionRepository import (
-    GlobalVotingRestrictionAlreadyActiveError,
-    GlobalVotingRestrictionNotFoundError,
-    GlobalVotingRestrictionRepository,
+from StellariaPact.repository.GlobalProposalPunishmentAlreadyActiveError import (
+    GlobalProposalPunishmentAlreadyActiveError,
 )
+from StellariaPact.repository.GlobalProposalPunishmentNotFoundError import (
+    GlobalProposalPunishmentNotFoundError,
+)
+from StellariaPact.repository.GlobalProposalPunishmentRepository import (
+    GlobalProposalPunishmentRepository,
+)
+from StellariaPact.share.enums import PunishmentType
 
 
 class _FakeUnitOfWork:
@@ -31,7 +36,7 @@ class _FakeUnitOfWork:
         return False
 
 
-class GlobalVotingRestrictionRepositoryTests(unittest.IsolatedAsyncioTestCase):
+class GlobalProposalPunishmentRepositoryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         async with self.engine.begin() as connection:
@@ -42,12 +47,13 @@ class GlobalVotingRestrictionRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_restriction_lifecycle_preserves_history(self) -> None:
         async with AsyncSession(self.engine) as session:
-            repository = GlobalVotingRestrictionRepository(session)
-            first = await repository.create_restriction(
+            repository = GlobalProposalPunishmentRepository(session)
+            first = await repository.create_punishment(
                 target_user_id=10,
                 moderator_id=20,
                 origin_guild_id=30,
                 origin_channel_id=40,
+                punishment_type=PunishmentType.PERMANENT_VOTING,
                 reason="首次处罚",
                 evidence_url="https://example.com/evidence.png",
                 evidence_filename="evidence.png",
@@ -55,19 +61,24 @@ class GlobalVotingRestrictionRepositoryTests(unittest.IsolatedAsyncioTestCase):
             await session.commit()
 
             self.assertTrue(await repository.is_restricted(10))
-            self.assertEqual((await repository.get_active(10)).id, first.id)  # type: ignore
+            self.assertEqual(
+                (await repository.get_active(10, PunishmentType.PERMANENT_VOTING)).id,
+                first.id,
+            )  # type: ignore
 
-            with self.assertRaises(GlobalVotingRestrictionAlreadyActiveError):
-                await repository.create_restriction(
+            with self.assertRaises(GlobalProposalPunishmentAlreadyActiveError):
+                await repository.create_punishment(
                     target_user_id=10,
                     moderator_id=21,
                     origin_guild_id=31,
                     origin_channel_id=41,
+                    punishment_type=PunishmentType.PERMANENT_VOTING,
                     reason="重复处罚",
                 )
 
-            lifted = await repository.lift_restriction(
+            lifted = await repository.lift_punishment(
                 target_user_id=10,
+                punishment_type=PunishmentType.PERMANENT_VOTING,
                 lifted_by_id=22,
                 lift_reason="复核后解除",
             )
@@ -75,11 +86,12 @@ class GlobalVotingRestrictionRepositoryTests(unittest.IsolatedAsyncioTestCase):
             await session.commit()
             self.assertFalse(await repository.is_restricted(10))
 
-            second = await repository.create_restriction(
+            second = await repository.create_punishment(
                 target_user_id=10,
                 moderator_id=23,
                 origin_guild_id=99,
                 origin_channel_id=98,
+                punishment_type=PunishmentType.PERMANENT_VOTING,
                 reason="再次处罚",
             )
             await session.commit()
@@ -91,13 +103,56 @@ class GlobalVotingRestrictionRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_lifting_missing_restriction_fails(self) -> None:
         async with AsyncSession(self.engine) as session:
-            repository = GlobalVotingRestrictionRepository(session)
-            with self.assertRaises(GlobalVotingRestrictionNotFoundError):
-                await repository.lift_restriction(
+            repository = GlobalProposalPunishmentRepository(session)
+            with self.assertRaises(GlobalProposalPunishmentNotFoundError):
+                await repository.lift_punishment(
                     target_user_id=10,
+                    punishment_type=PunishmentType.PERMANENT_VOTING,
                     lifted_by_id=20,
                     lift_reason="无有效处罚",
                 )
+
+    async def test_temporary_punishment_expires_and_can_be_replaced(self) -> None:
+        """限时处罚应按截止时间失效，并允许新处罚覆盖旧记录且保留历史。"""
+        async with AsyncSession(self.engine) as session:
+            repository = GlobalProposalPunishmentRepository(session)
+            expired = await repository.create_punishment(
+                target_user_id=10,
+                moderator_id=20,
+                origin_guild_id=30,
+                origin_channel_id=40,
+                punishment_type=PunishmentType.PROPOSAL_VIOLATION,
+                reason="已过期处罚",
+                expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+            )
+            await session.commit()
+            self.assertFalse(
+                await repository.is_proposal_violation_restricted(10)
+            )
+
+            replacement = await repository.create_punishment(
+                target_user_id=10,
+                moderator_id=21,
+                origin_guild_id=30,
+                origin_channel_id=40,
+                punishment_type=PunishmentType.PROPOSAL_VIOLATION,
+                reason="新处罚",
+                expires_at=datetime.now(timezone.utc) + timedelta(days=3),
+                replace_existing=True,
+            )
+            expired_was_lifted = expired.lifted_at is not None
+            await session.commit()
+
+            self.assertTrue(expired_was_lifted)
+            self.assertTrue(await repository.is_proposal_violation_restricted(10))
+            self.assertEqual(
+                (
+                    await repository.get_active(
+                        10, PunishmentType.PROPOSAL_VIOLATION
+                    )
+                ).id,
+                replacement.id,
+            )  # type: ignore[union-attr]
 
 
 class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
@@ -117,7 +172,7 @@ class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
                 user_vote_repository = SimpleNamespace(record_vote=AsyncMock())
                 uow = _FakeUnitOfWork(
                     vote_session=vote_session_repository,
-                    global_voting_restriction=restriction_repository,
+                    global_proposal_punishment=restriction_repository,
                     user_vote=user_vote_repository,
                 )
 
@@ -125,7 +180,7 @@ class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
                     "StellariaPact.cogs.Voting.VotingLogic.UnitOfWork",
                     return_value=uow,
                 ):
-                    with self.assertRaisesRegex(PermissionError, "永久剥夺"):
+                    with self.assertRaisesRegex(PermissionError, "全局提案处罚"):
                         await self.logic.record_vote_and_get_details(
                             RecordVoteQo(
                                 user_id=10,
@@ -195,7 +250,7 @@ class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
         restriction_repository = SimpleNamespace(is_restricted=AsyncMock(return_value=True))
         uow = _FakeUnitOfWork(
             confirmation_session=confirmation_repository,
-            global_voting_restriction=restriction_repository,
+            global_proposal_punishment=restriction_repository,
         )
         interaction = SimpleNamespace(
             message=SimpleNamespace(id=30),
@@ -212,7 +267,7 @@ class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
                 return_value=True,
             ),
         ):
-            with self.assertRaisesRegex(PermissionError, "永久剥夺"):
+            with self.assertRaisesRegex(PermissionError, "全局提案处罚"):
                 await self.logic.handle_objection_support_click(  # type: ignore[arg-type]
                     interaction, "support"
                 )
@@ -242,7 +297,7 @@ class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
         restriction_repository = SimpleNamespace(is_restricted=AsyncMock(return_value=True))
         uow = _FakeUnitOfWork(
             confirmation_session=confirmation_repository,
-            global_voting_restriction=restriction_repository,
+            global_proposal_punishment=restriction_repository,
         )
         interaction = SimpleNamespace(
             message=SimpleNamespace(id=30),
@@ -272,7 +327,9 @@ class GlobalVotingRestrictionCommandTests(unittest.IsolatedAsyncioTestCase):
     def test_commands_and_optional_evidence_parameter_are_registered(self) -> None:
         commands = {command.name: command for command in PunishmentCog.__cog_app_commands__}
         self.assertIn("永久剥夺投票资格", commands)
-        self.assertIn("解除永久投票资格", commands)
+        self.assertIn("解除永久投票资格限制", commands)
+        self.assertIn("提案违规处罚", commands)
+        self.assertIn("解除提案违规处罚", commands)
 
         restrict_parameters = {
             parameter.display_name: parameter
@@ -281,6 +338,17 @@ class GlobalVotingRestrictionCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(restrict_parameters["用户"].required)
         self.assertTrue(restrict_parameters["处罚理由"].required)
         self.assertFalse(restrict_parameters["处罚依据"].required)
+
+        violation_parameters = {
+            parameter.display_name: parameter
+            for parameter in commands["提案违规处罚"].parameters
+        }
+        self.assertTrue(violation_parameters["用户"].required)
+        self.assertTrue(violation_parameters["天数"].required)
+        self.assertEqual(violation_parameters["天数"].min_value, 1)
+        self.assertEqual(violation_parameters["天数"].max_value, 30)
+        self.assertTrue(violation_parameters["处罚理由"].required)
+        self.assertFalse(violation_parameters["处罚依据"].required)
 
     def test_restriction_embed_contains_evidence_and_scope(self) -> None:
         moderator = SimpleNamespace(mention="<@20>")
@@ -296,6 +364,21 @@ class GlobalVotingRestrictionCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("普通投票、异议投票、异议附议", embed.description or "")
         self.assertEqual(embed.image.url, "https://example.com/evidence.png")
         self.assertEqual(embed.fields[0].value, "测试处罚")
+
+    def test_proposal_violation_embed_contains_expiry_and_scope(self) -> None:
+        """限时处罚公示必须明确展示截止时间和完整限制范围。"""
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+        embed = PunishmentEmbedBuilder.create_proposal_violation_embed(
+            moderator=SimpleNamespace(mention="<@20>"),  # type: ignore[arg-type]
+            target_user=SimpleNamespace(mention="<@10>"),  # type: ignore[arg-type]
+            reason="测试处罚",
+            origin_guild_name="测试服务器",
+            days=7,
+            expires_at=expires_at,
+        )
+        self.assertIn("草案支持票", embed.description or "")
+        self.assertIn("创建提案", embed.description or "")
+        self.assertIn(str(int(expires_at.timestamp())), embed.description or "")
 
     async def test_dm_failure_does_not_prevent_public_notice(self) -> None:
         class Scheduler:

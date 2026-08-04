@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.share import StellariaPactBot, UnitOfWork
+from StellariaPact.share.enums import PunishmentType
 
 from ..logic.PunishmentLogic import PunishmentLogic
 
@@ -21,6 +22,8 @@ class PunishmentListener(commands.Cog):
         self.bot = bot
         # 缓存结构: {thread_id: {user_id: mute_end_time (aware datetime)}}
         self.active_mutes: Dict[int, Dict[int, datetime]] = {}
+        # 缓存结构: {user_id: expires_at}
+        self.active_proposal_violations: Dict[int, datetime] = {}
         self.logic = PunishmentLogic(bot) # 初始化逻辑层
         self.clear_expired_mutes.start()
 
@@ -29,9 +32,13 @@ class PunishmentListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        # 恢复各提案讨论帖内仍未到期的独立禁言处罚。
         await self._load_active_mutes_into_cache()
+        # 恢复机器人全局范围内仍有效的限时提案违规处罚。
+        await self._load_active_proposal_violations_into_cache()
 
     async def _load_active_mutes_into_cache(self):
+        """从数据库恢复各提案讨论帖内仍有效的禁言记录。"""
         logger.info("Punishment: 正在加载有效的禁言记录到缓存...")
         self.active_mutes.clear()
         now = datetime.now(timezone.utc)
@@ -54,6 +61,25 @@ class PunishmentListener(commands.Cog):
         count = sum(len(users) for users in self.active_mutes.values())
         logger.info(f"Punishment: 成功加载 {count} 条有效禁言记录。")
 
+    async def _load_active_proposal_violations_into_cache(self):
+        """从数据库恢复所有有效的限时提案违规处罚。"""
+        self.active_proposal_violations.clear()
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            punishments = await uow.global_proposal_punishment.get_active_by_type(
+                PunishmentType.PROPOSAL_VIOLATION
+            )
+            active_punishments = [
+                (punishment.target_user_id, punishment.expires_at)
+                for punishment in punishments
+                if punishment.expires_at is not None
+            ]
+        for target_user_id, expires_at in active_punishments:
+            self.active_proposal_violations[target_user_id] = expires_at
+        logger.info(
+            "Punishment: 成功加载 %s 条有效全局提案违规处罚。",
+            len(self.active_proposal_violations),
+        )
+
     @tasks.loop(minutes=5)
     async def clear_expired_mutes(self):
         """清理已过期的禁言记录"""
@@ -72,6 +98,19 @@ class PunishmentListener(commands.Cog):
                 await uow.user_activity.batch_clear_expired_mutes(expired)
                 await uow.commit()
             logger.info(f"Punishment: 已自动清理 {len(expired)} 条过期的禁言记录。")
+
+        expired_global = [
+            user_id
+            for user_id, expires_at in self.active_proposal_violations.items()
+            if now >= expires_at
+        ]
+        for user_id in expired_global:
+            del self.active_proposal_violations[user_id]
+        if expired_global:
+            logger.info(
+                "Punishment: 已从缓存清理 %s 条到期的全局提案处罚。",
+                len(expired_global),
+            )
 
     @commands.Cog.listener()
     async def on_punishment_remove_request(
@@ -104,6 +143,18 @@ class PunishmentListener(commands.Cog):
             logger.debug(f"Punishment: 缓存更新 -> 用户 {user_id} 在帖子 {thread_id} 禁言已解除")
 
     @commands.Cog.listener()
+    async def on_proposal_violation_punishment_updated(
+        self,
+        user_id: int,
+        expires_at: Optional[datetime],
+    ):
+        """在处罚创建、覆盖或解除后即时同步全局发言限制缓存。"""
+        if expires_at and expires_at > datetime.now(timezone.utc):
+            self.active_proposal_violations[user_id] = expires_at
+        else:
+            self.active_proposal_violations.pop(user_id, None)
+
+    @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """物理删除被禁言用户的消息"""
         if (
@@ -113,15 +164,18 @@ class PunishmentListener(commands.Cog):
         ):
             return
 
-        thread_mutes = self.active_mutes.get(message.channel.id)
-        if not thread_mutes:
-            return
-
+        now = datetime.now(timezone.utc)
+        thread_mutes = self.active_mutes.get(message.channel.id, {})
         mute_end_time = thread_mutes.get(message.author.id)
-        if not mute_end_time:
-            return
+        should_delete = mute_end_time is not None and now < mute_end_time
 
-        if datetime.now(timezone.utc) < mute_end_time:
+        global_end_time = self.active_proposal_violations.get(message.author.id)
+        if not should_delete and global_end_time is not None and now < global_end_time:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                proposal = await uow.proposal.get_proposal_by_thread_id(message.channel.id)
+            should_delete = proposal is not None
+
+        if should_delete:
             try:
                 await message.delete()
                 logger.info(
