@@ -4,14 +4,16 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from StellariaPact.cogs.Punishment.Cog import PunishmentCog
+from StellariaPact.cogs.Punishment.logic.PunishmentLogic import PunishmentLogic
 from StellariaPact.cogs.Punishment.views.PunishmentEmbedBuilder import PunishmentEmbedBuilder
 from StellariaPact.cogs.Voting.qo import DeleteVoteQo
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.models.ConfirmationSession import ConfirmationSession
+from StellariaPact.models.OperationLog import OperationLog
 from StellariaPact.qo.user_vote import RecordVoteQo
 from StellariaPact.repository.GlobalProposalPunishmentAlreadyActiveError import (
     GlobalProposalPunishmentAlreadyActiveError,
@@ -22,7 +24,7 @@ from StellariaPact.repository.GlobalProposalPunishmentNotFoundError import (
 from StellariaPact.repository.GlobalProposalPunishmentRepository import (
     GlobalProposalPunishmentRepository,
 )
-from StellariaPact.share.enums import PunishmentType
+from StellariaPact.share.enums import LogOperationType, PunishmentType
 
 
 class _FakeUnitOfWork:
@@ -112,8 +114,8 @@ class GlobalProposalPunishmentRepositoryTests(unittest.IsolatedAsyncioTestCase):
                     lift_reason="无有效处罚",
                 )
 
-    async def test_temporary_punishment_expires_and_can_be_replaced(self) -> None:
-        """限时处罚应按截止时间失效，并允许新处罚覆盖旧记录且保留历史。"""
+    async def test_temporary_punishment_expires_and_can_be_archived(self) -> None:
+        """限时处罚到期后应归档旧记录，并允许创建新的同类型处罚。"""
         async with AsyncSession(self.engine) as session:
             repository = GlobalProposalPunishmentRepository(session)
             expired = await repository.create_punishment(
@@ -126,9 +128,7 @@ class GlobalProposalPunishmentRepositoryTests(unittest.IsolatedAsyncioTestCase):
                 expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
             )
             await session.commit()
-            self.assertFalse(
-                await repository.is_proposal_violation_restricted(10)
-            )
+            self.assertFalse(await repository.is_proposal_violation_restricted(10))
 
             replacement = await repository.create_punishment(
                 target_user_id=10,
@@ -138,21 +138,142 @@ class GlobalProposalPunishmentRepositoryTests(unittest.IsolatedAsyncioTestCase):
                 punishment_type=PunishmentType.PROPOSAL_VIOLATION,
                 reason="新处罚",
                 expires_at=datetime.now(timezone.utc) + timedelta(days=3),
-                replace_existing=True,
             )
-            expired_was_lifted = expired.lifted_at is not None
             await session.commit()
 
-            self.assertTrue(expired_was_lifted)
             self.assertTrue(await repository.is_proposal_violation_restricted(10))
             self.assertEqual(
-                (
-                    await repository.get_active(
-                        10, PunishmentType.PROPOSAL_VIOLATION
-                    )
-                ).id,
+                (await repository.get_active(10, PunishmentType.PROPOSAL_VIOLATION)).id,
                 replacement.id,
             )  # type: ignore[union-attr]
+            history = await repository.get_history(10)
+            archived = next(record for record in history if record.id == expired.id)
+            self.assertEqual(archived.lift_reason, "处罚自然到期后归档")
+            self.assertEqual(archived.lifted_at, archived.expires_at)
+
+    async def test_active_temporary_punishment_rejects_duplicate(self) -> None:
+        """仍在生效的限时处罚必须拒绝重复创建，且不得生成覆盖历史。"""
+        async with AsyncSession(self.engine) as session:
+            repository = GlobalProposalPunishmentRepository(session)
+            await repository.create_punishment(
+                target_user_id=10,
+                moderator_id=20,
+                origin_guild_id=30,
+                origin_channel_id=40,
+                punishment_type=PunishmentType.PROPOSAL_VIOLATION,
+                reason="生效中处罚",
+                expires_at=datetime.now(timezone.utc) + timedelta(days=2),
+            )
+            await session.commit()
+
+            with self.assertRaises(GlobalProposalPunishmentAlreadyActiveError):
+                await repository.create_punishment(
+                    target_user_id=10,
+                    moderator_id=21,
+                    origin_guild_id=30,
+                    origin_channel_id=40,
+                    punishment_type=PunishmentType.PROPOSAL_VIOLATION,
+                    reason="重复处罚",
+                    expires_at=datetime.now(timezone.utc) + timedelta(days=3),
+                )
+
+            self.assertEqual(len(await repository.get_history(10)), 1)
+
+    async def test_announcement_message_locations_can_be_saved(self) -> None:
+        """仓储应按处罚主键保存原始处罚公示和跨频道解除公示位置。"""
+        async with AsyncSession(self.engine) as session:
+            repository = GlobalProposalPunishmentRepository(session)
+            punishment = await repository.create_punishment(
+                target_user_id=10,
+                moderator_id=20,
+                origin_guild_id=30,
+                origin_channel_id=40,
+                punishment_type=PunishmentType.PERMANENT_VOTING,
+                reason="测试处罚",
+            )
+            self.assertIsNotNone(punishment.id)
+            await repository.set_punishment_message_id(punishment.id, 50)  # type: ignore[arg-type]
+            await repository.set_resolution_message(
+                punishment.id,  # type: ignore[arg-type]
+                guild_id=31,
+                channel_id=41,
+                message_id=51,
+            )
+            await session.commit()
+
+            record = (await repository.get_history(10))[0]
+
+        self.assertEqual(record.punishment_message_id, 50)
+        self.assertEqual(record.resolution_guild_id, 31)
+        self.assertEqual(record.resolution_channel_id, 41)
+        self.assertEqual(record.resolution_message_id, 51)
+
+    async def test_successful_global_operations_are_audited(self) -> None:
+        """永久、限时处罚及两类解除都应在同一业务事务中写入操作日志。"""
+        db_handler = SimpleNamespace(get_session=lambda: AsyncSession(self.engine))
+        logic = PunishmentLogic(SimpleNamespace(db_handler=db_handler))  # type: ignore[arg-type]
+        common = {
+            "target_user_id": 10,
+            "moderator_id": 20,
+            "origin_guild_id": 30,
+            "origin_channel_id": 40,
+            "reason": "审计测试",
+            "evidence_url": "https://example.com/temporary.png",
+            "evidence_filename": "temporary.png",
+            "moderator_name": "moderator",
+            "moderator_display_name": "管理者",
+        }
+
+        permanent_id = await logic.apply_global_voting_restriction(**common)
+        violation_id, _ = await logic.apply_proposal_violation_punishment(
+            **common,
+            days=3,
+        )
+        with self.assertRaises(GlobalProposalPunishmentAlreadyActiveError):
+            await logic.apply_proposal_violation_punishment(
+                **common,
+                days=5,
+            )
+        lifted_permanent_id, _ = await logic.lift_global_voting_restriction(
+            target_user_id=10,
+            lifted_by_id=20,
+            lift_reason="解除永久处罚",
+            moderator_name="moderator",
+            moderator_display_name="管理者",
+            guild_id=31,
+            channel_id=41,
+        )
+        lifted_violation_id, _, _ = await logic.lift_proposal_violation_punishment(
+            target_user_id=10,
+            lifted_by_id=20,
+            lift_reason="解除限时处罚",
+            moderator_name="moderator",
+            moderator_display_name="管理者",
+            guild_id=31,
+            channel_id=41,
+        )
+
+        async with AsyncSession(self.engine) as session:
+            logs = list((await session.exec(select(OperationLog))).all())
+
+        self.assertEqual(len(logs), 4)
+        self.assertEqual(
+            {log.action for log in logs},
+            {
+                "apply_permanent_voting",
+                "apply_proposal_violation",
+                "lift_permanent_voting",
+                "lift_proposal_violation",
+            },
+        )
+        self.assertTrue(all(log.op_type == LogOperationType.PUNISHMENT for log in logs))
+        self.assertEqual(
+            {log.target_id for log in logs},
+            {permanent_id, violation_id},
+        )
+        self.assertEqual(lifted_permanent_id, permanent_id)
+        self.assertEqual(lifted_violation_id, violation_id)
+        self.assertTrue(all("temporary.png" not in (log.detail or "") for log in logs))
 
 
 class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
@@ -340,8 +461,7 @@ class GlobalVotingRestrictionCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(restrict_parameters["处罚依据"].required)
 
         violation_parameters = {
-            parameter.display_name: parameter
-            for parameter in commands["提案违规处罚"].parameters
+            parameter.display_name: parameter for parameter in commands["提案违规处罚"].parameters
         }
         self.assertTrue(violation_parameters["用户"].required)
         self.assertTrue(violation_parameters["天数"].required)
@@ -381,20 +501,22 @@ class GlobalVotingRestrictionCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(str(int(expires_at.timestamp())), embed.description or "")
 
     async def test_dm_failure_does_not_prevent_public_notice(self) -> None:
+        """私信失败时仍应保留公开公示成功状态及其消息 ID。"""
+
         class Scheduler:
             async def submit(self, coroutine, priority):
                 return await coroutine
 
         bot = SimpleNamespace(api_scheduler=Scheduler())
         cog = PunishmentCog(bot)  # type: ignore[arg-type]
-        channel = SimpleNamespace(send=AsyncMock(return_value=None))
+        channel = SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=99)))
         target = SimpleNamespace(
             id=10,
             send=AsyncMock(side_effect=RuntimeError("DM disabled")),
         )
         interaction = SimpleNamespace(channel=channel)
 
-        public_sent, dm_sent = await cog._send_global_restriction_notifications(
+        public_sent, dm_sent, public_message_id = await cog._send_global_restriction_notifications(
             interaction,  # type: ignore[arg-type]
             target,  # type: ignore[arg-type]
             PunishmentEmbedBuilder.create_global_voting_restriction_embed(
@@ -407,7 +529,32 @@ class GlobalVotingRestrictionCommandTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(public_sent)
         self.assertFalse(dm_sent)
+        self.assertEqual(public_message_id, 99)
         channel.send.assert_awaited_once()
+
+    async def test_message_location_writeback_failure_is_degraded(self) -> None:
+        """消息位置回写失败只能记录错误，不得让已完成的 Discord 公示失败。"""
+        cog = PunishmentCog(SimpleNamespace())  # type: ignore[arg-type]
+        cog.logic = SimpleNamespace(
+            set_punishment_message_id=AsyncMock(side_effect=RuntimeError("database unavailable")),
+            set_resolution_message=AsyncMock(side_effect=RuntimeError("database unavailable")),
+        )
+
+        await cog._try_set_punishment_message_id(1, 50)
+        await cog._try_set_resolution_message(
+            1,
+            guild_id=30,
+            channel_id=40,
+            message_id=51,
+        )
+
+        cog.logic.set_punishment_message_id.assert_awaited_once_with(1, 50)
+        cog.logic.set_resolution_message.assert_awaited_once_with(
+            1,
+            guild_id=30,
+            channel_id=40,
+            message_id=51,
+        )
 
 
 if __name__ == "__main__":

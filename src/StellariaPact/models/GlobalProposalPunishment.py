@@ -38,6 +38,22 @@ class GlobalProposalPunishment(BaseModel, table=True):
     reason: str = Field(description="处罚理由")
     evidence_url: str | None = Field(default=None, description="处罚依据图片 URL")
     evidence_filename: str | None = Field(default=None, description="处罚依据图片文件名")
+    punishment_message_id: int | None = Field(
+        default=None,
+        description="原始处罚公示消息 Discord ID",
+    )
+    resolution_guild_id: int | None = Field(
+        default=None,
+        description="解除公示所在服务器 Discord ID",
+    )
+    resolution_channel_id: int | None = Field(
+        default=None,
+        description="解除公示所在频道 Discord ID",
+    )
+    resolution_message_id: int | None = Field(
+        default=None,
+        description="解除公示消息 Discord ID",
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_type=UTCDateTime,

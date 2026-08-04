@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -7,7 +8,7 @@ from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto.UserActivityDto import UserActivityDto
 from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.share import StellariaPactBot, UnitOfWork
-from StellariaPact.share.enums import PunishmentType
+from StellariaPact.share.enums import LogOperationType, PunishmentType
 
 from ..views.PunishmentEmbedBuilder import PunishmentEmbedBuilder
 
@@ -56,12 +57,10 @@ class PunishmentLogic:
 
             vote_details_to_update: list[VoteDetailDto] = []
             if not voting_allowed:
-                vote_details_to_update = (
-                    await VotingLogic.remove_active_user_votes_in_thread(
-                        uow=uow,
-                        user_id=target_user_id,
-                        thread_id=thread_id,
-                    )
+                vote_details_to_update = await VotingLogic.remove_active_user_votes_in_thread(
+                    uow=uow,
+                    user_id=target_user_id,
+                    thread_id=thread_id,
                 )
 
             await uow.commit()
@@ -77,10 +76,12 @@ class PunishmentLogic:
         reason: str,
         evidence_url: str | None,
         evidence_filename: str | None,
-    ) -> None:
+        moderator_name: str,
+        moderator_display_name: str,
+    ) -> int:
         """永久剥夺用户在本机器人范围内的投票资格。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.global_proposal_punishment.create_punishment(
+            punishment = await uow.global_proposal_punishment.create_punishment(
                 target_user_id=target_user_id,
                 moderator_id=moderator_id,
                 origin_guild_id=origin_guild_id,
@@ -90,7 +91,22 @@ class PunishmentLogic:
                 evidence_url=evidence_url,
                 evidence_filename=evidence_filename,
             )
+            punishment_id = self._require_punishment_id(punishment.id)
+            await self._log_global_punishment_operation(
+                uow=uow,
+                punishment_id=punishment_id,
+                target_user_id=target_user_id,
+                moderator_id=moderator_id,
+                moderator_name=moderator_name,
+                moderator_display_name=moderator_display_name,
+                guild_id=origin_guild_id,
+                action="apply_permanent_voting",
+                punishment_type=PunishmentType.PERMANENT_VOTING,
+                reason=reason,
+                origin_channel_id=origin_channel_id,
+            )
             await uow.commit()
+            return punishment_id
 
     async def lift_global_voting_restriction(
         self,
@@ -98,7 +114,11 @@ class PunishmentLogic:
         target_user_id: int,
         lifted_by_id: int,
         lift_reason: str,
-    ) -> datetime:
+        moderator_name: str,
+        moderator_display_name: str,
+        guild_id: int,
+        channel_id: int,
+    ) -> tuple[int, datetime]:
         """解除用户的机器人全局投票资格限制。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
             restriction = await uow.global_proposal_punishment.lift_punishment(
@@ -107,9 +127,23 @@ class PunishmentLogic:
                 lifted_by_id=lifted_by_id,
                 lift_reason=lift_reason,
             )
+            punishment_id = self._require_punishment_id(restriction.id)
             original_created_at = restriction.created_at
+            await self._log_global_punishment_operation(
+                uow=uow,
+                punishment_id=punishment_id,
+                target_user_id=target_user_id,
+                moderator_id=lifted_by_id,
+                moderator_name=moderator_name,
+                moderator_display_name=moderator_display_name,
+                guild_id=guild_id,
+                action="lift_permanent_voting",
+                punishment_type=PunishmentType.PERMANENT_VOTING,
+                reason=lift_reason,
+                origin_channel_id=channel_id,
+            )
             await uow.commit()
-            return original_created_at
+            return punishment_id, original_created_at
 
     async def apply_proposal_violation_punishment(
         self,
@@ -122,13 +156,15 @@ class PunishmentLogic:
         reason: str,
         evidence_url: str | None,
         evidence_filename: str | None,
-    ) -> datetime:
-        """创建或覆盖用户的机器人全局提案违规处罚。"""
+        moderator_name: str,
+        moderator_display_name: str,
+    ) -> tuple[int, datetime]:
+        """创建用户的机器人全局提案违规处罚。"""
         if not 1 <= days <= 30:
             raise ValueError("提案违规处罚天数必须在 1 至 30 天之间。")
         expires_at = datetime.now(timezone.utc) + timedelta(days=days)
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.global_proposal_punishment.create_punishment(
+            punishment = await uow.global_proposal_punishment.create_punishment(
                 target_user_id=target_user_id,
                 moderator_id=moderator_id,
                 origin_guild_id=origin_guild_id,
@@ -138,10 +174,24 @@ class PunishmentLogic:
                 expires_at=expires_at,
                 evidence_url=evidence_url,
                 evidence_filename=evidence_filename,
-                replace_existing=True,
+            )
+            punishment_id = self._require_punishment_id(punishment.id)
+            await self._log_global_punishment_operation(
+                uow=uow,
+                punishment_id=punishment_id,
+                target_user_id=target_user_id,
+                moderator_id=moderator_id,
+                moderator_name=moderator_name,
+                moderator_display_name=moderator_display_name,
+                guild_id=origin_guild_id,
+                action="apply_proposal_violation",
+                punishment_type=PunishmentType.PROPOSAL_VIOLATION,
+                reason=reason,
+                origin_channel_id=origin_channel_id,
+                expires_at=expires_at,
             )
             await uow.commit()
-            return expires_at
+            return punishment_id, expires_at
 
     async def lift_proposal_violation_punishment(
         self,
@@ -149,7 +199,11 @@ class PunishmentLogic:
         target_user_id: int,
         lifted_by_id: int,
         lift_reason: str,
-    ) -> tuple[datetime, datetime]:
+        moderator_name: str,
+        moderator_display_name: str,
+        guild_id: int,
+        channel_id: int,
+    ) -> tuple[int, datetime, datetime]:
         """提前解除用户的机器人全局提案违规处罚。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
             punishment = await uow.global_proposal_punishment.lift_punishment(
@@ -160,9 +214,99 @@ class PunishmentLogic:
             )
             if punishment.expires_at is None:
                 raise ValueError("提案违规处罚缺少截止时间。")
-            result = (punishment.created_at, punishment.expires_at)
+            punishment_id = self._require_punishment_id(punishment.id)
+            result = (punishment_id, punishment.created_at, punishment.expires_at)
+            await self._log_global_punishment_operation(
+                uow=uow,
+                punishment_id=punishment_id,
+                target_user_id=target_user_id,
+                moderator_id=lifted_by_id,
+                moderator_name=moderator_name,
+                moderator_display_name=moderator_display_name,
+                guild_id=guild_id,
+                action="lift_proposal_violation",
+                punishment_type=PunishmentType.PROPOSAL_VIOLATION,
+                reason=lift_reason,
+                origin_channel_id=channel_id,
+            )
             await uow.commit()
             return result
+
+    async def set_punishment_message_id(
+        self,
+        punishment_id: int,
+        message_id: int,
+    ) -> None:
+        """在独立事务中保存原始处罚公示消息 ID。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.global_proposal_punishment.set_punishment_message_id(
+                punishment_id,
+                message_id,
+            )
+            await uow.commit()
+
+    async def set_resolution_message(
+        self,
+        punishment_id: int,
+        *,
+        guild_id: int,
+        channel_id: int,
+        message_id: int,
+    ) -> None:
+        """在独立事务中保存解除公示消息的完整位置。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.global_proposal_punishment.set_resolution_message(
+                punishment_id,
+                guild_id=guild_id,
+                channel_id=channel_id,
+                message_id=message_id,
+            )
+            await uow.commit()
+
+    @staticmethod
+    def _require_punishment_id(punishment_id: int | None) -> int:
+        """确保已刷新处罚记录取得数据库主键。"""
+        if punishment_id is None:
+            raise RuntimeError("全局提案处罚记录缺少数据库主键。")
+        return punishment_id
+
+    @staticmethod
+    async def _log_global_punishment_operation(
+        *,
+        uow: UnitOfWork,
+        punishment_id: int,
+        target_user_id: int,
+        moderator_id: int,
+        moderator_name: str,
+        moderator_display_name: str,
+        guild_id: int,
+        action: str,
+        punishment_type: PunishmentType,
+        reason: str,
+        origin_channel_id: int | None = None,
+        expires_at: datetime | None = None,
+    ) -> None:
+        """在处罚事务内写入不包含临时附件链接的结构化审计记录。"""
+        detail = {
+            "target_user_id": target_user_id,
+            "punishment_type": punishment_type.value,
+            "reason": reason,
+        }
+        if origin_channel_id is not None:
+            detail["origin_channel_id"] = origin_channel_id
+        if expires_at is not None:
+            detail["expires_at"] = expires_at.isoformat()
+        await uow.operation_log.log_operation(
+            operator_id=moderator_id,
+            operator_name=moderator_name,
+            operator_display_name=moderator_display_name,
+            op_type=LogOperationType.PUNISHMENT,
+            action=action,
+            target_type="global_proposal_punishment",
+            target_id=punishment_id,
+            guild_id=guild_id,
+            detail=json.dumps(detail, ensure_ascii=False),
+        )
 
     async def handle_remove_punishment(
         self,
