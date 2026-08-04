@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from StellariaPact.share.UnitOfWork import UnitOfWork
+
 from .services.IntakeDiscordHelper import IntakeDiscordHelper
 from .services.IntakeDraftService import IntakeDraftService
 from .services.IntakeReviewService import IntakeReviewService
@@ -9,8 +11,7 @@ from .services.IntakeTransitionService import IntakeTransitionService
 from .services.IntakeVoteService import IntakeVoteService
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import \
-        IntakeSubmissionDto
+    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import IntakeSubmissionDto
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 
@@ -51,6 +52,13 @@ class IntakeLogic:
     async def check_submission_limit(self, guild_id: int):
         """检查当前讨论中的提案是否达到上限。"""
         return await self.draft_service.check_submission_limit(guild_id)
+
+    async def is_submission_restricted(self, user_id: int) -> bool:
+        """检查用户是否受到全局提案违规处罚。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            return await uow.global_proposal_punishment.is_proposal_violation_restricted(
+                user_id
+            )
 
     # -------------------------
     # 草案提交流程路由 → IntakeDraftService

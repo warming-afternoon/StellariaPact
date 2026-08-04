@@ -10,8 +10,8 @@ from StellariaPact.cogs.Intake.dto.SupportToggleDbResultDto import SupportToggle
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
-from StellariaPact.share.UnitOfWork import UnitOfWork
 from StellariaPact.share.enums import IntakeStatus, VoteSessionType
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 if TYPE_CHECKING:
     from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import IntakeDiscordHelper
@@ -165,6 +165,10 @@ class IntakeVoteService:
             await uow.session.delete(existing_vote)
             action = "withdrawn"
         else:
+            if await uow.global_proposal_punishment.is_restricted(user_id):
+                raise PermissionError(
+                    "你当前受到全局提案处罚，无法新增草案支持票；已有支持票仍可撤回。"
+                )
             new_vote = UserVote(
                 session_id=vote_session.id,
                 user_id=user_id,

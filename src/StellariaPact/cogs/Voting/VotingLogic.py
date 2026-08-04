@@ -60,9 +60,9 @@ class VotingLogic:
             if not vote_session:
                 raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
 
-            if await uow.global_voting_restriction.is_restricted(qo.user_id):
+            if await uow.global_proposal_punishment.is_restricted(qo.user_id):
                 raise PermissionError(
-                    "你的投票资格已被永久剥夺，无法新增或修改投票；已有投票仍可撤回。"
+                    "你当前受到全局提案处罚，无法新增或修改投票；已有投票仍可撤回。"
                 )
 
             if vote_session.status != 1 or vote_session.id is None:
@@ -591,9 +591,9 @@ class VotingLogic:
 
             # ======= 根据 action 分流处理 =======
             if action == "support":
-                if await uow.global_voting_restriction.is_restricted(user_id):
+                if await uow.global_proposal_punishment.is_restricted(user_id):
                     raise PermissionError(
-                        "你的投票资格已被永久剥夺，无法参与异议附议；已有附议仍可撤回。"
+                        "你当前受到全局提案处罚，无法参与异议附议；已有附议仍可撤回。"
                     )
                 if user_id in parties.values():
                     raise ValueError("你已经支持过该异议了。")

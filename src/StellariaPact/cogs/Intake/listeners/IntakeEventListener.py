@@ -33,6 +33,12 @@ class IntakeEventListenerCog(commands.Cog):
     async def on_intake_submission_requested(self, interaction: discord.Interaction):
         logger.info(f"接收到打开草案表单事件，请求人: {interaction.user.id}")
 
+        if await self.intake_cog.logic.is_submission_restricted(interaction.user.id):
+            await interaction.response.send_message(
+                "你当前受到提案违规处罚，无法创建或提交提案草案。",
+                ephemeral=True,
+            )
+            return
         allowed, message = await self.intake_cog.logic.check_submission_limit(
             interaction.guild_id or 0
         )

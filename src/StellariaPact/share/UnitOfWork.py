@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from StellariaPact.repository.ConfirmationSessionRepository import (
         ConfirmationSessionRepository,
     )
-    from StellariaPact.repository.GlobalVotingRestrictionRepository import (
-        GlobalVotingRestrictionRepository,
+    from StellariaPact.repository.GlobalProposalPunishmentRepository import (
+        GlobalProposalPunishmentRepository,
     )
     from StellariaPact.repository.IntakeRepository import IntakeRepository
     from StellariaPact.repository.OperationLogRepository import OperationLogRepository
@@ -215,14 +215,14 @@ class UnitOfWork:
         return self._punishment_record_service
 
     @property
-    def global_voting_restriction(self) -> "GlobalVotingRestrictionRepository":
-        """获取机器人全局投票资格限制服务实例。"""
-        if not hasattr(self, "_global_voting_restriction_service"):
-            from StellariaPact.repository.GlobalVotingRestrictionRepository import (
-                GlobalVotingRestrictionRepository,
+    def global_proposal_punishment(self) -> "GlobalProposalPunishmentRepository":
+        """获取机器人全局提案处罚服务实例。"""
+        if not hasattr(self, "_global_proposal_punishment_service"):
+            from StellariaPact.repository.GlobalProposalPunishmentRepository import (
+                GlobalProposalPunishmentRepository,
             )
 
-            self._global_voting_restriction_service = GlobalVotingRestrictionRepository(
+            self._global_proposal_punishment_service = GlobalProposalPunishmentRepository(
                 self.session
             )
-        return self._global_voting_restriction_service
+        return self._global_proposal_punishment_service

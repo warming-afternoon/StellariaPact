@@ -4,9 +4,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from StellariaPact.repository.GlobalVotingRestrictionRepository import (
-    GlobalVotingRestrictionAlreadyActiveError,
-    GlobalVotingRestrictionNotFoundError,
+from StellariaPact.repository.GlobalProposalPunishmentAlreadyActiveError import (
+    GlobalProposalPunishmentAlreadyActiveError,
+)
+from StellariaPact.repository.GlobalProposalPunishmentNotFoundError import (
+    GlobalProposalPunishmentNotFoundError,
 )
 from StellariaPact.share import StellariaPactBot, UnitOfWork
 from StellariaPact.share.auth import RoleGuard
@@ -124,7 +126,7 @@ class PunishmentCog(commands.Cog):
                 evidence_url=evidence.url if evidence else None,
                 evidence_filename=evidence.filename if evidence else None,
             )
-        except GlobalVotingRestrictionAlreadyActiveError:
+        except GlobalProposalPunishmentAlreadyActiveError:
             await interaction.followup.send(
                 f"用户 {target_user.mention} 已被永久剥夺投票资格。",
                 ephemeral=True,
@@ -184,7 +186,7 @@ class PunishmentCog(commands.Cog):
                 lifted_by_id=moderator.id,
                 lift_reason=reason.strip(),
             )
-        except GlobalVotingRestrictionNotFoundError:
+        except GlobalProposalPunishmentNotFoundError:
             await interaction.followup.send(
                 f"用户 {target_user.mention} 当前没有永久投票资格限制。",
                 ephemeral=True,
@@ -208,6 +210,154 @@ class PunishmentCog(commands.Cog):
         await interaction.followup.send(
             self._build_delivery_summary(
                 f"已恢复 {target_user.mention} 的投票资格。",
+                public_sent,
+                dm_sent,
+            ),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="提案违规处罚",
+        description="[管理组/议事督导/执行监理] 限时禁止用户参与提案活动",
+    )
+    @app_commands.rename(
+        target_user="用户",
+        days="天数",
+        reason="处罚理由",
+        evidence="处罚依据",
+    )
+    @app_commands.describe(
+        target_user="要处罚的用户",
+        days="处罚天数，必须为 1 至 30 天",
+        reason="处罚理由",
+        evidence="可选的处罚依据图片",
+    )
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor", "stewards")
+    async def punish_proposal_violation(
+        self,
+        interaction: discord.Interaction,
+        target_user: discord.Member,
+        days: app_commands.Range[int, 1, 30],
+        reason: str,
+        evidence: discord.Attachment | None = None,
+    ) -> None:
+        """限时禁止用户参与本机器人范围内的提案活动。"""
+        if not await self._validate_global_command(interaction, target_user, reason):
+            return
+        if not 1 <= days <= 30:
+            await interaction.response.send_message(
+                "处罚天数必须在 1 至 30 天之间。", ephemeral=True
+            )
+            return
+        if evidence and (
+            evidence.content_type is None or not evidence.content_type.startswith("image/")
+        ):
+            await interaction.response.send_message("处罚依据只允许上传图片。", ephemeral=True)
+            return
+
+        await safeDefer(interaction, ephemeral=True)
+        moderator = interaction.user
+        guild = interaction.guild
+        channel_id = interaction.channel_id
+        if not isinstance(moderator, discord.Member) or guild is None or channel_id is None:
+            await interaction.followup.send("此指令只能在服务器内使用。", ephemeral=True)
+            return
+
+        try:
+            expires_at = await self.logic.apply_proposal_violation_punishment(
+                target_user_id=target_user.id,
+                moderator_id=moderator.id,
+                origin_guild_id=guild.id,
+                origin_channel_id=channel_id,
+                days=days,
+                reason=reason.strip(),
+                evidence_url=evidence.url if evidence else None,
+                evidence_filename=evidence.filename if evidence else None,
+            )
+        except Exception as exc:
+            logger.error("创建全局提案违规处罚失败: %s", exc, exc_info=True)
+            await interaction.followup.send("处理请求时发生错误，请联系技术人员。", ephemeral=True)
+            return
+
+        self.bot.dispatch(
+            "proposal_violation_punishment_updated", target_user.id, expires_at
+        )
+        embed = PunishmentEmbedBuilder.create_proposal_violation_embed(
+            moderator=moderator,
+            target_user=target_user,
+            reason=reason.strip(),
+            origin_guild_name=guild.name,
+            days=days,
+            expires_at=expires_at,
+            evidence_url=evidence.url if evidence else None,
+        )
+        public_sent, dm_sent = await self._send_global_restriction_notifications(
+            interaction, target_user, embed
+        )
+        await interaction.followup.send(
+            self._build_delivery_summary(
+                f"已对 {target_user.mention} 执行 {days} 天提案违规处罚。",
+                public_sent,
+                dm_sent,
+            ),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="解除提案违规处罚",
+        description="[管理组/议事督导/执行监理] 提前解除用户的提案违规处罚",
+    )
+    @app_commands.rename(target_user="用户", reason="解除理由")
+    @app_commands.describe(target_user="要解除处罚的用户", reason="解除理由")
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor", "stewards")
+    async def lift_proposal_violation(
+        self,
+        interaction: discord.Interaction,
+        target_user: discord.Member,
+        reason: str,
+    ) -> None:
+        if not await self._validate_global_command(interaction, target_user, reason):
+            return
+
+        await safeDefer(interaction, ephemeral=True)
+        moderator = interaction.user
+        guild = interaction.guild
+        if not isinstance(moderator, discord.Member) or guild is None:
+            await interaction.followup.send("此指令只能在服务器内使用。", ephemeral=True)
+            return
+
+        try:
+            created_at, expires_at = await self.logic.lift_proposal_violation_punishment(
+                target_user_id=target_user.id,
+                lifted_by_id=moderator.id,
+                lift_reason=reason.strip(),
+            )
+        except GlobalProposalPunishmentNotFoundError:
+            await interaction.followup.send(
+                f"用户 {target_user.mention} 当前没有有效的提案违规处罚。",
+                ephemeral=True,
+            )
+            return
+        except Exception as exc:
+            logger.error("解除全局提案违规处罚失败: %s", exc, exc_info=True)
+            await interaction.followup.send("处理请求时发生错误，请联系技术人员。", ephemeral=True)
+            return
+
+        self.bot.dispatch("proposal_violation_punishment_updated", target_user.id, None)
+        embed = PunishmentEmbedBuilder.create_proposal_violation_lifted_embed(
+            moderator=moderator,
+            target_user=target_user,
+            reason=reason.strip(),
+            origin_guild_name=guild.name,
+            original_created_at=created_at,
+            original_expires_at=expires_at,
+        )
+        public_sent, dm_sent = await self._send_global_restriction_notifications(
+            interaction, target_user, embed
+        )
+        await interaction.followup.send(
+            self._build_delivery_summary(
+                f"已提前解除 {target_user.mention} 的提案违规处罚。",
                 public_sent,
                 dm_sent,
             ),

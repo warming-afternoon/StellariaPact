@@ -5,6 +5,11 @@ import discord
 
 
 class PunishmentEmbedBuilder:
+    PROPOSAL_VIOLATION_SCOPE = (
+        "普通投票、异议投票、草案支持票、异议创建与附议、"
+        "正式提案讨论帖发言、创建提案"
+    )
+
     @staticmethod
     def create_global_voting_restriction_embed(
         moderator: discord.Member,
@@ -19,7 +24,7 @@ class PunishmentEmbedBuilder:
             description=(
                 f"**目标用户**: {target_user.mention}\n"
                 "**处理方式**: 永久剥夺提案投票资格\n"
-                "**影响范围**: 普通投票、异议投票、异议创建附议\n"
+                "**影响范围**: 普通投票、异议投票、异议附议、草案支持票\n"
                 f"**来源服务器**: {origin_guild_name}"
             ),
             color=discord.Color.dark_red(),
@@ -29,6 +34,64 @@ class PunishmentEmbedBuilder:
         embed.add_field(name="操作人员", value=moderator.mention, inline=True)
         if evidence_url:
             embed.set_image(url=evidence_url)
+        return embed
+
+    @staticmethod
+    def create_proposal_violation_embed(
+        moderator: discord.Member,
+        target_user: discord.User | discord.Member,
+        reason: str,
+        origin_guild_name: str,
+        days: int,
+        expires_at: datetime,
+        evidence_url: str | None = None,
+    ) -> discord.Embed:
+        """创建限时提案违规处罚的公示/私信 Embed。"""
+        expires_timestamp = int(expires_at.timestamp())
+        embed = discord.Embed(
+            title="提案违规处罚",
+            description=(
+                f"**目标用户**: {target_user.mention}\n"
+                f"**处理方式**: 限制参与提案活动 {days} 天\n"
+                f"**影响范围**: {PunishmentEmbedBuilder.PROPOSAL_VIOLATION_SCOPE}\n"
+                f"**截止时间**: <t:{expires_timestamp}:F> (<t:{expires_timestamp}:R>)\n"
+                f"**来源服务器**: {origin_guild_name}"
+            ),
+            color=discord.Color.dark_red(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(name="处罚理由", value=reason, inline=False)
+        embed.add_field(name="操作人员", value=moderator.mention, inline=True)
+        if evidence_url:
+            embed.set_image(url=evidence_url)
+        return embed
+
+    @staticmethod
+    def create_proposal_violation_lifted_embed(
+        moderator: discord.Member,
+        target_user: discord.User | discord.Member,
+        reason: str,
+        origin_guild_name: str,
+        original_created_at: datetime,
+        original_expires_at: datetime,
+    ) -> discord.Embed:
+        """创建提前解除提案违规处罚的公示/私信 Embed。"""
+        created_timestamp = int(original_created_at.timestamp())
+        expires_timestamp = int(original_expires_at.timestamp())
+        embed = discord.Embed(
+            title="提案违规处罚已解除",
+            description=(
+                f"**目标用户**: {target_user.mention}\n"
+                "**处理方式**: 提前恢复提案参与资格\n"
+                f"**原处罚时间**: <t:{created_timestamp}:F>\n"
+                f"**原截止时间**: <t:{expires_timestamp}:F>\n"
+                f"**来源服务器**: {origin_guild_name}"
+            ),
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(name="解除理由", value=reason, inline=False)
+        embed.add_field(name="操作人员", value=moderator.mention, inline=True)
         return embed
 
     @staticmethod
