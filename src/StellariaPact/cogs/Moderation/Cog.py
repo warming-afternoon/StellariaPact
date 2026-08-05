@@ -32,6 +32,11 @@ class Moderation(commands.Cog):
     处理所有与议事管理相关的命令和交互。
     """
 
+    proposal_group = app_commands.Group(
+        name="提案",
+        description="提案状态管理",
+    )
+
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
         self.remove_objection_ctx = app_commands.ContextMenu(
@@ -123,7 +128,7 @@ class Moderation(commands.Cog):
             priority=1,
         )
 
-    @app_commands.command(
+    @proposal_group.command(
         name="进入执行", description="[议事督导+执行监理] 将讨论中的提案变更为执行中"
     )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
@@ -141,8 +146,8 @@ class Moderation(commands.Cog):
             interaction, self.logic.handle_execute_proposal, notify_roles
         )
 
-    @app_commands.command(
-        name="提案完成", description="[议事督导+执行监理] 将讨论中或执行中的提案变更为已结束"
+    @proposal_group.command(
+        name="完成", description="[议事督导+执行监理] 将讨论中或执行中的提案变更为已结束"
     )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     @app_commands.rename(notify_roles="通知相关方")
@@ -159,7 +164,7 @@ class Moderation(commands.Cog):
             interaction, self.logic.handle_complete_proposal, notify_roles
         )
 
-    @app_commands.command(
+    @proposal_group.command(
         name="废弃", description="[议事督导+执行监理] 将讨论中/执行中/异议中的提案废弃"
     )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
@@ -267,7 +272,7 @@ class Moderation(commands.Cog):
                 interaction.followup.send("发生未知错误，请联系技术员。", ephemeral=True), 1
             )
 
-    @app_commands.command(
+    @proposal_group.command(
         name="重新讨论", description="[议事督导+执行监理] 将任何状态的提案恢复为讨论中"
     )
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
@@ -336,7 +341,7 @@ class Moderation(commands.Cog):
         logic_handler: Callable[..., Awaitable[ExecuteProposalResultDto | None]],
         notify_roles: bool,
     ):
-        """处理需要双重确认的命令（如 /进入执行, /完成提案）的通用逻辑。
+        """处理需要双重确认的命令（如 /提案 进入执行、/提案 完成）的通用逻辑。
 
         Args:
             interaction (discord.Interaction): 命令的交互对象。

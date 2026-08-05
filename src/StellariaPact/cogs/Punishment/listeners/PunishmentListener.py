@@ -116,7 +116,7 @@ class PunishmentListener(commands.Cog):
     async def on_punishment_remove_request(
         self, interaction, thread, moderator, target_user, reason
     ):
-        """解除提案处罚"""
+        """解除提案内处罚"""
         await self.logic.handle_remove_punishment(
             interaction, thread, moderator, target_user, reason
         )

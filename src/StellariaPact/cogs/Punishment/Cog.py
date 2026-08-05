@@ -26,7 +26,11 @@ from .views.RemovePunishmentModal import RemovePunishmentModal
 logger = logging.getLogger(__name__)
 
 
-class PunishmentCog(commands.Cog):
+class PunishmentCog(
+    commands.GroupCog,
+    group_name="提案处罚",
+    group_description="议事处罚与投票资格管理",
+):
     """
     处理所有与用户议事处罚（禁言、剥夺投票权）相关的交互。
     """
@@ -49,13 +53,13 @@ class PunishmentCog(commands.Cog):
         # )
 
         self.remove_punishment_ctx = app_commands.ContextMenu(
-            name="解除提案处罚",
+            name="解除提案内处罚",
             callback=self.remove_punishment_message,
             type=discord.AppCommandType.message,  # 消息右键
         )
 
         self.query_punishment_ctx = app_commands.ContextMenu(
-            name="查询提案处罚记录",
+            name="查询提案内处罚记录",
             callback=self.query_punishment_message,
             type=discord.AppCommandType.message,
         )
