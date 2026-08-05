@@ -8,10 +8,12 @@ import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
 
-from StellariaPact.cogs.ThreadManage.dto.UpdateProposalContentDto import \
-    UpdateProposalContentDto
-from StellariaPact.cogs.ThreadManage.views.EditProposalContentModal import \
-    EditProposalContentModal
+from StellariaPact.cogs.ThreadManage.dto.UpdateProposalContentDto import (
+    UpdateProposalContentDto,
+)
+from StellariaPact.cogs.ThreadManage.views.EditProposalContentModal import (
+    EditProposalContentModal,
+)
 from StellariaPact.dto import ProposalDto
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share import UnitOfWork, safeDefer
@@ -28,6 +30,11 @@ class ThreadManageCog(commands.Cog):
     """
     处理帖子管理相关的命令和操作，包括修改提案内容。
     """
+
+    special_proposal_group = app_commands.Group(
+        name="特殊提案",
+        description="特殊提案标记管理",
+    )
 
     def __init__(self, bot: "StellariaPactBot"):
         self.bot = bot
@@ -80,7 +87,10 @@ class ThreadManageCog(commands.Cog):
         )
         await interaction.response.send_modal(modal)
 
-    @app_commands.command(name="设置特殊提案", description="[管理组]将当前提案标记为特殊提案（不计入讨论槽位）")
+    @special_proposal_group.command(
+        name="设置",
+        description="[管理组]将当前提案标记为特殊提案（不计入讨论槽位）",
+    )
     @RoleGuard.requireRoles("stewards")
     async def set_special_proposal(self, interaction: Interaction):
         """将当前帖子的提案标记为特殊提案。"""
@@ -127,7 +137,10 @@ class ThreadManageCog(commands.Cog):
         )
         logger.info(f"用户 {interaction.user.id} 将提案 {proposal.id} 设置为特殊提案")
 
-    @app_commands.command(name="取消特殊提案", description="[管理组]取消当前提案的特殊标记（恢复计入讨论槽位）")
+    @special_proposal_group.command(
+        name="取消",
+        description="[管理组]取消当前提案的特殊标记（恢复计入讨论槽位）",
+    )
     @RoleGuard.requireRoles("stewards")
     async def unset_special_proposal(self, interaction: Interaction):
         """取消当前帖子提案的特殊标记。"""

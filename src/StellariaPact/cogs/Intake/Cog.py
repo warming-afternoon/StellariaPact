@@ -28,7 +28,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class IntakeCog(commands.Cog):
+class IntakeCog(
+    commands.GroupCog,
+    group_name="草案",
+    group_description="提案草案提交与审核管理",
+):
     """处理所有与提案预审（Intake）相关的交互和命令"""
 
     def __init__(self, bot: StellariaPactBot):
@@ -44,7 +48,7 @@ class IntakeCog(commands.Cog):
         """当 Cog 被卸载时停止定时任务"""
         self.closer.stop()
 
-    @app_commands.command(name="提交草案", description="提交一份新的提案草案")
+    @app_commands.command(name="提交", description="提交一份新的提案草案")
     @RoleGuard.requireRoles("communityBuilder")
     async def submit_intake_draft(self, interaction: Interaction):
         """
@@ -109,7 +113,7 @@ class IntakeCog(commands.Cog):
         await interaction.channel.send(embed=embed, view=view)
         await interaction.response.send_message("设置成功！", ephemeral=True)
 
-    @app_commands.command(name="拒绝提案", description="[管理组] 拒绝当前预审帖中的提案草案")
+    @app_commands.command(name="拒绝", description="[管理组] 拒绝当前预审帖中的提案草案")
     @RoleGuard.requireRoles("stewards")
     async def reject_intake_command(self, interaction: Interaction):
         """
@@ -184,7 +188,7 @@ class IntakeCog(commands.Cog):
         await interaction.response.send_modal(modal)
 
     @app_commands.command(
-        name="刷新草案显示",
+        name="刷新显示",
         description="根据数据库刷新审核帖和支持票面板",
     )
     async def refresh_intake_display(self, interaction: Interaction, intake_id: int | None = None):
