@@ -63,8 +63,9 @@ async def main_async():
     """主函数，设置并运行 Bot"""
     global bot, db_handler
     intents = discord.Intents.default()
-    intents.message_content = True
-    intents.members = True
+    # 临时关闭尚未获批的特权 Intent，避免机器人在连接 Gateway 时退出。
+    intents.message_content = False
+    intents.members = False
 
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
