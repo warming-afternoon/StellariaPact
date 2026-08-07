@@ -9,6 +9,7 @@ from StellariaPact.cogs.Voting.EligibilityService import EligibilityService
 from StellariaPact.cogs.Voting.qo import DeleteVoteQo
 from StellariaPact.dto import ConfirmationSessionDto, UserActivityDto, VoteSessionDto
 from StellariaPact.dto.vote_session import VoteDetailDto
+from StellariaPact.models.VoteOption import VoteOption
 from StellariaPact.models.VoteSession import VoteSession
 from StellariaPact.qo.user_activity import UpdateUserActivityQo
 from StellariaPact.qo.user_vote import RecordVoteQo
@@ -278,6 +279,7 @@ class VotingLogic:
 
     async def handle_message_creation(self, qo: UpdateUserActivityQo) -> None:
         """处理消息创建事件，增加用户活跃度。"""
+        # 单表活动计数更新交由用户活动 Repository 完成。
         async with UnitOfWork(self.bot.db_handler) as uow:
             await uow.user_activity.update_user_activity(qo)
 
@@ -287,17 +289,14 @@ class VotingLogic:
         user_id: int,
         thread_id: int,
     ) -> List[VoteDetailDto]:
-        """
-        移除用户在指定帖子内仍处于进行状态的全部投票。
-
-        该方法使用调用方提供的工作单元，以便资格变更、处罚记录和清票能够
-        在同一事务中完成。已结束的投票会话和已关闭的投票选项不会被修改。
-        """
-        all_sessions_in_thread = (
-            await uow.vote_session.get_all_sessions_in_thread_with_details(thread_id)
+        """在同一事务中移除用户在指定帖子内仍处于进行状态的全部投票。"""
+        # 一次取回帖子内的全部投票会话及其投票详情。
+        all_sessions_in_thread = await uow.vote_session.get_all_sessions_in_thread_with_details(
+            thread_id
         )
         session_ids = [session.id for session in all_sessions_in_thread if session.id is not None]
 
+        # 批量删除用户在所有进行中选项上的投票。
         deleted_count = await uow.user_vote.delete_all_user_votes_in_thread(
             user_id=user_id,
             session_ids=session_ids,
@@ -308,35 +307,50 @@ class VotingLogic:
         # 查询前先刷新删除操作，确保构建出的票数详情是最新状态。
         await uow.flush()
         uow.session.expire_all()
-        all_sessions_in_thread = (
-            await uow.vote_session.get_all_sessions_in_thread_with_details(thread_id)
+        all_sessions_in_thread = await uow.vote_session.get_all_sessions_in_thread_with_details(
+            thread_id
         )
 
+        # 一次取回所有会话的选项并在内存中按会话分组，避免 N+1 查询。
+        refreshed_session_ids = [
+            session.id for session in all_sessions_in_thread if session.id is not None
+        ]
+        all_vote_options = await uow.vote_option.get_vote_options_by_session_ids(
+            refreshed_session_ids
+        )
+        vote_options_by_session: dict[int, list[VoteOption]] = {
+            session_id: [] for session_id in refreshed_session_ids
+        }
+        for option in all_vote_options:
+            vote_options_by_session.setdefault(option.session_id, []).append(option)
+
+        # 服务层组合会话和选项，生成面板刷新所需的跨表 DTO。
         details_to_update: List[VoteDetailDto] = []
         for session in all_sessions_in_thread:
-            if session.id:
-                vote_options = await uow.vote_option.get_vote_options(session.id)
-                details_to_update.append(
-                    VoteSessionRepository.get_vote_details_dto(session, vote_options)
+            if session.id is None:
+                continue
+            details_to_update.append(
+                VoteSessionRepository.get_vote_details_dto(
+                    session,
+                    vote_options_by_session.get(session.id, []),
                 )
+            )
         return details_to_update
 
     async def handle_message_deletion(
         self, qo: UpdateUserActivityQo
     ) -> Optional[List[VoteDetailDto]]:
-        """
-        处理消息删除事件。
-        - 减少用户活跃度。
-        - 如果用户资格失效，则撤销其在该帖子下的所有投票。
-        - 如果有投票被撤销，则返回所有需要更新的投票面板的详情。
-        """
+        """减少活动计数并在资格失效时撤销帖子内的进行中投票。"""
+        # 活动计数和跨表撤票共享同一工作单元以保证事务一致性。
         async with UnitOfWork(self.bot.db_handler) as uow:
             user_activity_orm = await uow.user_activity.update_user_activity(qo)
 
+            # 用户仍满足资格时无需访问投票相关表。
             user_activity_dto = UserActivityDto.model_validate(user_activity_orm)
             if EligibilityService.is_eligible(user_activity_dto):
                 return None
 
+            # 资格失效后由服务层编排会话、选项和用户投票 Repository。
             details_to_update = await self.remove_active_user_votes_in_thread(
                 uow=uow,
                 user_id=qo.user_id,

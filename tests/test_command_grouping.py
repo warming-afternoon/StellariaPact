@@ -22,7 +22,7 @@ class CommandGroupingTests(unittest.TestCase):
         cog = PunishmentCog(SimpleNamespace())  # type: ignore[arg-type]
         group = cog.__cog_app_commands_group__
 
-        self.assertEqual(group.name, "处罚")
+        self.assertEqual(group.name, "提案处罚")
         self.assertEqual(
             {command.name for command in group.commands},
             {
