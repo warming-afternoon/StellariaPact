@@ -13,6 +13,10 @@ services:
     volumes:
       - ./config.json:/app/config.json:ro
       - ./data:/app/data
+    networks:
+      bot-bridge:
+        aliases:
+          - stellaria-pact-api
 
   stellaria-pact-migrate:
     build:
@@ -28,3 +32,8 @@ services:
       - ./config.json:/app/config.json:ro
       - ./data:/app/data
     command: ["python", "migrate.py"]
+
+networks:
+  bot-bridge:
+    external: true
+    name: ${BOT_BRIDGE_NETWORK:-Odysseia-BOT}

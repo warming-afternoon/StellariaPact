@@ -84,6 +84,29 @@ class VoteOptionRepository:
         result = await self.session.exec(statement)
         return result.all()
 
+    async def get_vote_options_by_session_ids(
+        self, session_ids: Sequence[int]
+    ) -> Sequence[VoteOption]:
+        """批量获取多个会话的全部正常投票选项。"""
+        # 空会话集合无需访问数据库。
+        if not session_ids:
+            return []
+
+        # 单次查询取回全部选项，避免服务层按会话逐条查询。
+        statement = (
+            select(VoteOption)
+            .where(
+                VoteOption.session_id.in_(session_ids),  # type: ignore
+                VoteOption.data_status == 1,
+            )
+            .order_by(
+                VoteOption.session_id,
+                VoteOption.option_type,
+                VoteOption.choice_index,
+            )  # type: ignore
+        )
+        return (await self.session.exec(statement)).all()
+
     async def get_options_by_type(self, session_id: int, option_type: int) -> Sequence[VoteOption]:
         """获取指定类型且未删除的投票选项"""
         statement = select(VoteOption).where(
