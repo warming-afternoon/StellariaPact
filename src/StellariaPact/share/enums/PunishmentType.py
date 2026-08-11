@@ -7,5 +7,8 @@ class PunishmentType(StrEnum):
     PERMANENT_VOTING = "permanent_voting"
     """永久剥夺全部提案类投票资格"""
 
+    PERMANENT_OBJECTION_CREATION = "permanent_objection_creation"
+    """永久剥夺异议创建与附议资格"""
+
     PROPOSAL_VIOLATION = "proposal_violation"
     """限时禁止参与提案投票、讨论、异议及提案创建"""

@@ -13,6 +13,7 @@ class GlobalProposalPunishmentHistoryModal(discord.ui.Modal):
 
     _TYPE_LABELS = {
         PunishmentType.PERMANENT_VOTING.value: "永久投票资格限制",
+        PunishmentType.PERMANENT_OBJECTION_CREATION.value: "永久异议创建与附议限制",
         PunishmentType.PROPOSAL_VIOLATION.value: "限时提案违规处罚",
     }
 

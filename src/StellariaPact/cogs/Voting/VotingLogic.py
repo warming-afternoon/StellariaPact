@@ -605,7 +605,7 @@ class VotingLogic:
 
             # ======= 根据 action 分流处理 =======
             if action == "support":
-                if await uow.global_proposal_punishment.is_restricted(user_id):
+                if await uow.global_proposal_punishment.is_objection_support_restricted(user_id):
                     raise PermissionError(
                         "你当前受到全局提案处罚，无法参与异议附议；已有附议仍可撤回。"
                     )

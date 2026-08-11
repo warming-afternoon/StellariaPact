@@ -1,3 +1,4 @@
+import copy
 import logging
 
 import discord
@@ -12,6 +13,7 @@ from StellariaPact.repository.GlobalProposalPunishmentNotFoundError import (
 )
 from StellariaPact.share import StellariaPactBot, UnitOfWork
 from StellariaPact.share.auth import RoleGuard
+from StellariaPact.share.enums import PunishmentType
 from StellariaPact.share.SafeDefer import safeDefer
 
 from .logic.PunishmentLogic import PunishmentLogic
@@ -34,6 +36,11 @@ class PunishmentCog(
     """
     处理所有与用户议事处罚（禁言、剥夺投票权）相关的交互。
     """
+
+    _PERMANENT_CATEGORY_LABELS = {
+        PunishmentType.PERMANENT_VOTING: "投票资格",
+        PunishmentType.PERMANENT_OBJECTION_CREATION: "异议创建与附议",
+    }
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
@@ -100,24 +107,40 @@ class PunishmentCog(
         # )
 
     @app_commands.command(
-        name="永久剥夺投票资格",
-        description="[管理组/议事督导] 永久剥夺用户在本机器人范围内的投票资格",
+        name="永久剥夺权限",
+        description="[管理组/议事督导] 按分类永久剥夺用户的提案权限",
     )
-    @app_commands.rename(target_user="用户", reason="处罚理由", evidence="处罚依据")
+    @app_commands.rename(
+        target_user="用户",
+        category="分类",
+        reason="处罚理由",
+        evidence="处罚依据",
+    )
     @app_commands.describe(
-        target_user="要永久剥夺投票资格的用户",
+        target_user="要永久剥夺权限的用户",
+        category="要剥夺的权限分类",
         reason="处罚理由",
         evidence="可选的处罚依据图片",
+    )
+    @app_commands.choices(
+        category=[
+            app_commands.Choice(name="投票资格", value=PunishmentType.PERMANENT_VOTING.value),
+            app_commands.Choice(
+                name="异议创建与附议",
+                value=PunishmentType.PERMANENT_OBJECTION_CREATION.value,
+            ),
+        ]
     )
     @RoleGuard.requireRoles("councilModerator", "stewards")
     async def permanently_restrict_voting(
         self,
         interaction: discord.Interaction,
         target_user: discord.Member,
+        category: app_commands.Choice[str],
         reason: str,
         evidence: discord.Attachment | None = None,
     ) -> None:
-        """永久剥夺用户的机器人全局投票资格。"""
+        """按分类永久剥夺用户的机器人全局提案权限。"""
         if not await self._validate_global_command(interaction, target_user, reason):
             return
         if evidence and (
@@ -134,8 +157,12 @@ class PunishmentCog(
             await interaction.followup.send("此指令只能在服务器内使用。", ephemeral=True)
             return
 
+        punishment_type = PunishmentType(category.value)
+        category_label = self._PERMANENT_CATEGORY_LABELS[punishment_type]
+
         try:
-            punishment_id = await self.logic.apply_global_voting_restriction(
+            punishment_id = await self.logic.apply_permanent_restriction(
+                punishment_type=punishment_type,
                 target_user_id=target_user.id,
                 moderator_id=moderator.id,
                 origin_guild_id=guild.id,
@@ -148,20 +175,21 @@ class PunishmentCog(
             )
         except GlobalProposalPunishmentAlreadyActiveError:
             await interaction.followup.send(
-                f"用户 {target_user.mention} 已被永久剥夺投票资格。",
+                f"用户 {target_user.mention} 已存在永久{category_label}限制。",
                 ephemeral=True,
             )
             return
         except Exception as exc:
-            logger.error("创建全局投票资格限制失败: %s", exc, exc_info=True)
+            logger.error("创建永久%s限制失败: %s", category_label, exc, exc_info=True)
             await interaction.followup.send("处理请求时发生错误，请联系技术人员。", ephemeral=True)
             return
 
-        embed = PunishmentEmbedBuilder.create_global_voting_restriction_embed(
+        embed = PunishmentEmbedBuilder.create_permanent_restriction_embed(
             moderator=moderator,
             target_user=target_user,
             reason=reason.strip(),
             origin_guild_name=guild.name,
+            punishment_type=punishment_type,
             evidence_url=evidence.url if evidence else None,
         )
         (
@@ -176,7 +204,7 @@ class PunishmentCog(
             )
         await interaction.followup.send(
             self._build_delivery_summary(
-                f"已永久剥夺 {target_user.mention} 的投票资格。",
+                f"已永久剥夺 {target_user.mention} 的{category_label}。",
                 public_sent,
                 dm_sent,
             ),
@@ -184,19 +212,33 @@ class PunishmentCog(
         )
 
     @app_commands.command(
-        name="解除永久投票资格限制",
-        description="[管理组/议事督导] 解除用户的机器人全局投票资格限制",
+        name="解除永久权限限制",
+        description="[管理组/议事督导] 按分类解除用户的永久提案权限限制",
     )
-    @app_commands.rename(target_user="用户", reason="解除理由")
-    @app_commands.describe(target_user="要恢复投票资格的用户", reason="解除理由")
+    @app_commands.rename(target_user="用户", category="分类", reason="解除理由")
+    @app_commands.describe(
+        target_user="要恢复权限的用户",
+        category="要解除的权限限制分类",
+        reason="解除理由",
+    )
+    @app_commands.choices(
+        category=[
+            app_commands.Choice(name="投票资格", value=PunishmentType.PERMANENT_VOTING.value),
+            app_commands.Choice(
+                name="异议创建与附议",
+                value=PunishmentType.PERMANENT_OBJECTION_CREATION.value,
+            ),
+        ]
+    )
     @RoleGuard.requireRoles("councilModerator", "stewards")
     async def lift_permanent_voting_restriction(
         self,
         interaction: discord.Interaction,
         target_user: discord.Member,
+        category: app_commands.Choice[str],
         reason: str,
     ) -> None:
-        """解除用户的机器人全局投票资格限制。"""
+        """按分类解除用户的机器人全局提案权限限制。"""
         if not await self._validate_global_command(interaction, target_user, reason):
             return
 
@@ -207,8 +249,12 @@ class PunishmentCog(
             await interaction.followup.send("此指令只能在服务器内使用。", ephemeral=True)
             return
 
+        punishment_type = PunishmentType(category.value)
+        category_label = self._PERMANENT_CATEGORY_LABELS[punishment_type]
+
         try:
-            punishment_id, original_created_at = await self.logic.lift_global_voting_restriction(
+            punishment_id, original_created_at = await self.logic.lift_permanent_restriction(
+                punishment_type=punishment_type,
                 target_user_id=target_user.id,
                 lifted_by_id=moderator.id,
                 lift_reason=reason.strip(),
@@ -219,21 +265,22 @@ class PunishmentCog(
             )
         except GlobalProposalPunishmentNotFoundError:
             await interaction.followup.send(
-                f"用户 {target_user.mention} 当前没有永久投票资格限制。",
+                f"用户 {target_user.mention} 当前没有永久{category_label}限制。",
                 ephemeral=True,
             )
             return
         except Exception as exc:
-            logger.error("解除全局投票资格限制失败: %s", exc, exc_info=True)
+            logger.error("解除永久%s限制失败: %s", category_label, exc, exc_info=True)
             await interaction.followup.send("处理请求时发生错误，请联系技术人员。", ephemeral=True)
             return
 
-        embed = PunishmentEmbedBuilder.create_global_voting_restriction_lifted_embed(
+        embed = PunishmentEmbedBuilder.create_permanent_restriction_lifted_embed(
             moderator=moderator,
             target_user=target_user,
             reason=reason.strip(),
             origin_guild_name=guild.name,
             original_created_at=original_created_at,
+            punishment_type=punishment_type,
         )
         (
             public_sent,
@@ -249,7 +296,7 @@ class PunishmentCog(
             )
         await interaction.followup.send(
             self._build_delivery_summary(
-                f"已恢复 {target_user.mention} 的投票资格。",
+                f"已恢复 {target_user.mention} 的{category_label}。",
                 public_sent,
                 dm_sent,
             ),
@@ -477,10 +524,28 @@ class PunishmentCog(
                 public_sent = True
                 public_message_id = getattr(public_message, "id", None)
             except Exception as exc:
-                logger.warning("发送全局投票资格限制公示失败: %s", exc, exc_info=True)
+                logger.warning("发送全局提案处罚公示失败: %s", exc, exc_info=True)
+
+        dm_embed = copy.deepcopy(embed)
+        guild_id = getattr(interaction, "guild_id", None)
+        if guild_id is None:
+            guild_id = getattr(getattr(interaction, "guild", None), "id", None)
+        channel_id = getattr(interaction, "channel_id", None)
+        if channel_id is None:
+            channel_id = getattr(channel, "id", None)
+        if guild_id is not None and channel_id is not None:
+            if public_message_id is not None:
+                source_url = (
+                    f"https://discord.com/channels/{guild_id}/{channel_id}/{public_message_id}"
+                )
+                source_value = f"[查看公开公示]({source_url})"
+            else:
+                source_url = f"https://discord.com/channels/{guild_id}/{channel_id}"
+                source_value = f"[查看来源频道]({source_url})"
+            dm_embed.add_field(name="操作来源", value=source_value, inline=False)
 
         try:
-            await self.bot.api_scheduler.submit(target_user.send(embed=embed), priority=5)
+            await self.bot.api_scheduler.submit(target_user.send(embed=dm_embed), priority=5)
             dm_sent = True
         except Exception as exc:
             logger.warning("向用户 %s 发送处罚私信失败: %s", target_user.id, exc)

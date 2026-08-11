@@ -114,6 +114,40 @@ class GlobalProposalPunishmentRepositoryTests(unittest.IsolatedAsyncioTestCase):
                     lift_reason="无有效处罚",
                 )
 
+    async def test_permanent_categories_coexist_and_have_distinct_scopes(self) -> None:
+        """两种永久处罚可并存，新分类不进入普通投票和草案支持的默认限制。"""
+        async with AsyncSession(self.engine) as session:
+            repository = GlobalProposalPunishmentRepository(session)
+            for punishment_type in (
+                PunishmentType.PERMANENT_VOTING,
+                PunishmentType.PERMANENT_OBJECTION_CREATION,
+            ):
+                await repository.create_punishment(
+                    target_user_id=10,
+                    moderator_id=20,
+                    origin_guild_id=30,
+                    origin_channel_id=40,
+                    punishment_type=punishment_type,
+                    reason="测试处罚",
+                )
+            await session.commit()
+
+            self.assertTrue(await repository.is_restricted(10))
+            self.assertTrue(await repository.is_objection_creation_restricted(10))
+            self.assertTrue(await repository.is_objection_support_restricted(10))
+
+            await repository.lift_punishment(
+                target_user_id=10,
+                punishment_type=PunishmentType.PERMANENT_VOTING,
+                lifted_by_id=20,
+                lift_reason="仅解除投票限制",
+            )
+            await session.commit()
+
+            self.assertFalse(await repository.is_restricted(10))
+            self.assertTrue(await repository.is_objection_creation_restricted(10))
+            self.assertTrue(await repository.is_objection_support_restricted(10))
+
     async def test_temporary_punishment_expires_and_can_be_archived(self) -> None:
         """限时处罚到期后应归档旧记录，并允许创建新的同类型处罚。"""
         async with AsyncSession(self.engine) as session:
@@ -225,6 +259,10 @@ class GlobalProposalPunishmentRepositoryTests(unittest.IsolatedAsyncioTestCase):
         }
 
         permanent_id = await logic.apply_global_voting_restriction(**common)
+        objection_id = await logic.apply_permanent_restriction(
+            punishment_type=PunishmentType.PERMANENT_OBJECTION_CREATION,
+            **common,
+        )
         violation_id, _ = await logic.apply_proposal_violation_punishment(
             **common,
             days=3,
@@ -243,6 +281,16 @@ class GlobalProposalPunishmentRepositoryTests(unittest.IsolatedAsyncioTestCase):
             guild_id=31,
             channel_id=41,
         )
+        lifted_objection_id, _ = await logic.lift_permanent_restriction(
+            punishment_type=PunishmentType.PERMANENT_OBJECTION_CREATION,
+            target_user_id=10,
+            lifted_by_id=20,
+            lift_reason="解除永久异议权限处罚",
+            moderator_name="moderator",
+            moderator_display_name="管理者",
+            guild_id=31,
+            channel_id=41,
+        )
         lifted_violation_id, _, _ = await logic.lift_proposal_violation_punishment(
             target_user_id=10,
             lifted_by_id=20,
@@ -256,22 +304,25 @@ class GlobalProposalPunishmentRepositoryTests(unittest.IsolatedAsyncioTestCase):
         async with AsyncSession(self.engine) as session:
             logs = list((await session.exec(select(OperationLog))).all())
 
-        self.assertEqual(len(logs), 4)
+        self.assertEqual(len(logs), 6)
         self.assertEqual(
             {log.action for log in logs},
             {
                 "apply_permanent_voting",
+                "apply_permanent_objection_creation",
                 "apply_proposal_violation",
                 "lift_permanent_voting",
+                "lift_permanent_objection_creation",
                 "lift_proposal_violation",
             },
         )
         self.assertTrue(all(log.op_type == LogOperationType.PUNISHMENT for log in logs))
         self.assertEqual(
             {log.target_id for log in logs},
-            {permanent_id, violation_id},
+            {permanent_id, objection_id, violation_id},
         )
         self.assertEqual(lifted_permanent_id, permanent_id)
+        self.assertEqual(lifted_objection_id, objection_id)
         self.assertEqual(lifted_violation_id, violation_id)
         self.assertTrue(all("temporary.png" not in (log.detail or "") for log in logs))
 
@@ -368,7 +419,9 @@ class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
             get_confirmation_session_by_message_id=AsyncMock(return_value=session),
             add_objection_supporter=AsyncMock(),
         )
-        restriction_repository = SimpleNamespace(is_restricted=AsyncMock(return_value=True))
+        restriction_repository = SimpleNamespace(
+            is_objection_support_restricted=AsyncMock(return_value=True)
+        )
         uow = _FakeUnitOfWork(
             confirmation_session=confirmation_repository,
             global_proposal_punishment=restriction_repository,
@@ -415,7 +468,9 @@ class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
             get_confirmation_session_by_message_id=AsyncMock(return_value=session),
             remove_objection_supporter=AsyncMock(side_effect=remove_supporter),
         )
-        restriction_repository = SimpleNamespace(is_restricted=AsyncMock(return_value=True))
+        restriction_repository = SimpleNamespace(
+            is_objection_support_restricted=AsyncMock(return_value=True)
+        )
         uow = _FakeUnitOfWork(
             confirmation_session=confirmation_repository,
             global_proposal_punishment=restriction_repository,
@@ -441,24 +496,38 @@ class GlobalVotingRestrictionVotingLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(completed)
         self.assertEqual(result.confirmed_parties, {"发起人": 1})
-        restriction_repository.is_restricted.assert_not_awaited()
+        restriction_repository.is_objection_support_restricted.assert_not_awaited()
 
 
 class GlobalVotingRestrictionCommandTests(unittest.IsolatedAsyncioTestCase):
     def test_commands_and_optional_evidence_parameter_are_registered(self) -> None:
         commands = {command.name: command for command in PunishmentCog.__cog_app_commands__}
-        self.assertIn("永久剥夺投票资格", commands)
-        self.assertIn("解除永久投票资格限制", commands)
+        self.assertIn("永久剥夺权限", commands)
+        self.assertIn("解除永久权限限制", commands)
         self.assertIn("提案违规处罚", commands)
         self.assertIn("解除提案违规处罚", commands)
 
         restrict_parameters = {
-            parameter.display_name: parameter
-            for parameter in commands["永久剥夺投票资格"].parameters
+            parameter.display_name: parameter for parameter in commands["永久剥夺权限"].parameters
         }
         self.assertTrue(restrict_parameters["用户"].required)
+        self.assertTrue(restrict_parameters["分类"].required)
+        self.assertEqual(
+            {choice.name for choice in restrict_parameters["分类"].choices},
+            {"投票资格", "异议创建与附议"},
+        )
         self.assertTrue(restrict_parameters["处罚理由"].required)
         self.assertFalse(restrict_parameters["处罚依据"].required)
+
+        lift_parameters = {
+            parameter.display_name: parameter
+            for parameter in commands["解除永久权限限制"].parameters
+        }
+        self.assertTrue(lift_parameters["分类"].required)
+        self.assertEqual(
+            {choice.name for choice in lift_parameters["分类"].choices},
+            {"投票资格", "异议创建与附议"},
+        )
 
         violation_parameters = {
             parameter.display_name: parameter for parameter in commands["提案违规处罚"].parameters
@@ -484,6 +553,19 @@ class GlobalVotingRestrictionCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("普通投票、异议投票、异议附议", embed.description or "")
         self.assertEqual(embed.image.url, "https://example.com/evidence.png")
         self.assertEqual(embed.fields[0].value, "测试处罚")
+
+    def test_objection_restriction_embed_only_lists_creation_and_support(self) -> None:
+        embed = PunishmentEmbedBuilder.create_permanent_restriction_embed(
+            moderator=SimpleNamespace(mention="<@20>"),  # type: ignore[arg-type]
+            target_user=SimpleNamespace(mention="<@10>"),  # type: ignore[arg-type]
+            reason="测试处罚",
+            origin_guild_name="测试服务器",
+            punishment_type=PunishmentType.PERMANENT_OBJECTION_CREATION,
+        )
+
+        self.assertIn("发起异议、新增异议附议", embed.description or "")
+        self.assertNotIn("异议投票", embed.description or "")
+        self.assertNotIn("草案支持票", embed.description or "")
 
     def test_proposal_violation_embed_contains_expiry_and_scope(self) -> None:
         """限时处罚公示必须明确展示截止时间和完整限制范围。"""
@@ -531,6 +613,61 @@ class GlobalVotingRestrictionCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dm_sent)
         self.assertEqual(public_message_id, 99)
         channel.send.assert_awaited_once()
+
+    async def test_dm_uses_exact_public_notice_link_without_mutating_public_embed(self) -> None:
+        class Scheduler:
+            async def submit(self, coroutine, priority):
+                return await coroutine
+
+        cog = PunishmentCog(SimpleNamespace(api_scheduler=Scheduler()))  # type: ignore[arg-type]
+        channel = SimpleNamespace(id=40, send=AsyncMock(return_value=SimpleNamespace(id=99)))
+        target = SimpleNamespace(id=10, send=AsyncMock())
+        interaction = SimpleNamespace(channel=channel, channel_id=40, guild_id=30)
+        embed = PunishmentEmbedBuilder.create_global_voting_restriction_embed(
+            moderator=SimpleNamespace(mention="<@20>"),  # type: ignore[arg-type]
+            target_user=SimpleNamespace(mention="<@10>"),  # type: ignore[arg-type]
+            reason="测试处罚",
+            origin_guild_name="测试服务器",
+        )
+
+        await cog._send_global_restriction_notifications(  # type: ignore[arg-type]
+            interaction, target, embed
+        )
+
+        public_embed = channel.send.await_args.kwargs["embed"]
+        dm_embed = target.send.await_args.kwargs["embed"]
+        self.assertFalse(any(field.name == "操作来源" for field in public_embed.fields))
+        source = next(field for field in dm_embed.fields if field.name == "操作来源")
+        self.assertIn("https://discord.com/channels/30/40/99", source.value)
+
+    async def test_dm_falls_back_to_source_channel_when_public_notice_fails(self) -> None:
+        class Scheduler:
+            async def submit(self, coroutine, priority):
+                return await coroutine
+
+        cog = PunishmentCog(SimpleNamespace(api_scheduler=Scheduler()))  # type: ignore[arg-type]
+        channel = SimpleNamespace(id=40, send=AsyncMock(side_effect=RuntimeError("forbidden")))
+        target = SimpleNamespace(id=10, send=AsyncMock())
+        interaction = SimpleNamespace(channel=channel, channel_id=40, guild_id=30)
+        embed = PunishmentEmbedBuilder.create_global_voting_restriction_embed(
+            moderator=SimpleNamespace(mention="<@20>"),  # type: ignore[arg-type]
+            target_user=SimpleNamespace(mention="<@10>"),  # type: ignore[arg-type]
+            reason="测试处罚",
+            origin_guild_name="测试服务器",
+        )
+
+        public_sent, dm_sent, _ = await cog._send_global_restriction_notifications(
+            interaction,
+            target,
+            embed,  # type: ignore[arg-type]
+        )
+
+        self.assertFalse(public_sent)
+        self.assertTrue(dm_sent)
+        dm_embed = target.send.await_args.kwargs["embed"]
+        source = next(field for field in dm_embed.fields if field.name == "操作来源")
+        self.assertIn("https://discord.com/channels/30/40", source.value)
+        self.assertNotIn("/99", source.value)
 
     async def test_message_location_writeback_failure_is_degraded(self) -> None:
         """消息位置回写失败只能记录错误，不得让已完成的 Discord 公示失败。"""

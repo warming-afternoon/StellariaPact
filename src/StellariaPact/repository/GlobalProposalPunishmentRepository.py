@@ -75,6 +75,27 @@ class GlobalProposalPunishmentRepository:
     async def is_proposal_violation_restricted(self, target_user_id: int) -> bool:
         return await self.get_active(target_user_id, PunishmentType.PROPOSAL_VIOLATION) is not None
 
+    async def is_objection_creation_restricted(self, target_user_id: int) -> bool:
+        """异议创建受永久专项限制或限时提案违规处罚约束。"""
+        return await self.is_restricted(
+            target_user_id,
+            (
+                PunishmentType.PERMANENT_OBJECTION_CREATION,
+                PunishmentType.PROPOSAL_VIOLATION,
+            ),
+        )
+
+    async def is_objection_support_restricted(self, target_user_id: int) -> bool:
+        """新增异议附议还受现有永久投票资格限制约束。"""
+        return await self.is_restricted(
+            target_user_id,
+            (
+                PunishmentType.PERMANENT_VOTING,
+                PunishmentType.PERMANENT_OBJECTION_CREATION,
+                PunishmentType.PROPOSAL_VIOLATION,
+            ),
+        )
+
     async def create_punishment(
         self,
         *,

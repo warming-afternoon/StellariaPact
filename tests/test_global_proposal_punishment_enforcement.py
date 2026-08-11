@@ -212,7 +212,7 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
     async def test_final_objection_creation_is_blocked(self) -> None:
         """处罚期间，即使通过旧异议表单提交，也不能创建异议附议面板。"""
         punishment_repository = SimpleNamespace(
-            is_proposal_violation_restricted=AsyncMock(return_value=True)
+            is_objection_creation_restricted=AsyncMock(return_value=True)
         )
         uow = _FakeUnitOfWork(global_proposal_punishment=punishment_repository)
         interaction = SimpleNamespace(
@@ -235,6 +235,34 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
 
         interaction.followup.send.assert_awaited_once()
         self.assertIn("无法创建异议", interaction.followup.send.await_args.args[0])
+
+    async def test_opening_objection_modal_is_blocked(self) -> None:
+        """在打开异议表单前即检查永久异议权限限制。"""
+        punishment_repository = SimpleNamespace(
+            is_objection_creation_restricted=AsyncMock(return_value=True)
+        )
+        uow = _FakeUnitOfWork(global_proposal_punishment=punishment_repository)
+        response = SimpleNamespace(is_done=lambda: False, send_message=AsyncMock())
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=10),
+            response=response,
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+        listener = InnerEventListener(SimpleNamespace(db_handler=object()))  # type: ignore
+
+        with patch(
+            "StellariaPact.cogs.Voting.listeners.InnerEventListener.UnitOfWork",
+            return_value=uow,
+        ):
+            await listener._internal_handle_create_option(  # type: ignore[arg-type]
+                interaction,
+                thread_id=30,
+                message_id=20,
+                option_type=1,
+            )
+
+        response.send_message.assert_awaited_once()
+        self.assertIn("无法创建异议", response.send_message.await_args.args[0])
 
     async def test_global_punishment_deletes_messages_only_in_proposal_threads(self) -> None:
         """全局发言限制只删除正式提案讨论帖消息，不影响其他帖子。"""

@@ -66,9 +66,10 @@ class PunishmentLogic:
             await uow.commit()
             return vote_details_to_update
 
-    async def apply_global_voting_restriction(
+    async def apply_permanent_restriction(
         self,
         *,
+        punishment_type: PunishmentType,
         target_user_id: int,
         moderator_id: int,
         origin_guild_id: int,
@@ -79,14 +80,20 @@ class PunishmentLogic:
         moderator_name: str,
         moderator_display_name: str,
     ) -> int:
-        """永久剥夺用户在本机器人范围内的投票资格。"""
+        """按分类永久剥夺用户的提案权限。"""
+        action = {
+            PunishmentType.PERMANENT_VOTING: "apply_permanent_voting",
+            PunishmentType.PERMANENT_OBJECTION_CREATION: "apply_permanent_objection_creation",
+        }.get(punishment_type)
+        if action is None:
+            raise ValueError("不支持的永久权限处罚分类。")
         async with UnitOfWork(self.bot.db_handler) as uow:
             punishment = await uow.global_proposal_punishment.create_punishment(
                 target_user_id=target_user_id,
                 moderator_id=moderator_id,
                 origin_guild_id=origin_guild_id,
                 origin_channel_id=origin_channel_id,
-                punishment_type=PunishmentType.PERMANENT_VOTING,
+                punishment_type=punishment_type,
                 reason=reason,
                 evidence_url=evidence_url,
                 evidence_filename=evidence_filename,
@@ -100,17 +107,18 @@ class PunishmentLogic:
                 moderator_name=moderator_name,
                 moderator_display_name=moderator_display_name,
                 guild_id=origin_guild_id,
-                action="apply_permanent_voting",
-                punishment_type=PunishmentType.PERMANENT_VOTING,
+                action=action,
+                punishment_type=punishment_type,
                 reason=reason,
                 origin_channel_id=origin_channel_id,
             )
             await uow.commit()
             return punishment_id
 
-    async def lift_global_voting_restriction(
+    async def lift_permanent_restriction(
         self,
         *,
+        punishment_type: PunishmentType,
         target_user_id: int,
         lifted_by_id: int,
         lift_reason: str,
@@ -119,11 +127,17 @@ class PunishmentLogic:
         guild_id: int,
         channel_id: int,
     ) -> tuple[int, datetime]:
-        """解除用户的机器人全局投票资格限制。"""
+        """按分类解除用户的永久提案权限限制。"""
+        action = {
+            PunishmentType.PERMANENT_VOTING: "lift_permanent_voting",
+            PunishmentType.PERMANENT_OBJECTION_CREATION: "lift_permanent_objection_creation",
+        }.get(punishment_type)
+        if action is None:
+            raise ValueError("不支持的永久权限处罚分类。")
         async with UnitOfWork(self.bot.db_handler) as uow:
             restriction = await uow.global_proposal_punishment.lift_punishment(
                 target_user_id=target_user_id,
-                punishment_type=PunishmentType.PERMANENT_VOTING,
+                punishment_type=punishment_type,
                 lifted_by_id=lifted_by_id,
                 lift_reason=lift_reason,
             )
@@ -137,13 +151,27 @@ class PunishmentLogic:
                 moderator_name=moderator_name,
                 moderator_display_name=moderator_display_name,
                 guild_id=guild_id,
-                action="lift_permanent_voting",
-                punishment_type=PunishmentType.PERMANENT_VOTING,
+                action=action,
+                punishment_type=punishment_type,
                 reason=lift_reason,
                 origin_channel_id=channel_id,
             )
             await uow.commit()
             return punishment_id, original_created_at
+
+    async def apply_global_voting_restriction(self, **kwargs) -> int:
+        """兼容旧调用：永久剥夺投票资格。"""
+        return await self.apply_permanent_restriction(
+            punishment_type=PunishmentType.PERMANENT_VOTING,
+            **kwargs,
+        )
+
+    async def lift_global_voting_restriction(self, **kwargs) -> tuple[int, datetime]:
+        """兼容旧调用：解除永久投票资格限制。"""
+        return await self.lift_permanent_restriction(
+            punishment_type=PunishmentType.PERMANENT_VOTING,
+            **kwargs,
+        )
 
     async def apply_proposal_violation_punishment(
         self,
