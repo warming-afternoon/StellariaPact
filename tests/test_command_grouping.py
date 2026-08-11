@@ -26,8 +26,8 @@ class CommandGroupingTests(unittest.TestCase):
         self.assertEqual(
             {command.name for command in group.commands},
             {
-                "永久剥夺投票资格",
-                "解除永久投票资格限制",
+                "永久剥夺权限",
+                "解除永久权限限制",
                 "提案违规处罚",
                 "解除提案违规处罚",
             },

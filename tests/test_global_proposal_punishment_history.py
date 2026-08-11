@@ -235,6 +235,21 @@ class GlobalProposalPunishmentHistoryModalTests(unittest.IsolatedAsyncioTestCase
         self.assertNotIn("已解除", modal.children[1].content)
         self.assertNotIn("解除/覆盖", modal.children[1].content)
 
+    async def test_objection_permission_restriction_has_readable_type_label(self) -> None:
+        record = self._build_record(
+            punishment_type=PunishmentType.PERMANENT_OBJECTION_CREATION,
+            reason="禁止发起和附议",
+        )
+
+        modal = GlobalProposalPunishmentHistoryModal(
+            self.target,  # type: ignore[arg-type]
+            1,
+            [record],
+            now=self.now,
+        )
+
+        self.assertIn("永久异议创建与附议限制", modal.children[1].content)
+
 
 class GlobalProposalPunishmentContextMenuTests(unittest.IsolatedAsyncioTestCase):
     """验证用户头像上下文菜单的定义、生命周期和权限参数。"""

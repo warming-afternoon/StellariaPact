@@ -3,6 +3,8 @@ from typing import Optional
 
 import discord
 
+from StellariaPact.share.enums import PunishmentType
+
 
 class PunishmentEmbedBuilder:
     PROPOSAL_VIOLATION_SCOPE = (
@@ -10,21 +12,43 @@ class PunishmentEmbedBuilder:
         "正式提案讨论帖发言、创建提案"
     )
 
+    _PERMANENT_RESTRICTION_COPY = {
+        PunishmentType.PERMANENT_VOTING: (
+            "永久投票资格限制",
+            "永久剥夺提案投票资格",
+            "普通投票、异议投票、异议附议、草案支持票",
+            "恢复提案投票资格",
+        ),
+        PunishmentType.PERMANENT_OBJECTION_CREATION: (
+            "永久异议创建与附议限制",
+            "永久剥夺异议创建与附议资格",
+            "发起异议、新增异议附议",
+            "恢复异议创建与附议资格",
+        ),
+    }
+
     @staticmethod
-    def create_global_voting_restriction_embed(
+    def create_permanent_restriction_embed(
         moderator: discord.Member,
         target_user: discord.User | discord.Member,
         reason: str,
         origin_guild_name: str,
+        punishment_type: PunishmentType,
         evidence_url: str | None = None,
     ) -> discord.Embed:
-        """创建永久剥夺投票资格的公示/私信 Embed。"""
+        """创建指定分类的永久权限处罚公示/私信 Embed。"""
+        try:
+            title, treatment, scope, _ = PunishmentEmbedBuilder._PERMANENT_RESTRICTION_COPY[
+                punishment_type
+            ]
+        except KeyError as exc:
+            raise ValueError("不支持的永久权限处罚分类。") from exc
         embed = discord.Embed(
-            title="永久投票资格限制",
+            title=title,
             description=(
                 f"**目标用户**: {target_user.mention}\n"
-                "**处理方式**: 永久剥夺提案投票资格\n"
-                "**影响范围**: 普通投票、异议投票、异议附议、草案支持票\n"
+                f"**处理方式**: {treatment}\n"
+                f"**影响范围**: {scope}\n"
                 f"**来源服务器**: {origin_guild_name}"
             ),
             color=discord.Color.dark_red(),
@@ -35,6 +59,24 @@ class PunishmentEmbedBuilder:
         if evidence_url:
             embed.set_image(url=evidence_url)
         return embed
+
+    @staticmethod
+    def create_global_voting_restriction_embed(
+        moderator: discord.Member,
+        target_user: discord.User | discord.Member,
+        reason: str,
+        origin_guild_name: str,
+        evidence_url: str | None = None,
+    ) -> discord.Embed:
+        """兼容旧调用：创建永久投票资格限制 Embed。"""
+        return PunishmentEmbedBuilder.create_permanent_restriction_embed(
+            moderator=moderator,
+            target_user=target_user,
+            reason=reason,
+            origin_guild_name=origin_guild_name,
+            punishment_type=PunishmentType.PERMANENT_VOTING,
+            evidence_url=evidence_url,
+        )
 
     @staticmethod
     def create_proposal_violation_embed(
@@ -95,20 +137,27 @@ class PunishmentEmbedBuilder:
         return embed
 
     @staticmethod
-    def create_global_voting_restriction_lifted_embed(
+    def create_permanent_restriction_lifted_embed(
         moderator: discord.Member,
         target_user: discord.User | discord.Member,
         reason: str,
         origin_guild_name: str,
         original_created_at: datetime,
+        punishment_type: PunishmentType,
     ) -> discord.Embed:
-        """创建解除永久投票资格限制的公示/私信 Embed。"""
+        """创建指定分类的永久权限限制解除公示/私信 Embed。"""
+        try:
+            title, _, _, treatment = PunishmentEmbedBuilder._PERMANENT_RESTRICTION_COPY[
+                punishment_type
+            ]
+        except KeyError as exc:
+            raise ValueError("不支持的永久权限处罚分类。") from exc
         original_timestamp = int(original_created_at.timestamp())
         embed = discord.Embed(
-            title="永久投票资格限制已解除",
+            title=f"{title}已解除",
             description=(
                 f"**目标用户**: {target_user.mention}\n"
-                "**处理方式**: 恢复提案投票资格\n"
+                f"**处理方式**: {treatment}\n"
                 f"**原处罚时间**: <t:{original_timestamp}:F>\n"
                 f"**来源服务器**: {origin_guild_name}"
             ),
@@ -118,6 +167,24 @@ class PunishmentEmbedBuilder:
         embed.add_field(name="解除理由", value=reason, inline=False)
         embed.add_field(name="操作人员", value=moderator.mention, inline=True)
         return embed
+
+    @staticmethod
+    def create_global_voting_restriction_lifted_embed(
+        moderator: discord.Member,
+        target_user: discord.User | discord.Member,
+        reason: str,
+        origin_guild_name: str,
+        original_created_at: datetime,
+    ) -> discord.Embed:
+        """兼容旧调用：创建永久投票资格限制解除 Embed。"""
+        return PunishmentEmbedBuilder.create_permanent_restriction_lifted_embed(
+            moderator=moderator,
+            target_user=target_user,
+            reason=reason,
+            origin_guild_name=origin_guild_name,
+            original_created_at=original_created_at,
+            punishment_type=PunishmentType.PERMANENT_VOTING,
+        )
 
     @staticmethod
     def create_punishment_embed(

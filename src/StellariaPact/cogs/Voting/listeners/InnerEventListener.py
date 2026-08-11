@@ -315,11 +315,11 @@ class InnerEventListener(commands.Cog):
             if option_type == 1:
                 # 校验提案状态是否允许
                 async with UnitOfWork(self.bot.db_handler) as uow:
-                    if await uow.global_proposal_punishment.is_proposal_violation_restricted(
+                    if await uow.global_proposal_punishment.is_objection_creation_restricted(
                         creator_id
                     ):
                         await interaction.followup.send(
-                            "❌ 你当前受到提案违规处罚，无法创建异议。",
+                            "❌ 你当前受到异议权限限制或提案违规处罚，无法创建异议。",
                             ephemeral=True,
                         )
                         return
@@ -838,10 +838,10 @@ class InnerEventListener(commands.Cog):
         # --- 限制讨论帖创建满 2 小时后才能创建异议 ---
         if option_type == 1:
             async with UnitOfWork(self.bot.db_handler) as uow:
-                if await uow.global_proposal_punishment.is_proposal_violation_restricted(
+                if await uow.global_proposal_punishment.is_objection_creation_restricted(
                     interaction.user.id
                 ):
-                    error_msg = "你当前受到提案违规处罚，无法创建异议。"
+                    error_msg = "你当前受到异议权限限制或提案违规处罚，无法创建异议。"
                     if not interaction.response.is_done():
                         await interaction.response.send_message(error_msg, ephemeral=True)
                     else:
