@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from StellariaPact.share.BusinessRuleError import BusinessRuleError
+
 if TYPE_CHECKING:
     from StellariaPact.repository.AnnouncementMonitorRepository import (
         AnnouncementMonitorRepository,
@@ -70,8 +72,15 @@ class UnitOfWork:
             if exc_type:
                 # 如果发生异常，记录并回滚
                 if not self._committed:
-                    logger.warning(
-                        f"UnitOfWork 检测到异常，正在回滚事务: {exc_type.__name__}: {exc_val}"
+                    log = (
+                        logger.debug
+                        if issubclass(exc_type, BusinessRuleError)
+                        else logger.warning
+                    )
+                    log(
+                        "UnitOfWork 检测到异常，正在回滚事务: %s: %s",
+                        exc_type.__name__,
+                        exc_val,
                     )
                     await self.rollback()
             else:

@@ -1,6 +1,7 @@
 from .ApiScheduler import APIScheduler
 from .auth import MissingRole, PermissionGuard, RoleGuard
 from .BaseDto import BaseDto
+from .BusinessRuleError import BusinessRuleError
 from .DatabaseHandler import DatabaseHandler
 from .DiscordUtils import DiscordUtils
 from .HttpClient import HttpClient
@@ -14,6 +15,7 @@ from .UnitOfWork import UnitOfWork
 __all__ = [
     "APIScheduler",
     "BaseDto",
+    "BusinessRuleError",
     "DatabaseHandler",
     "DiscordUtils",
     "HttpClient",

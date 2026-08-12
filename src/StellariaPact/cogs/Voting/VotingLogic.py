@@ -15,7 +15,7 @@ from StellariaPact.qo.user_activity import UpdateUserActivityQo
 from StellariaPact.qo.user_vote import RecordVoteQo
 from StellariaPact.qo.vote_session import AdjustVoteTimeQo
 from StellariaPact.repository.VoteSessionRepository import VoteSessionRepository
-from StellariaPact.share import StellariaPactBot, TimeUtils, UnitOfWork
+from StellariaPact.share import BusinessRuleError, StellariaPactBot, TimeUtils, UnitOfWork
 from StellariaPact.share.auth import RoleGuard
 
 logger = logging.getLogger(__name__)
@@ -62,19 +62,19 @@ class VotingLogic:
                 raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
 
             if await uow.global_proposal_punishment.is_restricted(qo.user_id):
-                raise PermissionError(
+                raise BusinessRuleError(
                     "你当前受到全局提案处罚，无法新增或修改投票；已有投票仍可撤回。"
                 )
 
             if vote_session.status != 1 or vote_session.id is None:
-                raise PermissionError("该投票已结束，无法继续投票。")
+                raise BusinessRuleError("该投票已结束，无法继续投票。")
 
             active_options = await uow.vote_option.get_active_options_by_type(
                 vote_session.id, qo.option_type
             )
             active_choice_indices = {option.choice_index for option in active_options}
             if qo.choice_index not in active_choice_indices:
-                raise PermissionError("该投票选项已结束或不存在。")
+                raise BusinessRuleError("该投票选项已结束或不存在。")
 
             # 检查资格
             is_eligible, _, _ = await self._get_combined_eligibility_data(
@@ -82,7 +82,7 @@ class VotingLogic:
             )
 
             if not is_eligible:
-                raise PermissionError("投票资格已失效（有效发言数不足或已被撤销资格）。")
+                raise BusinessRuleError("投票资格已失效（有效发言数不足或已被撤销资格）。")
 
             # 多选项数上限限制检查（仅针对支持票 choice==1 检查）
             if qo.choice == 1:
@@ -102,7 +102,7 @@ class VotingLogic:
                 # 如果是新的支持票，且已达上限，则阻拦
                 max_choices_per_user = getattr(vote_session, "max_choices_per_user", 999999)
                 if not already_supported and len(current_supports) >= max_choices_per_user:
-                    raise PermissionError(
+                    raise BusinessRuleError(
                         f"您最多只能支持 {max_choices_per_user} 个选项。请先撤回其他支持。"
                     )
 
@@ -256,13 +256,13 @@ class VotingLogic:
                 raise ValueError(f"找不到与消息 ID {qo.message_id} 关联的投票会话。")
 
             if vote_session.status != 1 or vote_session.id is None:
-                raise PermissionError("该投票已结束，无法撤票。")
+                raise BusinessRuleError("该投票已结束，无法撤票。")
 
             option = await uow.vote_option.get_active_option(
                 vote_session.id, qo.option_type, qo.choice_index
             )
             if not option:
-                raise PermissionError("该投票选项已结束或不存在，无法撤票。")
+                raise BusinessRuleError("该投票选项已结束或不存在，无法撤票。")
 
             updated_session = await uow.user_vote.delete_vote(
                 user_id=qo.user_id,
@@ -480,13 +480,13 @@ class VotingLogic:
             if not vote_session or not vote_session.id:
                 raise ValueError(f"找不到与消息 ID {message_id} 关联的投票会话。")
             if vote_session.status != 1:
-                raise PermissionError("该投票已结束，不能删除选项。")
+                raise BusinessRuleError("该投票已结束，不能删除选项。")
 
             option = await uow.vote_option.get_option_by_id(option_id)
             if not option or option.session_id != vote_session.id:
                 raise ValueError("找不到该投票会话中的指定选项。")
             if option.voting_status != 1:
-                raise PermissionError("已结束的投票选项不能删除。")
+                raise BusinessRuleError("已结束的投票选项不能删除。")
 
             # 获取当前所有选项（包括即将被删除的）
             all_options = await uow.vote_option.get_vote_options(vote_session.id)
@@ -578,7 +578,7 @@ class VotingLogic:
         # 身份组校验
         valid_roles = ["councilModerator", "executionAuditor", "stewards", "communityBuilder"]
         if not RoleGuard.hasRoles(interaction, *valid_roles):
-            raise PermissionError("❌ 你没有权限参与异议附议。需要提案组/社区建设者身份组。")
+            raise BusinessRuleError("❌ 你没有权限参与异议附议。需要提案组/社区建设者身份组。")
 
         session_dto = None
         is_completed = False
@@ -606,7 +606,7 @@ class VotingLogic:
             # ======= 根据 action 分流处理 =======
             if action == "support":
                 if await uow.global_proposal_punishment.is_objection_support_restricted(user_id):
-                    raise PermissionError(
+                    raise BusinessRuleError(
                         "你当前受到全局提案处罚，无法参与异议附议；已有附议仍可撤回。"
                     )
                 if user_id in parties.values():
