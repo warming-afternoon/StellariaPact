@@ -6,6 +6,7 @@ from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 from .Cog import Voting
 from .EligibilityService import EligibilityService
+from .listeners.DiscussionMessageListener import DiscussionMessageListener
 from .listeners.InnerEventListener import InnerEventListener
 from .listeners.MessageEventApiCog import MessageEventApiCog
 from .listeners.ModerationEventListener import ModerationEventListener
@@ -20,6 +21,7 @@ __all__ = [
     "VotingLogic",
     "ModerationEventListener",
     "InnerEventListener",
+    "DiscussionMessageListener",
     "MessageEventApiCog",
     "VoteCloser",
     "VoteView",
@@ -27,6 +29,23 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def create_message_listener(
+    bot: StellariaPactBot,
+    voting_cog: Voting,
+) -> DiscussionMessageListener | MessageEventApiCog:
+    """根据配置创建唯一的资格消息监听器。"""
+    # 远端模式只启动带鉴权的 HTTP 消息事件接收端。
+    if bot.remote_message_events.enabled:
+        return MessageEventApiCog(
+            bot,
+            voting_cog,
+            bot.remote_message_events,
+        )
+
+    # 本地模式直接读取 Discord 消息正文并统计资格。
+    return DiscussionMessageListener(bot, voting_cog)
 
 
 async def setup(bot: StellariaPactBot) -> None:
@@ -38,12 +57,15 @@ async def setup(bot: StellariaPactBot) -> None:
     # 实例化核心 Cog。
     voting_cog = Voting(bot)
 
+    # 资格消息只选择一个来源，避免本地监听和远端事件重复计数。
+    message_listener = create_message_listener(bot, voting_cog)
+
     # 实例化依赖于其他 Cog 的组件并注入依赖。
     cogs_to_load = [
         voting_cog,
         VoteCloser(bot),
         ModerationEventListener(bot),
-        MessageEventApiCog(bot, voting_cog),
+        message_listener,
         InnerEventListener(bot),
     ]
 

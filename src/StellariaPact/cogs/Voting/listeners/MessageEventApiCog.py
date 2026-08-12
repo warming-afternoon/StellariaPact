@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hmac
 import logging
-import os
 
 import discord
 from aiohttp import web
@@ -17,6 +16,7 @@ from StellariaPact.cogs.Voting.views import VoteEmbedBuilder
 from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.qo.user_activity import UpdateUserActivityQo
 from StellariaPact.share import DiscordUtils, StellariaPactBot
+from StellariaPact.share.RemoteMessageEventsConfig import RemoteMessageEventsConfig
 
 logger = logging.getLogger(__name__)
 
@@ -28,31 +28,22 @@ MAX_REQUEST_SIZE = 16 * 1024
 class MessageEventApiCog(commands.Cog):
     """接收并处理下载 Bot 转发的消息资格事件。"""
 
-    def __init__(self, bot: StellariaPactBot, voting_cog: Voting):
+    def __init__(
+        self,
+        bot: StellariaPactBot,
+        voting_cog: Voting,
+        config: RemoteMessageEventsConfig,
+    ):
         """初始化消息事件 API Cog。"""
-        # 保存业务依赖并读取 HTTP 监听配置。
+        # 保存业务依赖和入口处已经校验的远端配置。
         self.bot = bot
         self.voting_cog = voting_cog
-        self.bind_host = os.getenv("STELLARIA_EVENT_API_BIND_HOST", "0.0.0.0").strip()
-        self.bind_port = self._parse_port(os.getenv("STELLARIA_EVENT_API_PORT", "8765"))
-        self.token = os.getenv("STELLARIA_EVENT_API_TOKEN", "").strip()
+        self.config = config
 
         # 初始化 aiohttp 服务生命周期对象。
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
         self.application = self._build_application()
-
-    @staticmethod
-    def _parse_port(value: str) -> int | None:
-        """解析并校验 HTTP 监听端口。"""
-        # 非整数端口视为无效配置。
-        try:
-            port = int(value)
-        except ValueError:
-            return None
-
-        # TCP 端口必须处于合法范围。
-        return port if 1 <= port <= 65535 else None
 
     def _build_application(self) -> web.Application:
         """创建带请求体限制和固定路由的 aiohttp 应用。"""
@@ -66,40 +57,24 @@ class MessageEventApiCog(commands.Cog):
 
     async def cog_load(self) -> None:
         """加载 Cog 时启动内部 HTTP 服务。"""
-        # 缺少共享令牌时拒绝暴露未鉴权接口。
-        if not self.token:
-            logger.critical(
-                "STELLARIA_EVENT_API_TOKEN is missing; the message event API was not started."
-            )
-            return
-
-        # 主机或端口无效时保留 Bot 其他功能并跳过 API 启动。
-        if not self.bind_host or self.bind_port is None:
-            logger.critical(
-                "Invalid Stellaria message event API bind configuration: host=%r port=%r",
-                self.bind_host,
-                self.bind_port,
-            )
-            return
-
         # 创建并绑定 aiohttp 服务，失败时完整清理已分配资源。
         runner = web.AppRunner(self.application)
         try:
             await runner.setup()
-            site = web.TCPSite(runner, self.bind_host, self.bind_port)
+            site = web.TCPSite(runner, self.config.bind_host, self.config.bind_port)
             await site.start()
         except Exception:
             await runner.cleanup()
             logger.exception("Failed to start the Stellaria message event API.")
-            return
+            raise
 
         # 记录已启动的服务对象供卸载流程清理。
         self._runner = runner
         self._site = site
         logger.info(
             "Stellaria message event API listening on %s:%s",
-            self.bind_host,
-            self.bind_port,
+            self.config.bind_host,
+            self.config.bind_port,
         )
 
     async def cog_unload(self) -> None:
@@ -120,10 +95,10 @@ class MessageEventApiCog(commands.Cog):
         """使用常量时间比较验证 Bearer Token。"""
         # 从请求头提取完整 Bearer 凭据。
         supplied = request.headers.get("Authorization", "")
-        expected = f"Bearer {self.token}"
+        expected = f"Bearer {self.config.token}"
 
         # 空令牌永远不能通过验证。
-        return bool(self.token) and hmac.compare_digest(supplied, expected)
+        return hmac.compare_digest(supplied, expected)
 
     def _matches_config(self, event: MessageEvent) -> bool:
         """校验事件服务器和论坛是否匹配 Bot 配置。"""

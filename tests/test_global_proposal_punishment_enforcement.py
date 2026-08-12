@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+import discord
+
 from StellariaPact.cogs.Intake.services.IntakeDraftService import IntakeDraftService
 from StellariaPact.cogs.Intake.services.IntakeVoteService import IntakeVoteService
 from StellariaPact.cogs.Punishment.listeners.PunishmentListener import PunishmentListener
@@ -279,6 +281,7 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
             author=SimpleNamespace(id=10, bot=False),
             channel=FakeThread(30),
             guild=SimpleNamespace(id=40),
+            content="",
             delete=AsyncMock(),
         )
         uow = _FakeUnitOfWork(
@@ -316,6 +319,42 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
             await listener.on_message(message)  # type: ignore[arg-type]
 
         message.delete.assert_not_awaited()
+
+    async def test_thread_mute_deletes_empty_content_without_privileged_intent(self) -> None:
+        """帖子禁言应在消息正文被隐藏时仍尝试删除并处理权限不足。"""
+
+        # 模拟无 Message Content 特权时仍可取得的帖子和作者元数据。
+        class FakeThread:
+            id = 30
+
+        response = Mock(status=403, reason="Forbidden")
+        message = SimpleNamespace(
+            author=SimpleNamespace(id=10, bot=False),
+            channel=FakeThread(),
+            guild=SimpleNamespace(id=40),
+            content="",
+            delete=AsyncMock(side_effect=discord.Forbidden(response, "Missing Permissions")),
+        )
+        listener = object.__new__(PunishmentListener)
+        listener.bot = SimpleNamespace(db_handler=object())
+        listener.active_mutes = {30: {10: datetime.now(timezone.utc) + timedelta(minutes=5)}}
+        listener.active_proposal_violations = {}
+
+        # 删除权限不足只记录警告，不应中断其他消息监听器。
+        with (
+            patch(
+                "StellariaPact.cogs.Punishment.listeners.PunishmentListener.discord.Thread",
+                FakeThread,
+            ),
+            self.assertLogs(
+                "StellariaPact.cogs.Punishment.listeners.PunishmentListener",
+                level="WARNING",
+            ) as logs,
+        ):
+            await listener.on_message(message)  # type: ignore[arg-type]
+
+        message.delete.assert_awaited_once()
+        self.assertTrue(any("缺少管理消息权限" in entry for entry in logs.output))
 
 
 if __name__ == "__main__":

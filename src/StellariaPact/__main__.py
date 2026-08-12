@@ -14,6 +14,7 @@ from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.DatabaseHandler import get_db_handler, initialize_db_handler
 from StellariaPact.share.HttpClient import HttpClient
 from StellariaPact.share.LoggingConfigurator import LoggingConfigurator
+from StellariaPact.share.RemoteMessageEventsConfig import RemoteMessageEventsConfig
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
 
@@ -62,10 +63,11 @@ async def shutdown(loop):
 async def main_async():
     """主函数，设置并运行 Bot"""
     global bot, db_handler
-    intents = discord.Intents.default()
-    # 临时关闭尚未获批的特权 Intent，避免机器人在连接 Gateway 时退出。
-    intents.message_content = False
-    intents.members = False
+    # 在连接 Discord 前校验监听模式，避免远端配置错误时 Bot 仍显示在线。
+    remote_message_events = RemoteMessageEventsConfig.from_env()
+
+    # 使用统一配置创建与监听模式匹配的 Discord Intents。
+    intents = remote_message_events.create_discord_intents()
 
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -76,6 +78,7 @@ async def main_async():
     bot.api_scheduler = APIScheduler()
     bot.db_handler = None
     bot.config = config
+    bot.remote_message_events = remote_message_events
     bot.time_utils = TimeUtils()
 
     @bot.event
