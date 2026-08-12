@@ -1,9 +1,19 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 from StellariaPact.cogs.Voting.listeners.MessageEventApiCog import MessageEventApiCog
+from StellariaPact.share.RemoteMessageEventsConfig import (
+    RemoteMessageEventsConfig,
+)
+
+REMOTE_CONFIG = RemoteMessageEventsConfig(
+    enabled=True,
+    bind_host="127.0.0.1",
+    bind_port=8765,
+    token="shared-secret",
+)
 
 
 def make_cog() -> tuple[MessageEventApiCog, MagicMock]:
@@ -12,16 +22,7 @@ def make_cog() -> tuple[MessageEventApiCog, MagicMock]:
     voting_cog = MagicMock()
     voting_cog.logic.handle_message_creation = AsyncMock()
     voting_cog.logic.handle_message_deletion = AsyncMock(return_value=None)
-    with patch.dict(
-        "os.environ",
-        {
-            "STELLARIA_EVENT_API_TOKEN": "shared-secret",
-            "STELLARIA_EVENT_API_BIND_HOST": "127.0.0.1",
-            "STELLARIA_EVENT_API_PORT": "8765",
-        },
-        clear=False,
-    ):
-        cog = MessageEventApiCog(bot, voting_cog)
+    cog = MessageEventApiCog(bot, voting_cog, REMOTE_CONFIG)
     return cog, voting_cog
 
 
@@ -116,17 +117,3 @@ async def test_rejects_unknown_fields_and_wrong_origin():
     assert wrong_origin.status == 422
     assert wrong_version.status == 400
     voting_cog.logic.handle_message_creation.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_missing_token_does_not_bind_server():
-    bot = MagicMock()
-    bot.config = {"guild_id": 100, "channels": {"discussion": 200}}
-    voting_cog = MagicMock()
-    with patch.dict("os.environ", {"STELLARIA_EVENT_API_TOKEN": ""}, clear=False):
-        cog = MessageEventApiCog(bot, voting_cog)
-
-    await cog.cog_load()
-
-    assert cog._runner is None
-    assert cog._site is None

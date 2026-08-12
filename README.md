@@ -312,6 +312,34 @@ graph TD
     ```bash
     docker compose down
     ```
+
+### 消息资格监听模式
+
+测试 Bot 拥有 Message Content 特权时，保持 `.env` 中的远端事件开关关闭，并使用基础 Compose：
+
+```dotenv
+STELLARIA_REMOTE_MESSAGE_EVENTS_ENABLED=false
+```
+
+```bash
+docker compose up -d --build
+```
+
+生产 Bot 没有 Message Content 特权时，开启远端事件并填写共享 Token：
+
+```dotenv
+STELLARIA_REMOTE_MESSAGE_EVENTS_ENABLED=true
+STELLARIA_EVENT_API_TOKEN=REPLACE_WITH_A_SHARED_RANDOM_TOKEN
+```
+
+首次部署创建桥接网络，之后使用生产覆盖文件启动：
+
+```bash
+docker network create Odysseia-BOT
+docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d --build
+```
+
+远端模式的 Token、绑定地址或端口无效时，Bot 会拒绝启动，避免资格统计静默停摆。
 ## ‍💻 开发指南 (For Developers)
 
 `python setup.py dev` 命令会自动为你安装所有开发工具（如 `ruff`, `pre-commit`）并设置好 Git 钩子。

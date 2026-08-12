@@ -1,0 +1,11 @@
+services:
+  stellaria-pact:
+    networks:
+      bot-bridge:
+        aliases:
+          - stellaria-pact-api
+
+networks:
+  bot-bridge:
+    external: true
+    name: ${BOT_BRIDGE_NETWORK:-Odysseia-BOT}
