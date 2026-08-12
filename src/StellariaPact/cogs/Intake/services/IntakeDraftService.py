@@ -11,7 +11,7 @@ from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import IntakeEmbedBuilde
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.ProposalIntake import ProposalIntake
-from StellariaPact.share import DiscordUtils
+from StellariaPact.share import BusinessRuleError, DiscordUtils
 from StellariaPact.share.enums import IntakeStatus, ProposalStatus
 from StellariaPact.share.enums.LogOperationType import LogOperationType
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -118,11 +118,11 @@ class IntakeDraftService:
             if await uow.global_proposal_punishment.is_proposal_violation_restricted(
                 dto.author_id
             ):
-                raise PermissionError("你当前受到提案违规处罚，无法创建或提交提案草案。")
+                raise BusinessRuleError("你当前受到提案违规处罚，无法创建或提交提案草案。")
 
         allowed, message = await self.check_submission_limit(dto.guild_id)
         if not allowed:
-            raise PermissionError(message)
+            raise BusinessRuleError(message)
 
         max_retries = 3
         retry_delay = 0.8
