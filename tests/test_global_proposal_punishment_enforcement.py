@@ -178,7 +178,7 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
         )
         uow = _FakeUnitOfWork(global_proposal_punishment=punishment_repository)
         service = IntakeDraftService(SimpleNamespace(db_handler=object()))  # type: ignore
-        dto = SimpleNamespace(author_id=10, guild_id=20)
+        dto = SimpleNamespace(author_id=10, guild_id=20, title="合法提案标题")
 
         with patch(
             "StellariaPact.cogs.Intake.services.IntakeDraftService.UnitOfWork",

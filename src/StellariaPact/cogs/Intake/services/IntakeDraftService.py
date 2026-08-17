@@ -11,7 +11,7 @@ from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import IntakeEmbedBuilde
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.ProposalIntake import ProposalIntake
-from StellariaPact.share import BusinessRuleError, DiscordUtils
+from StellariaPact.share import BusinessRuleError, DiscordUtils, StringUtils
 from StellariaPact.share.enums import IntakeStatus, ProposalStatus
 from StellariaPact.share.enums.LogOperationType import LogOperationType
 from StellariaPact.share.UnitOfWork import UnitOfWork
@@ -114,6 +114,8 @@ class IntakeDraftService:
         operator_display_name: str = "",
     ) -> ProposalIntakeDto:
         """草案提交"""
+        StringUtils.validate_proposal_title(dto.title)
+
         async with UnitOfWork(self.bot.db_handler) as uow:
             if await uow.global_proposal_punishment.is_proposal_violation_restricted(
                 dto.author_id

@@ -2,11 +2,29 @@ import re
 
 import discord
 
+from StellariaPact.share.BusinessRuleError import BusinessRuleError
+
 
 class StringUtils:
     """
     提供字符串处理相关的静态工具方法
     """
+
+    _PROPOSAL_TITLE_FORBIDDEN_CHARACTERS = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
+
+    @staticmethod
+    def validate_proposal_title(title: str) -> None:
+        """校验提案标题是否包含 Windows 文件名禁用的半角符号。"""
+        if any(
+            character in title
+            for character in StringUtils._PROPOSAL_TITLE_FORBIDDEN_CHARACTERS
+        ):
+            forbidden_characters = " ".join(
+                StringUtils._PROPOSAL_TITLE_FORBIDDEN_CHARACTERS
+            )
+            raise BusinessRuleError(
+                f"提案标题不能包含以下半角符号：{forbidden_characters}"
+            )
 
     @staticmethod
     def clean_title(title: str) -> str:

@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from StellariaPact.cogs.Intake.IntakeModal import IntakeModal
 from StellariaPact.dto import ConfirmationSessionDto
+from StellariaPact.share.BusinessRuleError import BusinessRuleError
 from StellariaPact.share.SafeDefer import safeDefer
 
 if TYPE_CHECKING:
@@ -74,9 +75,9 @@ class IntakeEventListenerCog(commands.Cog):
                 "已成功提交至审核通道。"
             )
             await interaction.followup.send("✅ 草案已提交", ephemeral=True)
-        except PermissionError as pe:
-            logger.warning(f"提交草案被拒绝 (讨论中议案过多): {dto.author_id}")
-            await interaction.followup.send(f"❌ {str(pe)}", ephemeral=True)
+        except BusinessRuleError as error:
+            logger.info("提交草案被业务规则拒绝: %s", error)
+            await interaction.followup.send(f"❌ {error}", ephemeral=True)
         except Exception as e:
             logger.error(f"处理来自 {dto.author_id} 的草案提交时出错: {e}", exc_info=True)
             await interaction.followup.send(
@@ -227,6 +228,9 @@ class IntakeEventListenerCog(commands.Cog):
                 "✅ 提案修改成功！审核帖子内容已更新。",
                 ephemeral=True,
             )
+        except BusinessRuleError as error:
+            logger.info("修改草案被业务规则拒绝: %s", error)
+            await interaction.followup.send(f"❌ {error}", ephemeral=True)
         except Exception as e:
             logger.error(f"处理草案修改事件时出错 (ID: {intake_id}): {e}", exc_info=True)
             await interaction.followup.send(f"❌ 修改提案时出错: {str(e)}", ephemeral=True)
