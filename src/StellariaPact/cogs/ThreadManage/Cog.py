@@ -16,7 +16,7 @@ from StellariaPact.cogs.ThreadManage.views.EditProposalContentModal import (
 )
 from StellariaPact.dto import ProposalDto
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
-from StellariaPact.share import UnitOfWork, safeDefer
+from StellariaPact.share import BusinessRuleError, StringUtils, UnitOfWork, safeDefer
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums.LogOperationType import LogOperationType
 
@@ -231,6 +231,9 @@ class ThreadManageCog(commands.Cog):
             await interaction.followup.send("✅ 提案内容已成功更新！", ephemeral=True)
             logger.info(f"用户 {interaction.user.id} 更新了提案 {dto.proposal_id} 的内容")
 
+        except BusinessRuleError as e:
+            logger.info("更新提案内容被业务规则拒绝: %s", e)
+            await interaction.followup.send(f"⚠️ {e}", ephemeral=True)
         except discord.NotFound as e:
             logger.warning(f"无法在帖子中找到起始消息: {e}")
             await interaction.followup.send("⚠️ 无法找到帖子起始消息，更新已取消。", ephemeral=True)
@@ -255,6 +258,8 @@ class ThreadManageCog(commands.Cog):
 
         返回: (old_values, changed_fields)
         """
+        StringUtils.validate_proposal_title(dto.title)
+
         async with UnitOfWork(self.bot.db_handler) as uow:
             # 获取提案记录
             proposal = await uow.proposal.get_proposal_by_id(dto.proposal_id)

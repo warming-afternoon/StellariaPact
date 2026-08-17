@@ -7,22 +7,18 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import \
-    IntakeEmbedBuilder
+from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import IntakeEmbedBuilder
 from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.cogs.Intake.views.IntakeSupportView import IntakeSupportView
-from StellariaPact.qo.vote_session import CreateVoteSessionQo
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
-from StellariaPact.share import DiscordUtils
-from StellariaPact.share.enums import (IntakeStatus, LogOperationType,
-                                       VoteSessionType)
+from StellariaPact.qo.vote_session import CreateVoteSessionQo
+from StellariaPact.share import DiscordUtils, StringUtils
+from StellariaPact.share.enums import IntakeStatus, LogOperationType, VoteSessionType
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
 if TYPE_CHECKING:
-    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import \
-        IntakeSubmissionDto
-    from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import \
-        IntakeDiscordHelper
+    from StellariaPact.cogs.Intake.dto.IntakeSubmissionDto import IntakeSubmissionDto
+    from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import IntakeDiscordHelper
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
 
 logger = logging.getLogger(__name__)
@@ -217,7 +213,10 @@ class IntakeReviewService:
                 reviewer_id,
                 review_comment,
                 IntakeStatus.REJECTED,
-                expected_current_status=[IntakeStatus.PENDING_REVIEW, IntakeStatus.MODIFICATION_REQUIRED],
+                expected_current_status=[
+                    IntakeStatus.PENDING_REVIEW,
+                    IntakeStatus.MODIFICATION_REQUIRED,
+                ],
             )
             intake_dto = ProposalIntakeDto.model_validate(intake)
 
@@ -237,7 +236,9 @@ class IntakeReviewService:
 
         # 修改审核帖首楼内容并发送审核公示
         view = IntakeReviewView(self.bot, intake_dto)
-        await self.discord_helper.update_review_thread_message(intake_dto, view=view, notify_proposer=True)
+        await self.discord_helper.update_review_thread_message(
+            intake_dto, view=view, notify_proposer=True
+        )
 
         # 修改审核帖标题和标签
         await self.discord_helper.update_review_thread_tags(intake_dto)
@@ -283,7 +284,9 @@ class IntakeReviewService:
         # 修改审核帖首楼内容/标题/TAG 并发送修改公示
         view = IntakeReviewView(self.bot, intake_dto)
         await asyncio.gather(
-            self.discord_helper.update_review_thread_message(intake_dto, view=view, notify_proposer=True),
+            self.discord_helper.update_review_thread_message(
+                intake_dto, view=view, notify_proposer=True
+            ),
             self.discord_helper.update_review_thread_tags(intake_dto),
             return_exceptions=True,
         )
@@ -301,6 +304,8 @@ class IntakeReviewService:
         operator_display_name: str = "",
     ) -> ProposalIntakeDto:
         """提案人修改草案"""
+        StringUtils.validate_proposal_title(dto.title)
+
         # 更新提案内容
         async with UnitOfWork(self.bot.db_handler) as uow:
             intake = await uow.intake.get_intake_by_id(intake_id)
