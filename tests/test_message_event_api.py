@@ -19,6 +19,7 @@ REMOTE_CONFIG = RemoteMessageEventsConfig(
 def make_cog() -> tuple[MessageEventApiCog, MagicMock]:
     bot = MagicMock()
     bot.config = {"guild_id": 100, "channels": {"discussion": 200}}
+    bot.get_cog.return_value = None
     voting_cog = MagicMock()
     voting_cog.logic.handle_message_creation = AsyncMock()
     voting_cog.logic.handle_message_deletion = AsyncMock(return_value=None)
@@ -66,6 +67,28 @@ async def test_creation_event_routes_to_existing_voting_logic():
     assert response.status == 200
     qo = voting_cog.logic.handle_message_creation.await_args.args[0]
     assert (qo.user_id, qo.thread_id, qo.change) == (500, 400, 1)
+
+
+@pytest.mark.asyncio
+async def test_structured_webhook_event_is_not_counted_twice():
+    """验证远端入口会忽略已由结构化发言服务记账的 Webhook 作者。"""
+    cog, voting_cog = make_cog()
+    structured_cog = MagicMock()
+    structured_cog.is_structured_webhook_id.return_value = True
+    cog.bot.get_cog.return_value = structured_cog
+    headers = {"Authorization": "Bearer shared-secret"}
+
+    async with TestClient(TestServer(cog.application)) as client:
+        response = await client.post(
+            "/api/v1/message-events",
+            json=event_payload(),
+            headers=headers,
+        )
+        response_payload = await response.json()
+
+    assert response.status == 200
+    assert response_payload == {"status": "ignored_structured_webhook"}
+    voting_cog.logic.handle_message_creation.assert_not_awaited()
 
 
 @pytest.mark.asyncio

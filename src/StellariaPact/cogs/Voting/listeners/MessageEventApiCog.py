@@ -136,6 +136,12 @@ class MessageEventApiCog(commands.Cog):
             )
 
         # Cog 只组装单次业务请求，不直接访问数据库或 Repository。
+        # 结构化 Webhook 发言由专用服务记账，避免远端事件重复增减活动计数。
+        structured_speech_cog = self.bot.get_cog("StructuredSpeechCog")
+        webhook_checker = getattr(structured_speech_cog, "is_structured_webhook_id", None)
+        if callable(webhook_checker) and webhook_checker(event.user_id) is True:
+            return web.json_response({"status": "ignored_structured_webhook"})
+
         qo = UpdateUserActivityQo(
             user_id=event.user_id,
             thread_id=event.thread_id,
