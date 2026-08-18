@@ -5,6 +5,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from StellariaPact.cogs.StructuredSpeech.StructuredSpeechMessageTargetResolver import (
+    StructuredSpeechMessageTargetResolver,
+)
+from StellariaPact.cogs.StructuredSpeech.StructuredSpeechUserError import (
+    StructuredSpeechUserError,
+)
+from StellariaPact.qo.structured_speech import ResolveStructuredSpeechReferenceQo
 from StellariaPact.repository.GlobalProposalPunishmentAlreadyActiveError import (
     GlobalProposalPunishmentAlreadyActiveError,
 )
@@ -45,6 +52,7 @@ class PunishmentCog(
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
         self.logic = PunishmentLogic(bot)
+        self.message_target_resolver = StructuredSpeechMessageTargetResolver(bot)
 
         # 消息右键菜单：踢出提案 (针对特定发言)
         self.kick_proposal_ctx = app_commands.ContextMenu(
@@ -609,8 +617,10 @@ class PunishmentCog(
         self, interaction: discord.Interaction, message: discord.Message
     ):
         """[议事督导/管理组] 解除该消息作者在当前帖子的处罚"""
-        # 目标用户是消息的作者
-        target_member = message.author
+        # Webhook 结构化消息需要先还原为原提交用户。
+        target_member = await self._resolve_message_target(interaction, message)
+        if target_member is None:
+            return
 
         if not await self._validate_context(interaction, target_member):
             return
@@ -626,13 +636,17 @@ class PunishmentCog(
         message: discord.Message,
     ):
         """[议事督导/管理组] 处罚发送该消息的用户"""
-        if not await self._validate_context(interaction, message.author):
+        # Webhook 结构化消息需要先还原为原提交用户。
+        target_user = await self._resolve_message_target(interaction, message)
+        if target_user is None:
+            return
+        if not await self._validate_context(interaction, target_user):
             return
 
         # 对于新触发的处罚，不查询历史，直接弹出默认表单
         modal = PunishmentModal(
             bot=self.bot,
-            target_user=message.author,
+            target_user=target_user,
             target_message=message,
         )
         await self.bot.api_scheduler.submit(
@@ -658,12 +672,17 @@ class PunishmentCog(
             )
             return
 
+        # 查询同样使用结构化消息记录中的真实用户身份。
+        target_user = await self._resolve_message_target(interaction, message)
+        if target_user is None:
+            return
+
         async with UnitOfWork(self.bot.db_handler) as uow:
             total, records = await uow.punishment_record.get_summary(
                 thread_id=thread.id,
-                target_user_id=message.author.id,
+                target_user_id=target_user.id,
             )
-            modal = PunishmentHistoryModal(message.author, total, records)
+            modal = PunishmentHistoryModal(target_user, total, records)
 
         await self.bot.api_scheduler.submit(
             interaction.response.send_modal(modal),
@@ -770,3 +789,68 @@ class PunishmentCog(
             return False
 
         return True
+
+    async def _resolve_message_target(
+        self,
+        interaction: discord.Interaction,
+        message: discord.Message,
+    ) -> discord.User | discord.Member | None:
+        """将消息作者解析为可用于处罚业务的真实 Discord 用户。"""
+        try:
+            # 身份解析只使用 Discord 消息元数据和已登记的结构化消息记录。
+            user_id = await self.message_target_resolver.resolve_user_id(
+                ResolveStructuredSpeechReferenceQo(
+                    message_id=message.id,
+                    author_id=message.author.id,
+                    author_is_bot=message.author.bot,
+                    webhook_id=message.webhook_id,
+                )
+            )
+        except StructuredSpeechUserError as error:
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message(str(error), ephemeral=True),
+                priority=1,
+            )
+            return None
+
+        # 普通成员消息直接复用 Discord 已提供的作者对象。
+        if message.webhook_id is None:
+            return message.author
+
+        guild = interaction.guild
+        if guild is None:
+            await self.bot.api_scheduler.submit(
+                interaction.response.send_message(
+                    "无法在服务器外解析结构化消息的原发言者。",
+                    ephemeral=True,
+                ),
+                priority=1,
+            )
+            return None
+
+        # 优先获取服务器成员，用户离群后再退回到全局 Discord 用户。
+        target_user = guild.get_member(user_id)
+        if target_user is None:
+            try:
+                target_user = await self.bot.api_scheduler.submit(
+                    guild.fetch_member(user_id),
+                    priority=1,
+                )
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                target_user = self.bot.get_user(user_id)
+        if target_user is None:
+            try:
+                target_user = await self.bot.api_scheduler.submit(
+                    self.bot.fetch_user(user_id),
+                    priority=1,
+                )
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                await self.bot.api_scheduler.submit(
+                    interaction.response.send_message(
+                        "已找到原发言者 ID，但无法取得对应的 Discord 用户。",
+                        ephemeral=True,
+                    ),
+                    priority=1,
+                )
+                return None
+        return target_user

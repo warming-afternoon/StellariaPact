@@ -111,6 +111,7 @@ async def main_async():
             Moderation,
             Notification,
             Punishment,
+            StructuredSpeech,
             ThreadManage,
             Voting,
         )
@@ -123,6 +124,7 @@ async def main_async():
             ThreadManage.setup(bot),
             Voting.setup(bot),
             Punishment.setup(bot),
+            StructuredSpeech.setup(bot),
             Backup.setup(bot),
         ]
         try:

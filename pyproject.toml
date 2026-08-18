@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
-    "discord.py[speed]>=2.6.3",
+    "discord.py[speed]>=2.7.1",
     "sqlmodel",
     "aiosqlite",
     "python-dotenv",
@@ -58,6 +58,8 @@ stellariapact = { workspace = true }
 dev = [
     "alembic>=1.17.1",
     "pre-commit>=4.2.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
     "ruff>=0.12.7",
     "stellariapact",
 ]

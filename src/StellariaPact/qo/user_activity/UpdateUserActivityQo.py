@@ -1,5 +1,3 @@
-from typing import Literal
-
 from StellariaPact.share import BaseDto
 
 
@@ -10,4 +8,4 @@ class UpdateUserActivityQo(BaseDto):
 
     user_id: int
     thread_id: int
-    change: Literal[1, -1]
+    change: int

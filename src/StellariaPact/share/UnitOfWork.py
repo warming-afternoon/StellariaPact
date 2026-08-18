@@ -22,6 +22,12 @@ if TYPE_CHECKING:
     from StellariaPact.repository.OperationLogRepository import OperationLogRepository
     from StellariaPact.repository.ProposalRepository import ProposalRepository
     from StellariaPact.repository.PunishmentRecordRepository import PunishmentRecordRepository
+    from StellariaPact.repository.StructuredSpeechMessageRepository import (
+        StructuredSpeechMessageRepository,
+    )
+    from StellariaPact.repository.StructuredSpeechModeRepository import (
+        StructuredSpeechModeRepository,
+    )
     from StellariaPact.repository.UserActivityRepository import UserActivityRepository
     from StellariaPact.repository.UserVoteRepository import UserVoteRepository
     from StellariaPact.repository.VoteOptionRepository import VoteOptionRepository
@@ -235,3 +241,27 @@ class UnitOfWork:
                 self.session
             )
         return self._global_proposal_punishment_service
+
+    @property
+    def structured_speech_mode(self) -> "StructuredSpeechModeRepository":
+        """取得绑定当前事务的模板发言模式仓储。"""
+        if not hasattr(self, "_structured_speech_mode_repository"):
+            from StellariaPact.repository.StructuredSpeechModeRepository import (
+                StructuredSpeechModeRepository,
+            )
+
+            self._structured_speech_mode_repository = StructuredSpeechModeRepository(self.session)
+        return self._structured_speech_mode_repository
+
+    @property
+    def structured_speech_message(self) -> "StructuredSpeechMessageRepository":
+        """取得绑定当前事务的结构化发言消息仓储。"""
+        if not hasattr(self, "_structured_speech_message_repository"):
+            from StellariaPact.repository.StructuredSpeechMessageRepository import (
+                StructuredSpeechMessageRepository,
+            )
+
+            self._structured_speech_message_repository = StructuredSpeechMessageRepository(
+                self.session
+            )
+        return self._structured_speech_message_repository

@@ -8,6 +8,8 @@ from .OperationLog import OperationLog
 from .Proposal import Proposal
 from .ProposalIntake import ProposalIntake
 from .PunishmentRecord import PunishmentRecord
+from .StructuredSpeechMessage import StructuredSpeechMessage
+from .StructuredSpeechMode import StructuredSpeechMode
 from .UserActivity import UserActivity
 from .UserVote import UserVote
 from .VoteMessageMirror import VoteMessageMirror
@@ -24,6 +26,8 @@ __all__ = [
     "OperationLog",
     "Proposal",
     "PunishmentRecord",
+    "StructuredSpeechMessage",
+    "StructuredSpeechMode",
     "UserActivity",
     "UserVote",
     "VoteMessageMirror",
