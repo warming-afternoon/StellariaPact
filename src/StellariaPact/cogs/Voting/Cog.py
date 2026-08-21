@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urlparse
 
 import discord
 from discord import app_commands
@@ -29,21 +30,35 @@ class Voting(commands.Cog):
         self.bot = bot
         self.logic = VotingLogic(bot)
 
-        # 消息右键菜单：复制投票镜像
-        self.copy_vote_mirror_ctx = app_commands.ContextMenu(
-            name="复制该投票的镜像",
-            callback=self.copy_vote_mirror,
-            type=discord.AppCommandType.message,
-        )
+    @staticmethod
+    def _parse_discord_message_link(message_link: str) -> tuple[int, int, int] | None:
+        """从 Discord 消息链接中解析服务器、频道和消息 ID。"""
+        normalized_link = message_link.strip()
+        if normalized_link.startswith("<") and normalized_link.endswith(">"):
+            normalized_link = normalized_link[1:-1]
 
-    def cog_load(self) -> None:
-        self.bot.tree.add_command(self.copy_vote_mirror_ctx)
+        parsed = urlparse(normalized_link)
+        allowed_hosts = {
+            "discord.com",
+            "www.discord.com",
+            "ptb.discord.com",
+            "canary.discord.com",
+            "discordapp.com",
+            "www.discordapp.com",
+        }
+        if parsed.scheme not in {"http", "https"} or parsed.hostname not in allowed_hosts:
+            return None
 
-    async def cog_unload(self) -> None:
-        self.bot.tree.remove_command(
-            self.copy_vote_mirror_ctx.name,
-            type=self.copy_vote_mirror_ctx.type,
-        )
+        path_parts = parsed.path.strip("/").split("/")
+        if (
+            len(path_parts) != 4
+            or path_parts[0] != "channels"
+            or not all(part.isdecimal() for part in path_parts[1:])
+        ):
+            return None
+
+        guild_id, channel_id, message_id = map(int, path_parts[1:])
+        return guild_id, channel_id, message_id
 
     async def cog_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
@@ -317,13 +332,18 @@ class Voting(commands.Cog):
                 return ProposalDto.model_validate(proposal)
             return None
 
+    @app_commands.command(
+        name="复制该投票的镜像",
+        description="通过投票消息链接将投票镜像复制到当前频道",
+    )
+    @app_commands.rename(vote_link="目标投票链接")
+    @app_commands.describe(vote_link="目标投票、主镜像或额外镜像的消息链接")
+    @app_commands.guild_only()
     @RoleGuard.requireRoles("stewards", "councilModerator", "executionAuditor")
     async def copy_vote_mirror(
-        self, interaction: discord.Interaction, message: discord.Message
+        self, interaction: discord.Interaction, vote_link: str
     ) -> None:
-        """
-        消息右键菜单命令：复制该投票的镜像到当前频道/帖子中。
-        """
+        """通过消息链接将指定投票的镜像复制到当前频道或帖子中。"""
         await safeDefer(interaction, ephemeral=True)
 
         if not interaction.guild_id or not interaction.channel_id:
@@ -338,8 +358,25 @@ class Voting(commands.Cog):
             )
             return
 
+        target = self._parse_discord_message_link(vote_link)
+        if target is None:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send(
+                    "投票链接格式无效，请右键目标投票消息并选择“复制消息链接”。"
+                ),
+                priority=1,
+            )
+            return
+
+        source_guild_id, _, message_id = target
+        if source_guild_id != interaction.guild_id:
+            await self.bot.api_scheduler.submit(
+                interaction.followup.send("目标投票必须来自当前服务器。"), priority=1
+            )
+            return
+
         # 获取 DTO
-        vote_details = await self.logic.get_vote_details_by_any_message_id(message.id)
+        vote_details = await self.logic.get_vote_details_by_any_message_id(message_id)
 
         if not vote_details or not vote_details.context_message_id:
             await self.bot.api_scheduler.submit(
