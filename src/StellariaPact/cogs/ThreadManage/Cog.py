@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from difflib import unified_diff
 from typing import TYPE_CHECKING
 
 import discord
@@ -329,6 +330,83 @@ class ThreadManageCog(commands.Cog):
 
         return changed_fields
 
+    @staticmethod
+    def _build_diff_blocks(
+        old_text: str,
+        new_text: str,
+        *,
+        context_lines: int,
+    ) -> list[str]:
+        """将一组旧值和新值格式化为独立的 Unified Diff hunk。"""
+        diff_lines = unified_diff(
+            old_text.splitlines(),
+            new_text.splitlines(),
+            n=context_lines,
+            lineterm="",
+        )
+
+        hunks: list[list[str]] = []
+        current_hunk: list[str] | None = None
+        for line in diff_lines:
+            if line.startswith("@@"):
+                if current_hunk:
+                    hunks.append(current_hunk)
+                current_hunk = [line]
+            elif current_hunk is not None:
+                current_hunk.append(line)
+
+        if current_hunk:
+            hunks.append(current_hunk)
+
+        blocks: list[str] = []
+        for hunk in hunks:
+            hunk_text = "\n".join(hunk)
+            blocks.append(f"```diff\n{hunk_text}\n```")
+        return blocks
+
+    @classmethod
+    def _format_diff_value(
+        cls,
+        old_text: str,
+        new_text: str,
+        *,
+        limit: int = 1024,
+    ) -> str:
+        """生成 Embed field 内容，并在必要时减少上下文以满足长度限制。"""
+        for context_lines in (3, 2, 1, 0):
+            blocks = cls._build_diff_blocks(
+                old_text,
+                new_text,
+                context_lines=context_lines,
+            )
+            value = "\n\n".join(blocks)
+            if value and len(value) <= limit:
+                return value
+
+        blocks = cls._build_diff_blocks(old_text, new_text, context_lines=0)
+        if not blocks:
+            return "```diff\n…\n```"
+
+        omitted_block = "```diff\n…\n```"
+        kept_blocks: list[str] = []
+        for block in blocks:
+            candidate_blocks = [*kept_blocks, block, omitted_block]
+            candidate = "\n\n".join(candidate_blocks)
+            if len(candidate) > limit:
+                break
+            kept_blocks.append(block)
+
+        if kept_blocks:
+            return "\n\n".join([*kept_blocks, omitted_block])
+
+        block = blocks[0]
+        opening = "```diff\n"
+        closing = "\n```"
+        marker = "\n…"
+        body_limit = max(0, limit - len(opening) - len(closing) - len(marker))
+        body = block[len(opening) : -len(closing)]
+        return f"{opening}{body[:body_limit].rstrip()}{marker}{closing}"
+
     async def _send_change_embed(
         self,
         thread: discord.Thread,
@@ -336,11 +414,6 @@ class ThreadManageCog(commands.Cog):
         changed_fields: list[tuple[str, str, str]],
     ) -> None:
         """发送变更记录 embed。"""
-
-        def _truncate(value: str, limit: int = 450) -> str:
-            if len(value) <= limit:
-                return value
-            return f"{value[: limit - 1]}…"
 
         change_embed = discord.Embed(
             title="✏️ 提案内容变更记录",
@@ -351,11 +424,8 @@ class ThreadManageCog(commands.Cog):
 
         for field_name, old_text, new_text in changed_fields:
             change_embed.add_field(
-                name="**变更项 - " + field_name+ "**",
-                value=(
-                    f"> **修改前** :\n{_truncate(old_text)}\n\n"
-                    f"> **修改后** :\n{_truncate(new_text)}\n"
-                    ),
+                name=f"变更项：{field_name}",
+                value=self._format_diff_value(old_text, new_text),
                 inline=False,
             )
 

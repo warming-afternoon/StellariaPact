@@ -255,7 +255,7 @@ class StructuredSpeechCog(commands.Cog):
         reference_prefix = ""
         if reference_message_url is not None and reference_user_id is not None:
             reference_prefix = f"-# 回复 <@{reference_user_id}> 的 [发言]({reference_message_url})\n"
-        content = f"{reference_prefix}## 正文\n{body}\n\n## 理由\n{reason}"
+        content = f"{reference_prefix}-# 正文\n{body}\n\n-# 理由\n{reason}"
         if len(content) > STRUCTURED_SPEECH_MESSAGE_MAX_LENGTH:
             raise StructuredSpeechUserError(
                 f"格式化后的消息共有 {len(content)} 个字符，最多允许 "
