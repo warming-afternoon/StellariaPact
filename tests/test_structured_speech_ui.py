@@ -124,7 +124,7 @@ def test_reply_content_uses_fixed_link_mention_and_body_order() -> None:
     )
 
     assert content == (
-        "-# 回复 <@456> 的 [发言](https://discord.com/channels/1/2/3)\n## 正文\n正文\n\n## 理由\n理由"
+        "-# 回复 <@456> 的 [发言](https://discord.com/channels/1/2/3)\n-# 正文\n正文\n\n-# 理由\n理由"
     )
 
 
