@@ -49,12 +49,21 @@ class PunishmentHistoryModal(discord.ui.Modal):
 
         # 转义原因中的 Markdown 字符，防止格式注入
         reason = discord.utils.escape_markdown(record.reason)
-        # 生成违规消息链接或提示不可用
-        message_link = (
-            f"[查看违规消息]({record.source_message_url})"
-            if record.source_message_url
-            else "违规消息链接不可用"
-        )
+        # 新记录优先跳转正式处罚面板，旧记录和降级记录回退到违规消息。
+        if (
+            record.publicity_guild_id is not None
+            and record.publicity_channel_id is not None
+            and record.publicity_message_id is not None
+        ):
+            publicity_url = (
+                f"https://discord.com/channels/{record.publicity_guild_id}/"
+                f"{record.publicity_channel_id}/{record.publicity_message_id}"
+            )
+            message_link = f"[查看处罚公示]({publicity_url})"
+        elif record.source_message_url:
+            message_link = f"[查看违规消息]({record.source_message_url})"
+        else:
+            message_link = "处罚公示链接不可用"
         return (
             f"### {index}. <t:{created_timestamp}:F>\n"
             f"**原因：** {reason}\n"

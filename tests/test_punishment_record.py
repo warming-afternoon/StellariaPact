@@ -96,6 +96,40 @@ class PunishmentRecordTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("剥夺投票资格", detail_display.content)
         self.assertIn("查看违规消息", detail_display.content)
 
+    async def test_publicity_location_is_saved_and_preferred_by_history(self) -> None:
+        """验证正式公示位置可持久化，历史记录优先跳转正式面板。"""
+        async with AsyncSession(self.engine) as session:
+            repository = PunishmentRecordRepository(session)
+            record = await repository.create_record(
+                guild_id=1,
+                thread_id=10,
+                target_user_id=20,
+                moderator_id=30,
+                reason="测试原因",
+                source_message_url="https://discord.com/channels/1/10/100",
+                voting_allowed=False,
+                mute_end_time=None,
+            )
+            assert record.id is not None
+            await repository.set_publicity_message(
+                record.id,
+                guild_id=1,
+                channel_id=99,
+                message_id=200,
+            )
+            await session.commit()
+            _, records = await repository.get_summary(thread_id=10, target_user_id=20)
+
+        target_user = cast(
+            discord.User | discord.Member,
+            SimpleNamespace(display_name="测试用户", name="test", mention="<@20>"),
+        )
+        modal = PunishmentHistoryModal(target_user, 1, records)
+        detail_display = cast(discord.ui.TextDisplay, modal.children[1])
+        self.assertIn("查看处罚公示", detail_display.content)
+        self.assertIn("https://discord.com/channels/1/99/200", detail_display.content)
+        self.assertNotIn("查看违规消息", detail_display.content)
+
     async def test_empty_modal_has_summary_only(self) -> None:
         """验证无处罚记录时模态框仅展示摘要信息，不含详情条目。"""
         # 构造虚拟用户对象，传入零条记录

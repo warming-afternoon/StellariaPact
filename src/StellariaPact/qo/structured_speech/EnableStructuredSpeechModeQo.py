@@ -6,3 +6,4 @@ class EnableStructuredSpeechModeQo(BaseDto):
 
     operator_id: int
     interval_seconds: int | None = None
+    proposer_cooldown_exempt: bool | None = None

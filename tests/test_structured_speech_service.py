@@ -15,6 +15,7 @@ from StellariaPact.cogs.StructuredSpeech.StructuredSpeechUserError import (
     StructuredSpeechUserError,
 )
 from StellariaPact.dto.structured_speech import StructuredSpeechModeDto
+from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.StructuredSpeechMessage import StructuredSpeechMessage
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.qo.structured_speech import (
@@ -125,6 +126,134 @@ async def test_active_mode_load_does_not_read_or_change_discord_slowmode(
 
     fetch_thread.assert_not_awaited()
     assert reloaded_service.get_active_mode(thread.id) is not None
+    assert reloaded_service.get_active_mode(thread.id).proposer_cooldown_exempt is True
+
+
+@pytest.mark.asyncio
+async def test_proposer_exemption_defaults_updates_and_preserves_when_omitted(
+    structured_engine: AsyncEngine,
+) -> None:
+    """验证首次默认豁免、显式关闭以及后续省略时保留现值。"""
+    bot = _create_bot(structured_engine)
+    service = StructuredSpeechService(bot)
+    parent = MagicMock(id=20)
+    thread = MagicMock(id=30, slowmode_delay=0)
+    thread.parent = parent
+    thread.guild = SimpleNamespace(id=10)
+    thread.edit = AsyncMock(return_value=thread)
+
+    with patch(
+        "StellariaPact.cogs.StructuredSpeech.StructuredSpeechService.discord.ForumChannel",
+        type(parent),
+    ):
+        first = await service.enable_mode(
+            thread=thread,
+            qo=EnableStructuredSpeechModeQo(operator_id=40),
+        )
+        changed = await service.enable_mode(
+            thread=thread,
+            qo=EnableStructuredSpeechModeQo(
+                operator_id=40,
+                proposer_cooldown_exempt=False,
+            ),
+        )
+        preserved = await service.enable_mode(
+            thread=thread,
+            qo=EnableStructuredSpeechModeQo(operator_id=40, interval_seconds=300),
+        )
+
+    assert first.proposer_cooldown_exempt is True
+    assert changed.action == "updated"
+    assert changed.proposer_cooldown_exempt is False
+    assert preserved.proposer_cooldown_exempt is False
+    assert service.get_active_mode(30).proposer_cooldown_exempt is False
+
+
+@pytest.mark.asyncio
+async def test_cooldown_exemption_uses_governance_or_persisted_proposer(
+    structured_engine: AsyncEngine,
+) -> None:
+    """验证治理角色始终豁免，提案主仅在开关开启且记录存在时豁免。"""
+    bot = _create_bot(structured_engine)
+    service = StructuredSpeechService(bot)
+    service.active_modes[30] = StructuredSpeechModeDto(
+        thread_id=30,
+        forum_id=20,
+        interval_seconds=120,
+        proposer_cooldown_exempt=True,
+        previous_slowmode_delay=0,
+    )
+    service.active_modes[31] = StructuredSpeechModeDto(
+        thread_id=31,
+        forum_id=20,
+        interval_seconds=120,
+        proposer_cooldown_exempt=True,
+        previous_slowmode_delay=0,
+    )
+    async with AsyncSession(structured_engine) as session:
+        session.add(
+            Proposal(
+                discussion_thread_id=30,
+                proposer_id=50,
+                title="测试提案",
+            )
+        )
+        await session.commit()
+
+    assert await service.is_cooldown_exempt(
+        thread_id=30, user_id=999, always_exempt=True
+    )
+    assert await service.is_cooldown_exempt(
+        thread_id=30, user_id=50, always_exempt=False
+    )
+    assert not await service.is_cooldown_exempt(
+        thread_id=30, user_id=51, always_exempt=False
+    )
+    assert not await service.is_cooldown_exempt(
+        thread_id=31, user_id=50, always_exempt=False
+    )
+
+    service.active_modes[30].proposer_cooldown_exempt = False
+    assert not await service.is_cooldown_exempt(
+        thread_id=30, user_id=50, always_exempt=False
+    )
+
+
+@pytest.mark.asyncio
+async def test_publish_rechecks_proposer_exemption_before_cooldown() -> None:
+    """验证最终提交不会沿用打开表单时的提案主豁免结果。"""
+    service = StructuredSpeechService(MagicMock())
+    service.active_modes[30] = StructuredSpeechModeDto(
+        thread_id=30,
+        forum_id=20,
+        interval_seconds=120,
+        previous_slowmode_delay=0,
+    )
+    service.is_user_punished = AsyncMock(return_value=False)
+    service.is_cooldown_exempt = AsyncMock(return_value=False)
+    service.get_cooldown_remaining = AsyncMock(return_value=60)
+    thread = MagicMock(id=30)
+    member = MagicMock(id=50)
+
+    with pytest.raises(StructuredSpeechUserError, match="发言冷却中"):
+        await service.publish(
+            thread=thread,
+            member=member,
+            qo=PublishStructuredSpeechQo(
+                guild_id=10,
+                thread_id=30,
+                user_id=50,
+                content="正文",
+                cooldown_exempt=False,
+            ),
+            attachments=[],
+        )
+
+    service.is_cooldown_exempt.assert_awaited_once_with(
+        thread_id=30,
+        user_id=50,
+        always_exempt=False,
+    )
 
 
 @pytest.mark.asyncio

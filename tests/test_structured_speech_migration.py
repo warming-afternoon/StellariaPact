@@ -25,6 +25,9 @@ def test_structured_speech_migration_round_trip() -> None:
             "structured_speech_mode",
             "structured_speech_message",
         }.issubset(inspector.get_table_names())
+        assert "proposer_cooldown_exempt" in {
+            column["name"] for column in inspector.get_columns("structured_speech_mode")
+        }
         assert {index["name"] for index in inspector.get_indexes("structured_speech_message")} == {
             "ix_structured_speech_message_webhook",
             "ix_structured_speech_message_thread_user_created",

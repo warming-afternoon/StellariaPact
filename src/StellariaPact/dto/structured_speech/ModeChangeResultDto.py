@@ -11,3 +11,6 @@ class ModeChangeResultDto(BaseDto):
 
     interval_seconds: int | None = None
     """表示切换完成后的用户发言间隔秒数。"""
+
+    proposer_cooldown_exempt: bool | None = None
+    """表示切换完成后提案主是否豁免发言间隔。"""

@@ -151,7 +151,8 @@ class ThreadPunishmentVoteRevocationTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_revocation_removes_only_active_votes_in_target_thread(self) -> None:
-        vote_details = await self._apply_punishment(voting_allowed=False)
+        result = await self._apply_punishment(voting_allowed=False)
+        vote_details = result.vote_details_to_update
 
         async with AsyncSession(self.engine) as session:
             remaining_votes = (await session.exec(select(UserVote))).all()
@@ -214,7 +215,7 @@ class ThreadPunishmentVoteRevocationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(closed_objection.total_votes, 1)
 
     async def test_retaining_voting_rights_does_not_remove_votes(self) -> None:
-        vote_details = await self._apply_punishment(voting_allowed=True)
+        result = await self._apply_punishment(voting_allowed=True)
 
         async with AsyncSession(self.engine) as session:
             votes = (await session.exec(select(UserVote))).all()
@@ -229,7 +230,8 @@ class ThreadPunishmentVoteRevocationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(votes), 5)
         self.assertEqual(activity.validation, 1)
-        self.assertEqual(vote_details, [])
+        self.assertGreater(result.punishment_record_id, 0)
+        self.assertEqual(result.vote_details_to_update, [])
 
     async def test_revocation_without_active_votes_still_records_punishment(self) -> None:
         async with AsyncSession(self.engine) as session:
@@ -250,7 +252,7 @@ class ThreadPunishmentVoteRevocationTests(unittest.IsolatedAsyncioTestCase):
             await session.delete(active_vote)
             await session.commit()
 
-        vote_details = await self._apply_punishment(voting_allowed=False)
+        result = await self._apply_punishment(voting_allowed=False)
 
         async with AsyncSession(self.engine) as session:
             activity = (
@@ -263,6 +265,7 @@ class ThreadPunishmentVoteRevocationTests(unittest.IsolatedAsyncioTestCase):
             ).one()
             records = (await session.exec(select(PunishmentRecord))).all()
 
-        self.assertEqual(vote_details, [])
+        self.assertGreater(result.punishment_record_id, 0)
+        self.assertEqual(result.vote_details_to_update, [])
         self.assertEqual(activity.validation, 0)
         self.assertEqual(len(records), 1)

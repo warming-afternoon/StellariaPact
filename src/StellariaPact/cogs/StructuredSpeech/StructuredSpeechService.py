@@ -98,6 +98,7 @@ class StructuredSpeechService:
                         mode.forum_id,
                         mode.status,
                         mode.interval_seconds,
+                        mode.proposer_cooldown_exempt,
                         mode.previous_slowmode_delay,
                     )
                     for mode in modes
@@ -107,12 +108,20 @@ class StructuredSpeechService:
             # 启动时一次加载 Webhook ID，远端事件入口无需逐消息查询数据库。
             self._structured_webhook_ids.update(webhook_ids)
 
-            for thread_id, forum_id, status, interval, previous_slowmode in records:
+            for (
+                thread_id,
+                forum_id,
+                status,
+                interval,
+                proposer_cooldown_exempt,
+                previous_slowmode,
+            ) in records:
                 if status == STRUCTURED_SPEECH_STATUS_ACTIVE:
                     self.active_modes[thread_id] = StructuredSpeechModeDto(
                         thread_id=thread_id,
                         forum_id=forum_id,
                         interval_seconds=interval,
+                        proposer_cooldown_exempt=proposer_cooldown_exempt,
                         previous_slowmode_delay=previous_slowmode,
                     )
                     continue
@@ -132,6 +141,7 @@ class StructuredSpeechService:
                             thread_id=thread_id,
                             forum_id=forum_id,
                             interval_seconds=interval,
+                            proposer_cooldown_exempt=proposer_cooldown_exempt,
                             previous_slowmode_delay=previous_slowmode,
                         )
                     elif status == STRUCTURED_SPEECH_STATUS_DISABLING:
@@ -164,14 +174,28 @@ class StructuredSpeechService:
             async with UnitOfWork(self.bot.db_handler) as uow:
                 mode = await uow.structured_speech_mode.get(thread.id)
                 if mode is not None and mode.status == STRUCTURED_SPEECH_STATUS_ACTIVE:
-                    new_interval = qo.interval_seconds or mode.interval_seconds
-                    if new_interval == mode.interval_seconds:
+                    new_interval = (
+                        qo.interval_seconds
+                        if qo.interval_seconds is not None
+                        else mode.interval_seconds
+                    )
+                    new_proposer_exemption = (
+                        qo.proposer_cooldown_exempt
+                        if qo.proposer_cooldown_exempt is not None
+                        else mode.proposer_cooldown_exempt
+                    )
+                    if (
+                        new_interval == mode.interval_seconds
+                        and new_proposer_exemption == mode.proposer_cooldown_exempt
+                    ):
                         self.active_modes[thread.id] = self._snapshot(mode)
                         return ModeChangeResultDto(
                             action="unchanged",
                             interval_seconds=mode.interval_seconds,
+                            proposer_cooldown_exempt=mode.proposer_cooldown_exempt,
                         )
                     mode.interval_seconds = new_interval
+                    mode.proposer_cooldown_exempt = new_proposer_exemption
                     mode.enabled_by_id = qo.operator_id
                     mode.updated_at = datetime.now(timezone.utc)
                     await uow.structured_speech_mode.save(mode)
@@ -179,10 +203,16 @@ class StructuredSpeechService:
                     return ModeChangeResultDto(
                         action="updated",
                         interval_seconds=new_interval,
+                        proposer_cooldown_exempt=new_proposer_exemption,
                     )
 
                 selected_interval = (
                     qo.interval_seconds or STRUCTURED_SPEECH_DEFAULT_INTERVAL_SECONDS
+                )
+                selected_proposer_exemption = (
+                    qo.proposer_cooldown_exempt
+                    if qo.proposer_cooldown_exempt is not None
+                    else True
                 )
                 previous_slowmode = thread.slowmode_delay
                 if mode is None:
@@ -192,6 +222,7 @@ class StructuredSpeechService:
                         thread_id=thread.id,
                         status=STRUCTURED_SPEECH_STATUS_ENABLING,
                         interval_seconds=selected_interval,
+                        proposer_cooldown_exempt=selected_proposer_exemption,
                         previous_slowmode_delay=previous_slowmode,
                         enabled_by_id=qo.operator_id,
                     )
@@ -200,6 +231,7 @@ class StructuredSpeechService:
                     mode.forum_id = parent.id
                     mode.status = STRUCTURED_SPEECH_STATUS_ENABLING
                     mode.interval_seconds = selected_interval
+                    mode.proposer_cooldown_exempt = selected_proposer_exemption
                     mode.previous_slowmode_delay = previous_slowmode
                     mode.enabled_by_id = qo.operator_id
                     mode.updated_at = datetime.now(timezone.utc)
@@ -218,11 +250,13 @@ class StructuredSpeechService:
                 thread_id=thread.id,
                 forum_id=parent.id,
                 interval_seconds=selected_interval,
+                proposer_cooldown_exempt=selected_proposer_exemption,
                 previous_slowmode_delay=previous_slowmode,
             )
             return ModeChangeResultDto(
                 action="enabled",
                 interval_seconds=selected_interval,
+                proposer_cooldown_exempt=selected_proposer_exemption,
             )
 
     async def disable_mode(
@@ -309,6 +343,23 @@ class StructuredSpeechService:
         elapsed = (datetime.now(timezone.utc) - created_at).total_seconds()
         return max(0, math.ceil(mode.interval_seconds - elapsed))
 
+    async def is_cooldown_exempt(
+        self,
+        *,
+        thread_id: int,
+        user_id: int,
+        always_exempt: bool,
+    ) -> bool:
+        """判断治理角色或当前模式配置允许的提案主是否豁免冷却。"""
+        if always_exempt:
+            return True
+        mode = self.active_modes.get(thread_id)
+        if mode is None or not mode.proposer_cooldown_exempt:
+            return False
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            proposal = await uow.proposal.get_proposal_by_thread_id(thread_id)
+            return proposal is not None and proposal.proposer_id == user_id
+
     async def is_user_punished(self, *, thread_id: int, user_id: int) -> bool:
         """按现有帖子禁言和全局提案处罚规则判断用户是否可发言。"""
         now = datetime.now(timezone.utc)
@@ -348,7 +399,11 @@ class StructuredSpeechService:
                     raise StructuredSpeechUserError("发言上下文不一致，请重新执行命令。")
                 if await self.is_user_punished(thread_id=qo.thread_id, user_id=qo.user_id):
                     raise StructuredSpeechUserError("你当前受到提案发言处罚，无法发送消息。")
-                if not qo.cooldown_exempt:
+                if not await self.is_cooldown_exempt(
+                    thread_id=qo.thread_id,
+                    user_id=qo.user_id,
+                    always_exempt=qo.cooldown_exempt,
+                ):
                     remaining = await self.get_cooldown_remaining(
                         thread_id=qo.thread_id,
                         user_id=qo.user_id,

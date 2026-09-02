@@ -194,6 +194,7 @@ class PunishmentEmbedBuilder:
         target_message: Optional[discord.Message],
         is_voting_allowed: bool,
         mute_end_time: Optional[datetime] = None,
+        publicity_message_url: str | None = None,
     ) -> discord.Embed:
         """创建处罚公示 Embed"""
         description_lines = [f"**目标用户**: {target_user.mention}"]
@@ -219,7 +220,13 @@ class PunishmentEmbedBuilder:
         )
         embed.add_field(name="处理理由", value=reason, inline=False)
 
-        if target_message:
+        if publicity_message_url:
+            embed.add_field(
+                name="处罚公示",
+                value=f"[点击跳转]({publicity_message_url})",
+                inline=True,
+            )
+        elif target_message:
             embed.add_field(
                 name="触发消息",
                 value=f"[点击跳转]({target_message.jump_url})",

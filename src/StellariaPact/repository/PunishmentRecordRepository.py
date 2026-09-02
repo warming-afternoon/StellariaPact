@@ -70,3 +70,22 @@ class PunishmentRecordRepository:
             .limit(limit)
         )
         return total, list(records_result.all())
+
+    async def set_publicity_message(
+        self,
+        record_id: int,
+        *,
+        guild_id: int,
+        channel_id: int,
+        message_id: int,
+    ) -> PunishmentRecord:
+        """保存帖子内处罚正式公示消息的完整位置。"""
+        record = await self.session.get(PunishmentRecord, record_id)
+        if record is None:
+            raise ValueError(f"找不到帖子内处罚记录：{record_id}")
+        record.publicity_guild_id = guild_id
+        record.publicity_channel_id = channel_id
+        record.publicity_message_id = message_id
+        self.session.add(record)
+        await self.session.flush()
+        return record
