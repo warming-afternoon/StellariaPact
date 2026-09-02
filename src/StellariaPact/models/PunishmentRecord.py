@@ -26,6 +26,9 @@ class PunishmentRecord(BaseModel, table=True):
     moderator_id: int = Field(index=True, description="执行处罚的管理员 Discord ID")
     reason: str = Field(description="处罚原因")
     source_message_url: str | None = Field(default=None, description="违规触发消息链接")
+    publicity_guild_id: int | None = Field(default=None, description="正式处罚公示服务器 ID")
+    publicity_channel_id: int | None = Field(default=None, description="正式处罚公示频道 ID")
+    publicity_message_id: int | None = Field(default=None, description="正式处罚公示消息 ID")
     voting_allowed: bool = Field(description="处罚后是否保留本帖投票权")
     mute_end_time: datetime | None = Field(
         default=None,

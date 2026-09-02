@@ -10,6 +10,7 @@ from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.share import StellariaPactBot, UnitOfWork
 from StellariaPact.share.enums import LogOperationType, PunishmentType
 
+from ..dto import ThreadPunishmentResult
 from ..views.PunishmentEmbedBuilder import PunishmentEmbedBuilder
 
 logger = logging.getLogger(__name__)
@@ -30,12 +31,12 @@ class PunishmentLogic:
         source_message_url: str | None,
         voting_allowed: bool,
         mute_end_time: datetime | None,
-    ) -> list[VoteDetailDto]:
+    ) -> ThreadPunishmentResult:
         """
         应用帖子内处罚，并在剥夺投票资格时清除该用户仍在进行中的投票。
 
-        资格状态、处罚记录和活动票删除在同一事务内完成。返回需要同步刷新
-        的投票详情；没有活动票被删除时返回空列表。
+        资格状态、处罚记录和活动票删除在同一事务内完成。返回处罚记录 ID
+        以及需要同步刷新的投票详情。
         """
         async with UnitOfWork(self.bot.db_handler) as uow:
             await uow.user_activity.update_user_validation_status(
@@ -44,7 +45,7 @@ class PunishmentLogic:
                 is_valid=voting_allowed,
                 mute_end_time=mute_end_time,
             )
-            await uow.punishment_record.create_record(
+            record = await uow.punishment_record.create_record(
                 guild_id=guild_id,
                 thread_id=thread_id,
                 target_user_id=target_user_id,
@@ -54,6 +55,9 @@ class PunishmentLogic:
                 voting_allowed=voting_allowed,
                 mute_end_time=mute_end_time,
             )
+            if record.id is None:
+                raise RuntimeError("帖子内处罚记录缺少数据库主键。")
+            record_id = record.id
 
             vote_details_to_update: list[VoteDetailDto] = []
             if not voting_allowed:
@@ -64,7 +68,28 @@ class PunishmentLogic:
                 )
 
             await uow.commit()
-            return vote_details_to_update
+            return ThreadPunishmentResult(
+                punishment_record_id=record_id,
+                vote_details_to_update=vote_details_to_update,
+            )
+
+    async def set_thread_punishment_publicity_message(
+        self,
+        punishment_record_id: int,
+        *,
+        guild_id: int,
+        channel_id: int,
+        message_id: int,
+    ) -> None:
+        """在独立事务中保存帖子内处罚正式公示消息的位置。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            await uow.punishment_record.set_publicity_message(
+                punishment_record_id,
+                guild_id=guild_id,
+                channel_id=channel_id,
+                message_id=message_id,
+            )
+            await uow.commit()
 
     async def apply_permanent_restriction(
         self,

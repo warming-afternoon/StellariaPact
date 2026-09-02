@@ -31,6 +31,9 @@ class StructuredSpeechMode(BaseModel, table=True):
     interval_seconds: int = Field(default=120)
     """表示普通用户通过 Bot 发言的间隔秒数。"""
 
+    proposer_cooldown_exempt: bool = Field(default=True)
+    """表示提案主是否豁免通过 Bot 发言的时间间隔。"""
+
     previous_slowmode_delay: int = Field(default=0)
     """表示开启模式前保存的帖子慢速模式秒数。"""
 

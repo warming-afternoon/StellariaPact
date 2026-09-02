@@ -6,13 +6,13 @@ import pytest
 
 from StellariaPact.cogs.StructuredSpeech import StructuredSpeechCog
 from StellariaPact.cogs.StructuredSpeech.constants import (
-    STRUCTURED_SPEECH_MAX_ATTACHMENTS, STRUCTURED_SPEECH_MESSAGE_MAX_LENGTH,
+    STRUCTURED_SPEECH_MAX_ATTACHMENTS,
+    STRUCTURED_SPEECH_MESSAGE_MAX_LENGTH,
     STRUCTURED_SPEECH_MODAL_TIMEOUT_SECONDS,
-    STRUCTURED_SPEECH_REPLY_CONTEXT_MENU_NAME)
-from StellariaPact.cogs.StructuredSpeech.ProposalSpeechModal import \
-    ProposalSpeechModal
-from StellariaPact.cogs.StructuredSpeech.StructuredSpeechUserError import \
-    StructuredSpeechUserError
+    STRUCTURED_SPEECH_REPLY_CONTEXT_MENU_NAME,
+)
+from StellariaPact.cogs.StructuredSpeech.ProposalSpeechModal import ProposalSpeechModal
+from StellariaPact.cogs.StructuredSpeech.StructuredSpeechUserError import StructuredSpeechUserError
 
 
 def test_structured_speech_commands_are_registered_with_expected_names() -> None:
@@ -20,6 +20,15 @@ def test_structured_speech_commands_are_registered_with_expected_names() -> None
     command_names = {command.name for command in StructuredSpeechCog.__cog_app_commands__}
 
     assert command_names == {"模板发言模式", "提案发言"}
+    mode_command = next(
+        command for command in StructuredSpeechCog.__cog_app_commands__
+        if command.name == "模板发言模式"
+    )
+    assert {parameter.display_name for parameter in mode_command.parameters} == {
+        "状态",
+        "发言间隔分钟",
+        "提案主豁免间隔",
+    }
 
 
 def test_proposal_speech_modal_declares_timeout_and_multiple_files() -> None:
@@ -124,7 +133,8 @@ def test_reply_content_uses_fixed_link_mention_and_body_order() -> None:
     )
 
     assert content == (
-        "-# 回复 <@456> 的 [发言](https://discord.com/channels/1/2/3)\n-# 正文\n正文\n\n-# 理由\n理由"
+        "-# 回复 <@456> 的 [发言](https://discord.com/channels/1/2/3)\n"
+        "-# 正文\n正文\n\n-# 理由\n理由"
     )
 
 
@@ -184,7 +194,29 @@ async def test_reply_submit_does_not_read_source_message_again() -> None:
     thread.fetch_message.assert_not_awaited()
     publish_qo = cog.service.publish.await_args.kwargs["qo"]
     assert publish_qo.content.startswith(
-        "-# 回复 <@600> 的 [发言](https://discord.com/channels/1/100/300)\n## 正文"
+        "-# 回复 <@600> 的 [发言](https://discord.com/channels/1/100/300)\n-# 正文"
+    )
+
+
+@pytest.mark.asyncio
+async def test_preflight_rechecks_proposer_exemption() -> None:
+    """验证打开表单前通过服务重新判断治理角色或提案主豁免。"""
+    cog = StructuredSpeechCog(MagicMock())
+    thread = MagicMock(id=100)
+    member = MagicMock(id=200)
+    cog.service.get_active_mode = MagicMock(return_value=MagicMock())
+    cog.service.is_user_punished = AsyncMock(return_value=False)
+    cog.service.is_cooldown_exempt = AsyncMock(return_value=False)
+    cog.service.get_cooldown_remaining = AsyncMock(return_value=30)
+    cog._is_governance_member = MagicMock(return_value=False)
+
+    with pytest.raises(StructuredSpeechUserError, match="发言冷却中"):
+        await cog._validate_speech_preflight(thread, member)
+
+    cog.service.is_cooldown_exempt.assert_awaited_once_with(
+        thread_id=100,
+        user_id=200,
+        always_exempt=False,
     )
 
 

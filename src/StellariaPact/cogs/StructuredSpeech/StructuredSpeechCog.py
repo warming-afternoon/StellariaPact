@@ -9,17 +9,21 @@ from discord.ext import commands
 from StellariaPact.cogs.Voting.views import VoteEmbedBuilder
 from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.qo.structured_speech import (
-    DeleteStructuredSpeechMessagesQo, DisableStructuredSpeechModeQo,
-    EnableStructuredSpeechModeQo, PublishStructuredSpeechQo,
-    ResolveStructuredSpeechReferenceQo)
-from StellariaPact.share import (DiscordUtils, RoleGuard, StellariaPactBot,
-                                 safeDefer)
+    DeleteStructuredSpeechMessagesQo,
+    DisableStructuredSpeechModeQo,
+    EnableStructuredSpeechModeQo,
+    PublishStructuredSpeechQo,
+    ResolveStructuredSpeechReferenceQo,
+)
+from StellariaPact.share import DiscordUtils, RoleGuard, StellariaPactBot, safeDefer
 
-from .constants import (GOVERNANCE_ROLE_KEYS,
-                        STRUCTURED_SPEECH_MAX_INTERVAL_MINUTES,
-                        STRUCTURED_SPEECH_MESSAGE_MAX_LENGTH,
-                        STRUCTURED_SPEECH_MIN_INTERVAL_MINUTES,
-                        STRUCTURED_SPEECH_REPLY_CONTEXT_MENU_NAME)
+from .constants import (
+    GOVERNANCE_ROLE_KEYS,
+    STRUCTURED_SPEECH_MAX_INTERVAL_MINUTES,
+    STRUCTURED_SPEECH_MESSAGE_MAX_LENGTH,
+    STRUCTURED_SPEECH_MIN_INTERVAL_MINUTES,
+    STRUCTURED_SPEECH_REPLY_CONTEXT_MENU_NAME,
+)
 from .ProposalSpeechModal import ProposalSpeechModal
 from .StructuredSpeechService import StructuredSpeechService
 from .StructuredSpeechUserError import StructuredSpeechUserError
@@ -64,10 +68,15 @@ class StructuredSpeechCog(commands.Cog):
         name="模板发言模式",
         description="开启或关闭当前提案帖子的结构化发言模式",
     )
-    @app_commands.rename(state="状态", interval_minutes="发言间隔分钟")
+    @app_commands.rename(
+        state="状态",
+        interval_minutes="发言间隔分钟",
+        proposer_cooldown_exempt="提案主豁免间隔",
+    )
     @app_commands.describe(
         state="明确选择开启或关闭",
         interval_minutes="每位用户在本帖通过 Bot 发言的间隔，默认 2 分钟",
+        proposer_cooldown_exempt="提案主是否豁免发言间隔；首次开启默认豁免",
     )
     @app_commands.choices(
         state=[
@@ -87,6 +96,7 @@ class StructuredSpeechCog(commands.Cog):
             STRUCTURED_SPEECH_MAX_INTERVAL_MINUTES,
         ]
         | None = None,
+        proposer_cooldown_exempt: bool | None = None,
     ) -> None:
         """开启、更新或关闭当前帖子的模板发言模式。"""
         await safeDefer(interaction, ephemeral=True)
@@ -110,16 +120,19 @@ class StructuredSpeechCog(commands.Cog):
                     qo=EnableStructuredSpeechModeQo(
                         operator_id=interaction.user.id,
                         interval_seconds=(interval_minutes * 60 if interval_minutes else None),
+                        proposer_cooldown_exempt=proposer_cooldown_exempt,
                     ),
                 )
                 mode = self.service.get_active_mode(thread.id)
                 assert mode is not None
                 minutes = mode.interval_seconds // 60
+                proposer_status = "豁免" if mode.proposer_cooldown_exempt else "不豁免"
                 if result.action == "enabled":
                     announced = await self._send_public_announcement(
                         thread,
                         f"📋 模板发言模式已由 {interaction.user.mention} 开启。"
-                        f"请使用 `/提案发言`，每人每 {minutes} 分钟可发送一次。",
+                        f"请使用 `/提案发言`，每人每 {minutes} 分钟可发送一次；"
+                        f"提案主{proposer_status}此间隔。",
                     )
                     response = "模板发言模式已开启。"
                     if not announced:
@@ -127,16 +140,22 @@ class StructuredSpeechCog(commands.Cog):
                 elif result.action == "updated":
                     announced = await self._send_public_announcement(
                         thread,
-                        f"⏱️ 模板发言间隔已由 {interaction.user.mention} 调整为 {minutes} 分钟。",
+                        f"⏱️ 模板发言设置已由 {interaction.user.mention} 更新："
+                        f"间隔 {minutes} 分钟，提案主{proposer_status}间隔。",
                     )
-                    response = "模板发言间隔已更新。"
+                    response = "模板发言设置已更新。"
                     if not announced:
                         response += "但公开公告发送失败，请检查频道状态。"
                 else:
-                    response = f"模板发言模式已经开启，当前间隔为 {minutes} 分钟。"
+                    response = (
+                        f"模板发言模式已经开启，当前间隔为 {minutes} 分钟，"
+                        f"提案主{proposer_status}此间隔。"
+                    )
             else:
                 if interval_minutes is not None:
                     raise StructuredSpeechUserError("关闭模式时无需填写发言间隔。")
+                if proposer_cooldown_exempt is not None:
+                    raise StructuredSpeechUserError("关闭模式时无需填写提案主豁免设置。")
                 if self.service.get_active_mode(thread.id) is None:
                     response = "当前帖子未开启模板发言模式。"
                 else:
@@ -254,7 +273,9 @@ class StructuredSpeechCog(commands.Cog):
         # 右键回复固定使用源消息链接和真实用户提及作为前两行。
         reference_prefix = ""
         if reference_message_url is not None and reference_user_id is not None:
-            reference_prefix = f"-# 回复 <@{reference_user_id}> 的 [发言]({reference_message_url})\n"
+            reference_prefix = (
+                f"-# 回复 <@{reference_user_id}> 的 [发言]({reference_message_url})\n"
+            )
         content = f"{reference_prefix}-# 正文\n{body}\n\n-# 理由\n{reason}"
         if len(content) > STRUCTURED_SPEECH_MESSAGE_MAX_LENGTH:
             raise StructuredSpeechUserError(
@@ -427,7 +448,11 @@ class StructuredSpeechCog(commands.Cog):
             raise StructuredSpeechUserError("当前帖子未开启模板发言模式。")
         if await self.service.is_user_punished(thread_id=thread.id, user_id=member.id):
             raise StructuredSpeechUserError("你当前受到提案发言处罚，无法发送消息。")
-        if not self._is_governance_member(member):
+        if not await self.service.is_cooldown_exempt(
+            thread_id=thread.id,
+            user_id=member.id,
+            always_exempt=self._is_governance_member(member),
+        ):
             remaining = await self.service.get_cooldown_remaining(
                 thread_id=thread.id,
                 user_id=member.id,

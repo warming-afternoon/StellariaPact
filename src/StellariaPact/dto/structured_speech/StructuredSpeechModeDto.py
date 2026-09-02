@@ -13,5 +13,8 @@ class StructuredSpeechModeDto(BaseDto):
     interval_seconds: int
     """表示普通用户通过 Bot 发言的间隔秒数。"""
 
+    proposer_cooldown_exempt: bool = True
+    """表示提案主是否豁免通过 Bot 发言的时间间隔。"""
+
     previous_slowmode_delay: int
     """表示开启模式前保存的帖子慢速模式秒数。"""
