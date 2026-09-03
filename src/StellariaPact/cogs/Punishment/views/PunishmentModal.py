@@ -273,6 +273,17 @@ class PunishmentModal(discord.ui.Modal):
                 for file in files:
                     file.close()
 
+            evidence_forward_failed = False
+            if self.target_message is not None:
+                try:
+                    await self.bot.api_scheduler.submit(
+                        self.target_message.forward(publicity_channel),
+                        priority=5,
+                    )
+                except Exception:
+                    evidence_forward_failed = True
+                    logger.exception("帖子内处罚正式公示已发送，但选中的证据消息转发失败。")
+
             location_saved = True
             try:
                 await self.logic.set_thread_punishment_publicity_message(
@@ -302,6 +313,8 @@ class PunishmentModal(discord.ui.Modal):
                 logger.exception("帖子内处罚正式公示已发送，但原帖公示发送失败。")
 
             warnings: list[str] = []
+            if evidence_forward_failed:
+                warnings.append("选中消息转发失败，请人工补发")
             if not location_saved:
                 warnings.append("历史记录未能保存正式公示链接")
             if not source_sent:

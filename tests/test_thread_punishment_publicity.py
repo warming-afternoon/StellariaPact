@@ -23,6 +23,7 @@ def _create_modal():
     target_message = MagicMock(
         jump_url="https://discord.com/channels/10/30/100",
     )
+    target_message.forward = AsyncMock(return_value=MagicMock())
     modal = PunishmentModal(bot, target_user, target_message)
     modal.allow_voting_input._value = "否"
     modal.mute_duration_input._value = "60"
@@ -50,14 +51,27 @@ def test_punishment_modal_accepts_up_to_five_optional_files() -> None:
 
 @pytest.mark.asyncio
 async def test_configured_publicity_sends_files_then_source_link() -> None:
-    modal, _, _ = _create_modal()
+    modal, _, target_message = _create_modal()
     interaction, thread, moderator = _create_interaction()
     publicity_channel = MagicMock(id=99)
+    delivery_order: list[str] = []
     public_message = MagicMock(
         id=200,
         jump_url="https://discord.com/channels/10/99/200",
     )
-    publicity_channel.send = AsyncMock(return_value=public_message)
+
+    async def send_publicity(**kwargs):
+        del kwargs
+        delivery_order.append("publicity")
+        return public_message
+
+    async def forward_evidence(destination):
+        del destination
+        delivery_order.append("evidence")
+        return MagicMock()
+
+    publicity_channel.send = AsyncMock(side_effect=send_publicity)
+    target_message.forward.side_effect = forward_evidence
     thread.send = AsyncMock(return_value=MagicMock())
     file = MagicMock(spec=discord.File)
     attachment = MagicMock()
@@ -101,6 +115,8 @@ async def test_configured_publicity_sends_files_then_source_link() -> None:
         channel_id=99,
         message_id=200,
     )
+    target_message.forward.assert_awaited_once_with(publicity_channel)
+    assert delivery_order == ["publicity", "evidence"]
     file.close.assert_called_once_with()
     interaction.followup.send.assert_awaited_once_with(
         "已成功处罚并完成双区公示。",
@@ -138,6 +154,7 @@ async def test_missing_publicity_config_falls_back_without_reading_files() -> No
         await modal.on_submit(interaction)
 
     attachment.to_file.assert_not_awaited()
+    target_message.forward.assert_not_awaited()
     fallback_embed = thread.send.await_args.kwargs["embed"]
     trigger_field = next(field for field in fallback_embed.fields if field.name == "触发消息")
     assert target_message.jump_url in trigger_field.value
@@ -148,7 +165,7 @@ async def test_missing_publicity_config_falls_back_without_reading_files() -> No
 
 @pytest.mark.asyncio
 async def test_runtime_publicity_failure_keeps_punishment_and_suppresses_source_notice() -> None:
-    modal, _, _ = _create_modal()
+    modal, _, target_message = _create_modal()
     interaction, thread, moderator = _create_interaction()
     publicity_channel = MagicMock(id=99)
     publicity_channel.send = AsyncMock(side_effect=RuntimeError("Discord unavailable"))
@@ -179,11 +196,108 @@ async def test_runtime_publicity_failure_keeps_punishment_and_suppresses_source_
         await modal.on_submit(interaction)
 
     modal.logic.apply_thread_punishment.assert_awaited_once()
+    target_message.forward.assert_not_awaited()
     thread.send.assert_not_awaited()
     file.close.assert_called_once_with()
     response = interaction.followup.send.await_args.args[0]
     assert "处罚已生效" in response
     assert "原帖未发布无效跳转链接" in response
+
+
+@pytest.mark.asyncio
+async def test_evidence_forward_failure_keeps_publicity_and_reports_warning() -> None:
+    modal, _, target_message = _create_modal()
+    interaction, thread, moderator = _create_interaction()
+    publicity_channel = MagicMock(id=99)
+    public_message = MagicMock(
+        id=200,
+        jump_url="https://discord.com/channels/10/99/200",
+    )
+    publicity_channel.send = AsyncMock(return_value=public_message)
+    target_message.forward.side_effect = RuntimeError("cannot forward")
+    thread.send = AsyncMock(return_value=MagicMock())
+    modal.evidence_upload._values = []
+    modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
+    modal.logic.apply_thread_punishment = AsyncMock(
+        return_value=ThreadPunishmentResult(7, [])
+    )
+    modal.logic.set_thread_punishment_publicity_message = AsyncMock()
+
+    with (
+        patch(
+            "StellariaPact.cogs.Punishment.views.PunishmentModal.discord.Thread",
+            type(thread),
+        ),
+        patch(
+            "StellariaPact.cogs.Punishment.views.PunishmentModal.discord.Member",
+            type(moderator),
+        ),
+        patch(
+            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            new=AsyncMock(),
+        ),
+    ):
+        await modal.on_submit(interaction)
+
+    target_message.forward.assert_awaited_once_with(publicity_channel)
+    modal.logic.set_thread_punishment_publicity_message.assert_awaited_once_with(
+        7,
+        guild_id=10,
+        channel_id=99,
+        message_id=200,
+    )
+    thread.send.assert_awaited_once()
+    source_embed = thread.send.await_args.kwargs["embed"]
+    publicity_field = next(
+        field for field in source_embed.fields if field.name == "处罚公示"
+    )
+    assert public_message.jump_url in publicity_field.value
+    response = interaction.followup.send.await_args.args[0]
+    assert "处罚已生效，正式公示已发送" in response
+    assert "选中消息转发失败，请人工补发" in response
+
+
+@pytest.mark.asyncio
+async def test_publicity_without_target_message_does_not_attempt_forward() -> None:
+    modal, _, target_message = _create_modal()
+    modal.target_message = None
+    interaction, thread, moderator = _create_interaction()
+    publicity_channel = MagicMock(id=99)
+    public_message = MagicMock(
+        id=200,
+        jump_url="https://discord.com/channels/10/99/200",
+    )
+    publicity_channel.send = AsyncMock(return_value=public_message)
+    thread.send = AsyncMock(return_value=MagicMock())
+    modal.evidence_upload._values = []
+    modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
+    modal.logic.apply_thread_punishment = AsyncMock(
+        return_value=ThreadPunishmentResult(7, [])
+    )
+    modal.logic.set_thread_punishment_publicity_message = AsyncMock()
+
+    with (
+        patch(
+            "StellariaPact.cogs.Punishment.views.PunishmentModal.discord.Thread",
+            type(thread),
+        ),
+        patch(
+            "StellariaPact.cogs.Punishment.views.PunishmentModal.discord.Member",
+            type(moderator),
+        ),
+        patch(
+            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            new=AsyncMock(),
+        ),
+    ):
+        await modal.on_submit(interaction)
+
+    publicity_channel.send.assert_awaited_once()
+    target_message.forward.assert_not_awaited()
+    interaction.followup.send.assert_awaited_once_with(
+        "已成功处罚并完成双区公示。",
+        ephemeral=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -394,7 +508,7 @@ async def test_locked_publicity_thread_without_manage_permission_falls_back() ->
 
 @pytest.mark.asyncio
 async def test_locked_publicity_thread_is_unlocked_and_left_active_after_success() -> None:
-    modal, _, _ = _create_modal()
+    modal, _, target_message = _create_modal()
     interaction, source_thread, moderator = _create_interaction()
     publicity_thread = MagicMock(id=99, archived=True, locked=True)
     public_message = MagicMock(
@@ -433,6 +547,7 @@ async def test_locked_publicity_thread_is_unlocked_and_left_active_after_success
         reason="发送帖子内处罚正式公示",
     )
     publicity_thread.send.assert_awaited_once()
+    target_message.forward.assert_awaited_once_with(publicity_thread)
     source_thread.send.assert_awaited_once()
 
 
