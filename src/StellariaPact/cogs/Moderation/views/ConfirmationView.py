@@ -98,9 +98,15 @@ class ConfirmationView(discord.ui.View):
                     role_id = roles_config.get(role_key)
                     if role_id:
                         role = interaction.guild.get_role(int(role_id))
-                        role_display_names[role_key] = role.name if role else role_key
+                        base_name = role.name if role else role_key
                     else:
-                        role_display_names[role_key] = role_key
+                        base_name = role_key
+                    display_name = base_name
+                    counter = 2
+                    while display_name in role_display_names.values():
+                        display_name = f"{base_name} {counter}"
+                        counter += 1
+                    role_display_names[role_key] = display_name
 
             qo = BuildConfirmationEmbedQo(
                 context=updated_session.context,
