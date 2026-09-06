@@ -336,48 +336,56 @@ class PunishmentModal(discord.ui.Modal):
         thread: discord.Thread,
     ) -> tuple[discord.TextChannel | discord.Thread | None, str | None]:
         """解析并预检处罚公示区；失败时返回允许降级的原因。"""
-        configured = self.bot.config.get("channels", {}).get("punishment_publicity")
+        return await _resolve_publicity_channel(self.bot, thread)
+
+
+async def _resolve_publicity_channel(
+    bot: StellariaPactBot,
+    thread: discord.Thread,
+) -> tuple[discord.TextChannel | discord.Thread | None, str | None]:
+    """【PR2新增提取】解析并预检处罚公示区；失败时返回允许降级的原因。"""
+    configured = bot.config.get("channels", {}).get("punishment_publicity")
+    try:
+        channel_id = int(configured)
+    except (TypeError, ValueError):
+        return None, "未配置处罚公示区"
+
+    channel = thread.guild.get_channel_or_thread(channel_id)
+    if channel is None:
         try:
-            channel_id = int(configured)
-        except (TypeError, ValueError):
-            return None, "未配置处罚公示区"
+            channel = await thread.guild.fetch_channel(channel_id)
+        except (
+            discord.NotFound,
+            discord.Forbidden,
+            discord.HTTPException,
+            discord.InvalidData,
+        ):
+            logger.exception("无法获取处罚公示频道或子区。")
+            return None, "无法获取处罚公示频道或子区"
 
-        channel = thread.guild.get_channel_or_thread(channel_id)
-        if channel is None:
-            try:
-                channel = await thread.guild.fetch_channel(channel_id)
-            except (
-                discord.NotFound,
-                discord.Forbidden,
-                discord.HTTPException,
-                discord.InvalidData,
-            ):
-                logger.exception("无法获取处罚公示频道或子区。")
-                return None, "无法获取处罚公示频道或子区"
+    if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+        return None, "处罚公示区不是可用的文字频道或子区"
 
-        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            return None, "处罚公示区不是可用的文字频道或子区"
-
-        bot_member = thread.guild.me
-        if bot_member is None:
-            return None, "无法解析 Bot 的服务器成员身份"
-        permissions = channel.permissions_for(bot_member)
-        required_permissions = {
-            "view_channel": "查看频道",
-            "embed_links": "嵌入链接",
-            "attach_files": "上传附件",
-        }
-        if isinstance(channel, discord.Thread):
-            required_permissions["send_messages_in_threads"] = "在子区中发送消息"
-            if channel.locked is True and not getattr(permissions, "manage_threads", False):
-                return None, "处罚公示子区已锁定且 Bot 无管理子区权限"
-        else:
-            required_permissions["send_messages"] = "发送消息"
-        missing = [
-            label
-            for attribute, label in required_permissions.items()
-            if not getattr(permissions, attribute, False)
-        ]
-        if missing:
-            return None, f"Bot 缺少处罚公示区权限：{'、'.join(missing)}"
-        return channel, None
+    bot_member = thread.guild.me
+    if bot_member is None:
+        return None, "无法解析 Bot 的服务器成员身份"
+    permissions = channel.permissions_for(bot_member)
+    required_permissions = {
+        "view_channel": "查看频道",
+        "embed_links": "嵌入链接",
+        "attach_files": "上传附件",
+    }
+    if isinstance(channel, discord.Thread):
+        required_permissions["send_messages_in_threads"] = "在子区中发送消息"
+        if channel.locked is True and not getattr(permissions, "manage_threads", False):
+            return None, "处罚公示子区已锁定且 Bot 无管理子区权限"
+    else:
+        required_permissions["send_messages"] = "发送消息"
+    missing = [
+        label
+        for attribute, label in required_permissions.items()
+        if not getattr(permissions, attribute, False)
+    ]
+    if missing:
+        return None, f"Bot 缺少处罚公示区权限：{'、'.join(missing)}"
+    return channel, None

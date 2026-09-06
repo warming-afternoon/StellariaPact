@@ -39,6 +39,10 @@ class Moderation(commands.Cog):
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
+        # 【PR2修改】"提案组移除异议"原为消息右键菜单，因 Discord 全局上限（5 个消息
+        # 右键菜单）且需为 PR2"快速处罚-歪楼滑坡"腾出名额，降级为 /提案 移除异议
+        # 斜杠命令（见下方 remove_objections_command）。原 remove_objection_ctx 保留
+        # 定义但不再注册，供正式 PR 时与上游对齐参考。
         self.remove_objection_ctx = app_commands.ContextMenu(
             name="提案组移除异议",
             callback=self.remove_objections_from_message,
@@ -54,18 +58,22 @@ class Moderation(commands.Cog):
         """在 Cog 被添加到 Bot 后，进行依赖注入和初始化"""
         self.logic: ModerationLogic = ModerationLogic(self.bot)
         self.thread_manager = ProposalThreadManager(self.bot.config)
-        self.bot.tree.add_command(self.remove_objection_ctx)
-        self.bot.tree.add_command(self.view_malicious_objections_ctx)
+        # 【PR2修改】"提案组移除异议"不再注册（右键菜单名额已让给 PR2 快速处罚）；
+        # 注册加容错：超限不应导致整个 Cog 加载失败（asyncio.gather 会连锁炸掉其他 Cog）。
+        from discord.app_commands.errors import CommandLimitReached
+
+        # self.bot.tree.add_command(self.remove_objection_ctx)  # 【PR2修改】已降级为斜杠命令
+        try:
+            self.bot.tree.add_command(self.view_malicious_objections_ctx)
+        except CommandLimitReached:
+            logger.warning("右键菜单 %s 超出全局上限未注册", self.view_malicious_objections_ctx.name)
 
     async def cog_unload(self):
-        self.bot.tree.remove_command(
-            self.remove_objection_ctx.name,
-            type=self.remove_objection_ctx.type,
-        )
-        self.bot.tree.remove_command(
-            self.view_malicious_objections_ctx.name,
-            type=self.view_malicious_objections_ctx.type,
-        )
+        for menu in (self.view_malicious_objections_ctx,):
+            try:
+                self.bot.tree.remove_command(menu.name, type=menu.type)
+            except Exception:
+                logger.debug("卸载右键菜单 %s 失败（可能未注册）", menu.name)
 
     @RoleGuard.requireRoles("councilModerator", "executionAuditor")
     async def remove_objections_from_message(
@@ -127,6 +135,16 @@ class Moderation(commands.Cog):
             interaction.response.send_modal(modal),
             priority=1,
         )
+
+    @proposal_group.command(
+        name="移除异议",
+        description="[议事督导+执行监理] 打开当前提案帖的异议多选移除表单",
+    )
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
+    @app_commands.guild_only()
+    async def remove_objections_command(self, interaction: discord.Interaction) -> None:
+        """【PR2修改】原消息右键菜单"提案组移除异议"的斜杠命令版（为快速处罚腾出菜单名额）。"""
+        await self.remove_objections_from_message(interaction, None)  # type: ignore[arg-type]
 
     @proposal_group.command(
         name="进入执行", description="[议事督导+执行监理] 将讨论中的提案变更为执行中"
