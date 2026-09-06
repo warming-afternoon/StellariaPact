@@ -1,8 +1,10 @@
 import copy
 import logging
+from datetime import datetime, timedelta, timezone
 
 import discord
 from discord import app_commands
+from discord.app_commands.errors import CommandLimitReached
 from discord.ext import commands
 
 from StellariaPact.cogs.StructuredSpeech.StructuredSpeechMessageTargetResolver import (
@@ -24,6 +26,9 @@ from StellariaPact.share.enums import PunishmentType
 from StellariaPact.share.SafeDefer import safeDefer
 
 from .logic.PunishmentLogic import PunishmentLogic
+from .logic.PunishmentPublicityService import PunishmentPublicityService
+from .qo.PublishPunishmentQo import PublishPunishmentQo
+from .qo.ResolvePublicityChannelQo import ResolvePublicityChannelQo
 from .views.GlobalProposalPunishmentHistoryModal import (
     GlobalProposalPunishmentHistoryModal,
 )
@@ -49,15 +54,26 @@ class PunishmentCog(
         PunishmentType.PERMANENT_OBJECTION_CREATION: "异议创建与附议",
     }
 
+    # 快速处罚使用固定理由和禁言时长。
+    _QUICK_PUNISH_OFF_TOPIC_REASON = "请不要歪楼滑坡"
+    _QUICK_PUNISH_OFF_TOPIC_MUTE_MINUTES = 5
+
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
         self.logic = PunishmentLogic(bot)
+        self.publicity_service = PunishmentPublicityService(bot)
         self.message_target_resolver = StructuredSpeechMessageTargetResolver(bot)
 
         # 消息右键菜单：踢出提案 (针对特定发言)
         self.kick_proposal_ctx = app_commands.ContextMenu(
             name="踢出提案",
             callback=self.kick_proposal_message,
+            type=discord.AppCommandType.message,
+        )
+        # 注册无需填写表单的歪楼滑坡处罚入口。
+        self.quick_punish_off_topic_ctx = app_commands.ContextMenu(
+            name="快速处罚-歪楼滑坡",
+            callback=self.quick_punish_off_topic_message,
             type=discord.AppCommandType.message,
         )
         # # 用户右键菜单：管理处罚 (针对特定用户)
@@ -86,29 +102,43 @@ class PunishmentCog(
         )
 
     def cog_load(self) -> None:
-        self.bot.tree.add_command(self.kick_proposal_ctx)
-        self.bot.tree.add_command(self.remove_punishment_ctx)
-        self.bot.tree.add_command(self.query_punishment_ctx)
-        self.bot.tree.add_command(self.query_global_proposal_punishment_ctx)
+        """注册处罚右键菜单，并隔离菜单超限导致的加载失败。"""
+        # 本模块占四个消息菜单，结构化发言回复占剩余一个；用户菜单单独计数。
+        self._add_ctx_menus_safe(
+            self.kick_proposal_ctx,
+            self.remove_punishment_ctx,
+            self.query_punishment_ctx,
+            self.query_global_proposal_punishment_ctx,
+            self.quick_punish_off_topic_ctx,
+        )
         # self.bot.tree.add_command(self.manage_punishment_ctx)
 
+    def _add_ctx_menus_safe(self, *menus: app_commands.ContextMenu) -> None:
+        """逐个注册右键菜单；命中 CommandLimitReached 时记录并跳过。"""
+        # 逐项注册，避免单个菜单超限影响其余命令加载。
+        for menu in menus:
+            try:
+                self.bot.tree.add_command(menu)
+            except CommandLimitReached:
+                logger.warning(
+                    "右键菜单 %s 因超出 Discord 全局上限（5 个/类型）未注册，已跳过",
+                    menu.name,
+                )
+
     async def cog_unload(self) -> None:
-        self.bot.tree.remove_command(
-            self.kick_proposal_ctx.name,
-            type=self.kick_proposal_ctx.type,
-        )
-        self.bot.tree.remove_command(
-            self.remove_punishment_ctx.name,
-            type=self.remove_punishment_ctx.type,
-        )
-        self.bot.tree.remove_command(
-            self.query_punishment_ctx.name,
-            type=self.query_punishment_ctx.type,
-        )
-        self.bot.tree.remove_command(
-            self.query_global_proposal_punishment_ctx.name,
-            type=self.query_global_proposal_punishment_ctx.type,
-        )
+        """移除本模块注册的右键菜单。"""
+        # 未成功注册的菜单无需额外清理。
+        for menu in (
+            self.kick_proposal_ctx,
+            self.remove_punishment_ctx,
+            self.query_punishment_ctx,
+            self.query_global_proposal_punishment_ctx,
+            self.quick_punish_off_topic_ctx,
+        ):
+            try:
+                self.bot.tree.remove_command(menu.name, type=menu.type)
+            except Exception:
+                logger.debug("卸载右键菜单 %s 失败（可能未注册）", menu.name)
         # self.bot.tree.remove_command(
         #     self.manage_punishment_ctx.name,
         #     type=self.manage_punishment_ctx.type,
@@ -652,6 +682,147 @@ class PunishmentCog(
         await self.bot.api_scheduler.submit(
             coro=interaction.response.send_modal(modal),
             priority=1,
+        )
+
+    @RoleGuard.requireRoles("councilModerator", "stewards")
+    async def quick_punish_off_topic_message(
+        self,
+        interaction: discord.Interaction,
+        message: discord.Message,
+    ) -> None:
+        """对选中消息的真实作者执行歪楼滑坡预设处罚并发布公示。"""
+        # 解析结构化消息的原发言者，并校验处罚上下文。
+        target_user = await self._resolve_message_target(interaction, message)
+        if target_user is None:
+            return
+        if not await self._validate_context(interaction, target_user):
+            return
+
+        # 提前确认交互，为处罚写入和公示发送留出处理时间。
+        await safeDefer(interaction, ephemeral=True)
+
+        thread = interaction.channel
+        moderator = interaction.user
+        assert isinstance(thread, discord.Thread) and isinstance(moderator, discord.Member)
+
+        mute_end_time = datetime.now(timezone.utc) + timedelta(
+            minutes=self._QUICK_PUNISH_OFF_TOPIC_MUTE_MINUTES
+        )
+
+        # 通过业务层事务写入处罚，控制器只接收结果数据。
+        result = await self.logic.apply_thread_punishment(
+            guild_id=thread.guild.id,
+            thread_id=thread.id,
+            target_user_id=target_user.id,
+            moderator_id=moderator.id,
+            reason=self._QUICK_PUNISH_OFF_TOPIC_REASON,
+            source_message_url=message.jump_url,
+            voting_allowed=True,
+            mute_end_time=mute_end_time,
+        )
+
+        # 同步内存禁言缓存（voting_allowed=True 不会产生需要刷新的投票面板）
+        self.bot.dispatch(
+            "thread_mute_updated",
+            thread.id,
+            target_user.id,
+            mute_end_time,
+        )
+        for vote_details in result.vote_details_to_update:
+            self.bot.dispatch("vote_details_updated", vote_details)
+
+        # 公示区无法使用时，仅在原帖发布处罚信息。
+        resolved = await self.publicity_service.resolve_channel(
+            ResolvePublicityChannelQo(guild=thread.guild)
+        )
+        publicity_channel = resolved.channel
+        publicity_fallback_reason = resolved.fallback_reason
+        if publicity_channel is None:
+            fallback_embed = PunishmentEmbedBuilder.create_punishment_embed(
+                moderator=moderator,
+                target_user=target_user,
+                reason=self._QUICK_PUNISH_OFF_TOPIC_REASON,
+                target_message=message,
+                is_voting_allowed=True,
+                mute_end_time=mute_end_time,
+            )
+            try:
+                await self.bot.api_scheduler.submit(
+                    thread.send(embed=fallback_embed),
+                    priority=5,
+                )
+                await interaction.followup.send(
+                    f"快速处罚已生效（保留投票权 + 禁言 5 分钟），"
+                    f"并已降级为原帖单处公示。原因：{publicity_fallback_reason}",
+                    ephemeral=True,
+                )
+            except Exception:
+                logger.exception("快速处罚已生效，但降级公示发送失败。")
+                await interaction.followup.send(
+                    "快速处罚已生效，但处罚公示区不可用且原帖公示发送失败，请人工补发。",
+                    ephemeral=True,
+                )
+            return
+
+        public_embed = PunishmentEmbedBuilder.create_punishment_embed(
+            moderator=moderator,
+            target_user=target_user,
+            reason=self._QUICK_PUNISH_OFF_TOPIC_REASON,
+            target_message=None,
+            is_voting_allowed=True,
+            mute_end_time=mute_end_time,
+        )
+        # 复用正式公示发送流程，自动解锁子区并在发送失败时恢复状态。
+        publicity = await self.publicity_service.publish(
+            PublishPunishmentQo(channel=publicity_channel, embed=public_embed)
+        )
+        if publicity.error is not None:
+            await interaction.followup.send(publicity.error, ephemeral=True)
+            return
+        publicity_channel = publicity.channel
+        public_message = publicity.message
+        assert public_message is not None
+
+        # 转发触发消息作为处罚依据（失败仅告警）
+        if message is not None:
+            try:
+                await self.bot.api_scheduler.submit(
+                    message.forward(publicity_channel),
+                    priority=5,
+                )
+            except Exception:
+                logger.exception("快速处罚正式公示已发送，但触发消息转发失败。")
+
+        # 将正式消息位置写回处罚记录，供历史查询使用。
+        try:
+            await self.logic.set_thread_punishment_publicity_message(
+                result.punishment_record_id,
+                guild_id=thread.guild.id,
+                channel_id=publicity_channel.id,
+                message_id=public_message.id,
+            )
+        except Exception:
+            logger.exception("保存快速处罚正式公示位置失败。")
+
+        # 正式公示成功后，再在原帖发布有效的跳转链接。
+        source_embed = PunishmentEmbedBuilder.create_punishment_embed(
+            moderator=moderator,
+            target_user=target_user,
+            reason=self._QUICK_PUNISH_OFF_TOPIC_REASON,
+            target_message=None,
+            is_voting_allowed=True,
+            mute_end_time=mute_end_time,
+            publicity_message_url=public_message.jump_url,
+        )
+        try:
+            await self.bot.api_scheduler.submit(thread.send(embed=source_embed), priority=5)
+        except Exception:
+            logger.exception("快速处罚正式公示已发送，但原帖公示发送失败。")
+
+        await interaction.followup.send(
+            "快速处罚已生效：保留本帖投票权 + 禁言 5 分钟 + 理由「请不要歪楼滑坡」，"
+            "并已完成双区公示。",
+            ephemeral=True,
         )
 
     @RoleGuard.requireRoles("councilModerator", "stewards")
