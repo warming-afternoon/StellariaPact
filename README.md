@@ -374,6 +374,27 @@ uv run python migrate.py
     docker compose down
     ```
 
+### 处罚证据消息转发
+
+可在 `.env` 中配置另一个拥有 Message Content 特权的 Bot Token：
+
+```dotenv
+STELLARIA_FORWARD_BOT_TOKEN=""
+```
+
+留空时由当前 Bot 原生转发；填写后，本项目直接使用该 Token 调用 Discord REST API，
+无需修改另一个 Bot 或建立第二条 Gateway 连接。此配置与消息资格监听模式独立。
+正式公示仍由当前 Bot 发送，证据转发显示为额外 Token 对应的 Bot。
+该 Bot 需要能读取源消息，并向公示频道或子区发送消息（包括所需的子区访问权限）。
+
+请求仅在限流时有限重试，最多请求 3 次，单次超时 10 秒，获取转发锁后的总预算为 30 秒。
+失败不影响处罚；结果未确认时请先检查公示区，缺失时再人工补发，以免重复。
+本项目不会后台补转，另一个 Bot 的请求仍与本项目共享该身份的 Discord API 限流。
+
+部署时在服务器上填写 Token，并使用原有 Compose 启动命令加上 `--force-recreate` 重建容器。
+验收文字和附件消息：公示后应出现由有特权 Bot 发送的原生转发。
+不要提交真实 Token；撤销此配置并重建容器即可恢复当前 Bot 转发方式。
+
 ### 消息资格监听模式
 
 测试 Bot 拥有 Message Content 特权时，保持 `.env` 中的远端事件开关关闭，并使用基础 Compose：

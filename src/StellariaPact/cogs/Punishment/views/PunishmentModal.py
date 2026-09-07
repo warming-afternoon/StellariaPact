@@ -6,6 +6,7 @@ import discord
 
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.share import StellariaPactBot, safeDefer
+from StellariaPact.share.MessageForwardService import MessageForwardError
 
 from ..logic.PunishmentLogic import PunishmentLogic
 from .PunishmentEmbedBuilder import PunishmentEmbedBuilder
@@ -119,8 +120,8 @@ class PunishmentModal(discord.ui.Modal):
             if not isinstance(thread, discord.Thread) or not isinstance(moderator, discord.Member):
                 return
 
-            publicity_channel, publicity_fallback_reason = (
-                await self._get_publicity_channel(thread)
+            publicity_channel, publicity_fallback_reason = await self._get_publicity_channel(
+                thread
             )
             files: list[discord.File] = []
             if publicity_channel is not None:
@@ -181,9 +182,7 @@ class PunishmentModal(discord.ui.Modal):
                         priority=5,
                     )
                     material_warning = (
-                        "；上传的处罚材料未发布"
-                        if self.evidence_upload.values
-                        else ""
+                        "；上传的处罚材料未发布" if self.evidence_upload.values else ""
                     )
                     await interaction.followup.send(
                         f"处罚已生效，并已降级为原帖单处公示{material_warning}。"
@@ -228,9 +227,7 @@ class PunishmentModal(discord.ui.Modal):
                         )
                         unlocked_for_publicity = True
                     except Exception:
-                        logger.exception(
-                            "帖子内处罚已生效，但处罚公示子区自动解锁失败。"
-                        )
+                        logger.exception("帖子内处罚已生效，但处罚公示子区自动解锁失败。")
                         await interaction.followup.send(
                             "处罚已生效，但处罚公示子区自动解锁失败；"
                             "原帖未发布无效跳转链接，请人工处理。",
@@ -274,15 +271,40 @@ class PunishmentModal(discord.ui.Modal):
                     file.close()
 
             evidence_forward_failed = False
+            evidence_forward_uncertain = False
             if self.target_message is not None:
                 try:
-                    await self.bot.api_scheduler.submit(
-                        self.target_message.forward(publicity_channel),
+                    forwarded_id = await self.bot.api_scheduler.submit(
+                        self.bot.message_forward_service.forward(
+                            self.target_message, publicity_channel
+                        ),
                         priority=5,
                     )
-                except Exception:
+                    logger.info(
+                        "处罚证据转发成功 record=%s source_channel=%s source_message=%s "
+                        "destination=%s forwarded_message=%s",
+                        result.punishment_record_id,
+                        self.target_message.channel.id,
+                        self.target_message.id,
+                        publicity_channel.id,
+                        forwarded_id,
+                    )
+                except Exception as error:
                     evidence_forward_failed = True
-                    logger.exception("帖子内处罚正式公示已发送，但选中的证据消息转发失败。")
+                    evidence_forward_uncertain = (
+                        isinstance(error, MessageForwardError) and error.uncertain
+                    )
+                    logger.warning(
+                        "处罚证据转发失败 record=%s source_channel=%s source_message=%s "
+                        "destination=%s status=%s code=%s uncertain=%s",
+                        result.punishment_record_id,
+                        self.target_message.channel.id,
+                        self.target_message.id,
+                        publicity_channel.id,
+                        getattr(error, "status", None),
+                        getattr(error, "code", None),
+                        evidence_forward_uncertain,
+                    )
 
             location_saved = True
             try:
@@ -313,7 +335,9 @@ class PunishmentModal(discord.ui.Modal):
                 logger.exception("帖子内处罚正式公示已发送，但原帖公示发送失败。")
 
             warnings: list[str] = []
-            if evidence_forward_failed:
+            if evidence_forward_uncertain:
+                warnings.append("证据消息转发结果未确认，请先检查公示区，缺失时人工补发")
+            elif evidence_forward_failed:
                 warnings.append("选中消息转发失败，请人工补发")
             if not location_saved:
                 warnings.append("历史记录未能保存正式公示链接")
