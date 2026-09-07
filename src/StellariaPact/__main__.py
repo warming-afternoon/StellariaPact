@@ -14,6 +14,7 @@ from StellariaPact.share.auth.MissingRole import MissingRole
 from StellariaPact.share.DatabaseHandler import get_db_handler, initialize_db_handler
 from StellariaPact.share.HttpClient import HttpClient
 from StellariaPact.share.LoggingConfigurator import LoggingConfigurator
+from StellariaPact.share.MessageForwardService import MessageForwardService
 from StellariaPact.share.RemoteMessageEventsConfig import RemoteMessageEventsConfig
 from StellariaPact.share.StellariaPactBot import StellariaPactBot
 from StellariaPact.share.TimeUtils import TimeUtils
@@ -78,6 +79,11 @@ async def main_async():
     bot.api_scheduler = APIScheduler()
     bot.db_handler = None
     bot.config = config
+    bot.message_forward_service = MessageForwardService.from_env(proxy=proxy)
+    logger.info(
+        "处罚证据转发使用%s。",
+        "额外 Token" if bot.message_forward_service.uses_extra_token else "当前 BOT",
+    )
     bot.remote_message_events = remote_message_events
     bot.time_utils = TimeUtils()
 

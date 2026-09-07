@@ -4,6 +4,7 @@ from discord.ext import commands
 
 from StellariaPact.share.ApiScheduler import APIScheduler
 from StellariaPact.share.DatabaseHandler import DatabaseHandler
+from StellariaPact.share.MessageForwardService import MessageForwardService
 from StellariaPact.share.RemoteMessageEventsConfig import RemoteMessageEventsConfig
 from StellariaPact.share.TimeUtils import TimeUtils
 
@@ -16,6 +17,7 @@ class StellariaPactBot(commands.Bot):
     """
 
     api_scheduler: APIScheduler
+    message_forward_service: MessageForwardService
     db_handler: Optional[DatabaseHandler]
     config: Dict[str, Any]
     remote_message_events: RemoteMessageEventsConfig

@@ -9,6 +9,8 @@ from StellariaPact.cogs.Punishment.views.PunishmentModal import (
     MAX_PUNISHMENT_EVIDENCE_FILES,
     PunishmentModal,
 )
+from StellariaPact.share.HttpClient import HttpClient
+from StellariaPact.share.MessageForwardService import MessageForwardError, MessageForwardService
 
 
 async def _submit_immediately(coroutine, priority):
@@ -18,6 +20,7 @@ async def _submit_immediately(coroutine, priority):
 
 def _create_modal():
     bot = MagicMock()
+    bot.message_forward_service = MessageForwardService()
     bot.api_scheduler.submit.side_effect = _submit_immediately
     target_user = MagicMock(id=50, mention="<@50>")
     target_message = MagicMock(
@@ -50,8 +53,9 @@ def test_punishment_modal_accepts_up_to_five_optional_files() -> None:
 
 
 @pytest.mark.asyncio
-async def test_configured_publicity_sends_files_then_source_link() -> None:
-    modal, _, target_message = _create_modal()
+@pytest.mark.parametrize("extra_token", [False, True])
+async def test_configured_publicity_sends_files_then_source_link(extra_token, monkeypatch) -> None:
+    modal, bot, target_message = _create_modal()
     interaction, thread, moderator = _create_interaction()
     publicity_channel = MagicMock(id=99)
     delivery_order: list[str] = []
@@ -72,15 +76,25 @@ async def test_configured_publicity_sends_files_then_source_link() -> None:
 
     publicity_channel.send = AsyncMock(side_effect=send_publicity)
     target_message.forward.side_effect = forward_evidence
+    if extra_token:
+        bot.message_forward_service = MessageForwardService("privileged")
+
+        async def post(*args, **kwargs):
+            delivery_order.append("evidence")
+            response = MagicMock(status=200, headers={})
+            response.json = AsyncMock(return_value={"id": "300"})
+            response.__aenter__ = AsyncMock(return_value=response)
+            response.__aexit__ = AsyncMock(return_value=False)
+            return response
+
+        monkeypatch.setattr(HttpClient, "post", post)
     thread.send = AsyncMock(return_value=MagicMock())
     file = MagicMock(spec=discord.File)
     attachment = MagicMock()
     attachment.to_file = AsyncMock(return_value=file)
     modal.evidence_upload._values = [attachment]
     modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
     modal.logic.set_thread_punishment_publicity_message = AsyncMock()
 
     with (
@@ -115,7 +129,10 @@ async def test_configured_publicity_sends_files_then_source_link() -> None:
         channel_id=99,
         message_id=200,
     )
-    target_message.forward.assert_awaited_once_with(publicity_channel)
+    if extra_token:
+        target_message.forward.assert_not_awaited()
+    else:
+        target_message.forward.assert_awaited_once_with(publicity_channel)
     assert delivery_order == ["publicity", "evidence"]
     file.close.assert_called_once_with()
     interaction.followup.send.assert_awaited_once_with(
@@ -133,9 +150,7 @@ async def test_missing_publicity_config_falls_back_without_reading_files() -> No
     attachment.to_file = AsyncMock()
     modal.evidence_upload._values = [attachment]
     modal._get_publicity_channel = AsyncMock(return_value=(None, "未配置处罚公示区"))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
 
     with (
         patch(
@@ -175,9 +190,7 @@ async def test_runtime_publicity_failure_keeps_punishment_and_suppresses_source_
     attachment.to_file = AsyncMock(return_value=file)
     modal.evidence_upload._values = [attachment]
     modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
 
     with (
         patch(
@@ -205,7 +218,8 @@ async def test_runtime_publicity_failure_keeps_punishment_and_suppresses_source_
 
 
 @pytest.mark.asyncio
-async def test_evidence_forward_failure_keeps_publicity_and_reports_warning() -> None:
+@pytest.mark.parametrize("uncertain", [False, True])
+async def test_evidence_forward_failure_keeps_publicity_and_reports_warning(uncertain) -> None:
     modal, _, target_message = _create_modal()
     interaction, thread, moderator = _create_interaction()
     publicity_channel = MagicMock(id=99)
@@ -214,13 +228,11 @@ async def test_evidence_forward_failure_keeps_publicity_and_reports_warning() ->
         jump_url="https://discord.com/channels/10/99/200",
     )
     publicity_channel.send = AsyncMock(return_value=public_message)
-    target_message.forward.side_effect = RuntimeError("cannot forward")
+    target_message.forward.side_effect = MessageForwardError(uncertain=uncertain)
     thread.send = AsyncMock(return_value=MagicMock())
     modal.evidence_upload._values = []
     modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
     modal.logic.set_thread_punishment_publicity_message = AsyncMock()
 
     with (
@@ -248,13 +260,16 @@ async def test_evidence_forward_failure_keeps_publicity_and_reports_warning() ->
     )
     thread.send.assert_awaited_once()
     source_embed = thread.send.await_args.kwargs["embed"]
-    publicity_field = next(
-        field for field in source_embed.fields if field.name == "处罚公示"
-    )
+    publicity_field = next(field for field in source_embed.fields if field.name == "处罚公示")
     assert public_message.jump_url in publicity_field.value
     response = interaction.followup.send.await_args.args[0]
     assert "处罚已生效，正式公示已发送" in response
-    assert "选中消息转发失败，请人工补发" in response
+    expected = (
+        "证据消息转发结果未确认，请先检查公示区，缺失时人工补发"
+        if uncertain
+        else "选中消息转发失败，请人工补发"
+    )
+    assert expected in response
 
 
 @pytest.mark.asyncio
@@ -271,9 +286,7 @@ async def test_publicity_without_target_message_does_not_attempt_forward() -> No
     thread.send = AsyncMock(return_value=MagicMock())
     modal.evidence_upload._values = []
     modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
     modal.logic.set_thread_punishment_publicity_message = AsyncMock()
 
     with (
@@ -347,9 +360,7 @@ async def test_location_writeback_failure_still_sends_source_with_direct_link() 
     thread.send = AsyncMock(return_value=MagicMock())
     modal.evidence_upload._values = []
     modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
     modal.logic.set_thread_punishment_publicity_message = AsyncMock(
         side_effect=RuntimeError("database unavailable")
     )
@@ -390,9 +401,7 @@ async def test_source_notice_failure_preserves_publicity_and_reports_partial_fai
     thread.send = AsyncMock(side_effect=RuntimeError("thread unavailable"))
     modal.evidence_upload._values = []
     modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
     modal.logic.set_thread_punishment_publicity_message = AsyncMock()
 
     with (
@@ -520,9 +529,7 @@ async def test_locked_publicity_thread_is_unlocked_and_left_active_after_success
     source_thread.send = AsyncMock(return_value=MagicMock())
     modal.evidence_upload._values = []
     modal._get_publicity_channel = AsyncMock(return_value=(publicity_thread, None))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
     modal.logic.set_thread_punishment_publicity_message = AsyncMock()
 
     with (
@@ -564,9 +571,7 @@ async def test_publicity_thread_unlock_failure_keeps_punishment_and_closes_files
     attachment.to_file = AsyncMock(return_value=file)
     modal.evidence_upload._values = [attachment]
     modal._get_publicity_channel = AsyncMock(return_value=(publicity_thread, None))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
 
     with (
         patch(
@@ -606,9 +611,7 @@ async def test_send_failure_after_unlock_attempts_to_restore_original_state(
     source_thread.send = AsyncMock()
     modal.evidence_upload._values = []
     modal._get_publicity_channel = AsyncMock(return_value=(publicity_thread, None))
-    modal.logic.apply_thread_punishment = AsyncMock(
-        return_value=ThreadPunishmentResult(7, [])
-    )
+    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
 
     with (
         patch(
