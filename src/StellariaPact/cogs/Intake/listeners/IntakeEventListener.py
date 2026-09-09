@@ -111,18 +111,19 @@ class IntakeEventListenerCog(commands.Cog):
             if is_fully_approved:
                 logger.info(
                     f"草案（帖子ID: {interaction.channel_id}）"
-                    "二审通过，讨论帖已建立（锁定中）。"
+                    "3/3 管理已确认，已进入支持票收集阶段。"
                 )
                 await interaction.followup.send(
-                    "✅ 二审通过，讨论帖已建立（锁定中），等待提案委员会确认解锁", ephemeral=True
+                    "✅ 3/3 管理已确认，已进入支持票收集阶段", ephemeral=True
                 )
             else:
                 logger.info(
                     f"草案（帖子ID: {interaction.channel_id}）"
-                    "已记录初审，等待第二位管理确认。"
+                    f"{intake_dto.review_count}/3 管理已确认，等待其他管理确认。"
                 )
                 await interaction.followup.send(
-                    "✅ 初审已记录，需第二位管理确认后进入公示阶段", ephemeral=True
+                    f"✅ {intake_dto.review_count}/3 管理已确认，满 3 位后进入支持票收集阶段",
+                    ephemeral=True
                 )
         except Exception as e:
             logger.error(

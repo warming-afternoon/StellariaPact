@@ -131,6 +131,8 @@ class IntakeDiscordHelper:
                 f"{status_emoji} **状态：** {status_text}\n",
                 f"💬 **审核意见：** {intake_dto.review_comment or '（无）'}",
             ])
+            if intake_dto.status == IntakeStatus.PENDING_REVIEW or intake_dto.reviewer_id_3:
+                status_block += f"\n👥 **审核进度：** {intake_dto.review_count}/3 管理已确认"
             if extra_note:
                 status_block += f"\n\nℹ️ {extra_note}"
 

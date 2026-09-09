@@ -146,18 +146,32 @@ class IntakeReviewView(View):
             async with UnitOfWork(self.bot.db_handler) as uow:
                 intake = await uow.intake.get_intake_by_review_thread_id(interaction.channel_id)
                 if not intake:
-                    await interaction.response.send_message("❌ 找不到相关草案记录，无法执行操作。", ephemeral=True)
+                    await interaction.response.send_message(
+                        "❌ 找不到相关草案记录，无法执行操作。", ephemeral=True
+                    )
                     return
 
-                # 批准操作: 检查是否为二审，二审跳过审核意见弹窗
+                # 首审填写意见，后续管理直接确认
                 if action == "approved":
-                    if intake.reviewer_id is not None and intake.reviewer_id != interaction.user.id:
-                        # 第二位管理审核：展示第一位管理意见作为参考，不要求填写审核意见
+                    if intake.status != IntakeStatus.PENDING_REVIEW:
+                        await interaction.response.send_message(
+                            "❌ 草案已不处于待审核状态。", ephemeral=True
+                        )
+                        return
+                    if interaction.user.id in (
+                        intake.reviewer_id,
+                        intake.reviewer_id_2,
+                        intake.reviewer_id_3,
+                    ):
+                        await interaction.response.send_message(
+                            "❌ 您已审核过此草案，请等待其他管理确认。", ephemeral=True
+                        )
+                        return
+                    if intake.reviewer_id is not None:
+                        # 后续管理审核：展示第一位管理意见作为参考，不要求填写审核意见
                         await interaction.response.defer(ephemeral=True)
                         comment_preview = (
-                            intake.review_comment
-                            if intake.review_comment
-                            else "（无）"
+                            intake.review_comment if intake.review_comment else "（无）"
                         )
                         await interaction.followup.send(
                             f"📋 **第一位管理 <@{intake.reviewer_id}> 的审核意见（只读参考）：**\n"
@@ -188,9 +202,7 @@ class IntakeReviewView(View):
                     "❌ 无法获取帖子上下文。", ephemeral=True
                 )
 
-            intake = await uow.intake.get_intake_by_review_thread_id(
-                interaction.channel_id
-            )
+            intake = await uow.intake.get_intake_by_review_thread_id(interaction.channel_id)
             if not intake:
                 return await interaction.response.send_message(
                     "❌ 找不到相关草案。", ephemeral=True

@@ -89,7 +89,7 @@ class IntakeLogic:
         operator_name: str = "",
         operator_display_name: str = "",
     ):
-        """草案审核 - 通过（双管理审核）。"""
+        """草案审核 - 通过（三位管理审核）。"""
         return await self.review_service.approve_intake(
             thread_id, reviewer_id, review_comment,
             operator_name=operator_name,

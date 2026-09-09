@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
+from sqlalchemy import or_, update
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -69,47 +70,47 @@ class IntakeRepository:
         result = await self.session.exec(statement)
         return result.one_or_none()
 
-    async def mark_first_reviewed(
+    async def record_approval(
         self,
         thread_id: int,
         reviewer_id: int,
         review_comment: str,
-    ) -> ProposalIntake:
-        """记录第一位管理审核，不改变状态（等待第二位管理确认）。"""
-        intake = await self.get_intake_by_review_thread_id(thread_id)
-        if not intake:
-            raise ValueError("未找到对应的草案。")
-        if intake.status != IntakeStatus.PENDING_REVIEW:
-            raise ValueError("草案状态不正确，无法审核。")
+    ) -> tuple[ProposalIntake, int]:
+        """原子占用下一个审核位置；仅第三位不同管理能推进状态。"""
+        reviewer_columns = [
+            ProposalIntake.reviewer_id,
+            ProposalIntake.reviewer_id_2,
+            ProposalIntake.reviewer_id_3,
+        ]
+        # UPDATE 先于读取执行，避免 SQLite 的读后写升级竞争。
+        for index, suffix in enumerate(("", "_2", "_3")):
+            conditions = [
+                ProposalIntake.review_thread_id == thread_id,
+                ProposalIntake.status == IntakeStatus.PENDING_REVIEW,
+                *[column.is_not(None) for column in reviewer_columns[:index]],
+                *[column.is_(None) for column in reviewer_columns[index:]],
+                *[or_(column.is_(None), column != reviewer_id) for column in reviewer_columns],
+            ]
+            values = {
+                f"reviewer_id{suffix}": reviewer_id,
+                f"reviewed_at{suffix}": datetime.now(timezone.utc),
+                f"review_comment{suffix}": review_comment,
+            }
+            if index == 2:
+                values["status"] = IntakeStatus.SUPPORT_COLLECTING
+            result = await self.session.execute(
+                update(ProposalIntake)
+                .where(*conditions)
+                .values(**values)
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount == 1:
+                intake = await self.get_intake_by_review_thread_id(thread_id)
+                assert intake is not None
+                await self.session.refresh(intake)
+                return intake, index + 1
 
-        intake.reviewer_id = reviewer_id
-        intake.reviewed_at = datetime.now(timezone.utc)
-        intake.review_comment = review_comment
-        return await self.update_intake(intake)
-
-    async def mark_second_reviewed(
-        self,
-        thread_id: int,
-        reviewer_id: int,
-        review_comment: str,
-        target_status: IntakeStatus,
-    ) -> ProposalIntake:
-        """记录第二位管理审核，改变状态（审核完成）。"""
-        intake = await self.get_intake_by_review_thread_id(thread_id)
-        if not intake:
-            raise ValueError("未找到对应的草案。")
-        if intake.status != IntakeStatus.PENDING_REVIEW:
-            raise ValueError("草案状态不正确，无法进行二审。")
-        if intake.reviewer_id is None:
-            raise ValueError("草案尚未完成初审，无法进行二审。")
-        if intake.reviewer_id == reviewer_id:
-            raise ValueError("同一位管理不能重复审核，请等待另一位管理确认。")
-
-        intake.reviewer_id_2 = reviewer_id
-        intake.reviewed_at_2 = datetime.now(timezone.utc)
-        intake.review_comment_2 = review_comment
-        intake.status = target_status
-        return await self.update_intake(intake)
+        raise ValueError("无法批准：草案不存在、已不处于待审核状态，或您已审核过此草案。")
 
     async def mark_reviewed(
         self,

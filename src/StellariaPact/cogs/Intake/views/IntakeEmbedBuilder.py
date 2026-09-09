@@ -63,6 +63,8 @@ class IntakeEmbedBuilder:
 
         embed.add_field(name="草案ID", value=f"`{intake.id}`", inline=True)
         embed.add_field(name="状态", value=status_text, inline=True)
+        if intake.status == IntakeStatus.PENDING_REVIEW or intake.reviewer_id_3:
+            embed.add_field(name="审核进度", value=f"{intake.review_count}/3", inline=True)
         embed.add_field(name="原因", value=intake.reason, inline=False)
         embed.add_field(name="动议", value=intake.motion, inline=False)
         embed.add_field(name="方案", value=intake.implementation, inline=False)
@@ -87,6 +89,8 @@ class IntakeEmbedBuilder:
 
         body = ProposalContentFormatter.format_review_body(intake, submitted_timestamp)
         content = f"{body}\n\n{emoji} **状态：** {status_desc}\n"
+        if intake.status == IntakeStatus.PENDING_REVIEW or intake.reviewer_id_3:
+            content += f"👥 **审核进度：** {intake.review_count}/3 管理已确认\n"
         return content.strip()
 
     @staticmethod
