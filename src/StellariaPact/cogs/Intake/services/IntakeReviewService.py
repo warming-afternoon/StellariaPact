@@ -25,15 +25,11 @@ logger = logging.getLogger(__name__)
 
 
 class IntakeReviewService:
-    """负责管理员双审（批准/拒绝/要求修改）与作者修改。"""
+    """负责管理员三人审核（批准/拒绝/要求修改）与作者修改。"""
 
     def __init__(self, bot: "StellariaPactBot", discord_helper: "IntakeDiscordHelper"):
         self.bot = bot
         self.discord_helper = discord_helper
-
-    # -------------------------
-    # 草案审核 - 批准（双重管理审核）
-    # -------------------------
 
     async def approve_intake(
         self,
@@ -43,104 +39,36 @@ class IntakeReviewService:
         operator_name: str = "",
         operator_display_name: str = "",
     ) -> tuple[ProposalIntakeDto, bool]:
-        """草案审核 - 通过（双管理审核）。
-
-        第一位管理批准 → 记录初审，等待第二位管理。
-        第二位管理批准 → 进入支持票收集，同时建立锁定讨论帖供预览。
-
-        Returns (intake_dto, is_fully_approved).
-        """
-        # 检查是否已有第一位管理批准
+        """记录三位不同管理的批准，只有第三票启动支持票收集。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            existing = await uow.intake.get_intake_by_review_thread_id(thread_id)
-            if not existing:
-                raise ValueError("未找到对应的草案。")
-            is_second_review = existing.reviewer_id is not None
-
-        if is_second_review:
-            return (
-                await self._second_approve(
-                    thread_id, reviewer_id, review_comment,
-                    operator_name=operator_name,
-                    operator_display_name=operator_display_name,
-                ),
-                True,
-            )
-        else:
-            return (
-                await self._first_approve(
-                    thread_id, reviewer_id, review_comment,
-                    operator_name=operator_name,
-                    operator_display_name=operator_display_name,
-                ),
-                False,
-            )
-
-    async def _first_approve(
-        self,
-        thread_id: int,
-        reviewer_id: int,
-        review_comment: str,
-        operator_name: str = "",
-        operator_display_name: str = "",
-    ) -> ProposalIntakeDto:
-        """第一位管理批准：记录初审信息，等待第二位管理。"""
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            intake = await uow.intake.mark_first_reviewed(
+            intake, count = await uow.intake.record_approval(
                 thread_id, reviewer_id, review_comment,
             )
             intake_dto = ProposalIntakeDto.model_validate(intake)
-
-            # 写入操作日志
             await uow.operation_log.log_operation(
                 operator_id=reviewer_id,
                 operator_name=operator_name,
                 operator_display_name=operator_display_name,
                 op_type=LogOperationType.INTAKE,
-                action="first_approve",
+                action=("first_approve", "second_approve", "third_approve")[count - 1],
                 target_type="intake",
                 target_id=intake_dto.id,
                 guild_id=intake_dto.guild_id,
-                detail=f"审核意见: {review_comment[:100]}" if review_comment else None,
+                detail=f"审核进度: {count}/3；审核意见: {review_comment[:100]}",
             )
             await uow.commit()
 
-        await self.discord_helper.update_review_thread_message(
-            intake_dto, view=IntakeReviewView(self.bot, intake_dto),
-            extra_note="⏳ 1/2 管理已确认，等待第二位管理确认中...",
-        )
-        return intake_dto
-
-    async def _second_approve(
-        self,
-        thread_id: int,
-        reviewer_id: int,
-        review_comment: str,
-        operator_name: str = "",
-        operator_display_name: str = "",
-    ) -> ProposalIntakeDto:
-        """第二位管理批准：完成审核，进入支持票收集阶段。"""
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            intake = await uow.intake.mark_second_reviewed(
-                thread_id, reviewer_id, review_comment,
-                IntakeStatus.SUPPORT_COLLECTING,
+        if count < 3:
+            await self.discord_helper.update_review_thread_message(
+                intake_dto, view=IntakeReviewView(self.bot, intake_dto),
             )
-            intake_dto = ProposalIntakeDto.model_validate(intake)
+            return intake_dto, False
 
-            # 写入操作日志
-            await uow.operation_log.log_operation(
-                operator_id=reviewer_id,
-                operator_name=operator_name,
-                operator_display_name=operator_display_name,
-                op_type=LogOperationType.INTAKE,
-                action="second_approve",
-                target_type="intake",
-                target_id=intake_dto.id,
-                guild_id=intake_dto.guild_id,
-                detail=f"审核意见: {review_comment[:100]}" if review_comment else None,
-            )
-            await uow.commit()
+        await self._start_support_collection(intake_dto)
+        return intake_dto, True
 
+    async def _start_support_collection(self, intake_dto: ProposalIntakeDto) -> None:
+        """三位管理确认后，创建支持票面板和投票会话。"""
         channels_config = self.bot.config.get("channels", {})
 
         # 在公示频道发送支持票面板
@@ -190,8 +118,6 @@ class IntakeReviewService:
             notify_proposer=True,
         )
         await self.discord_helper.update_review_thread_tags(intake_dto)
-
-        return intake_dto
 
     # -------------------------
     # 草案审核 - 拒绝
@@ -321,7 +247,7 @@ class IntakeReviewService:
             if intake.status == IntakeStatus.MODIFICATION_REQUIRED:
                 intake.status = IntakeStatus.PENDING_REVIEW
 
-            # 如果处于待审核状态被修改，重置管理员初审记录
+            # 如果处于待审核状态被修改，重置全部管理员审核记录
             if intake.status == IntakeStatus.PENDING_REVIEW:
                 intake.reviewer_id = None
                 intake.reviewed_at = None
@@ -329,6 +255,9 @@ class IntakeReviewService:
                 intake.reviewer_id_2 = None
                 intake.reviewed_at_2 = None
                 intake.review_comment_2 = None
+                intake.reviewer_id_3 = None
+                intake.reviewed_at_3 = None
+                intake.review_comment_3 = None
 
             await uow.intake.update_intake(intake)
 

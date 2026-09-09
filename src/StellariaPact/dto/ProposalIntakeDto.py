@@ -65,3 +65,20 @@ class ProposalIntakeDto(BaseDto):
 
     review_comment_2: str | None = None
     """第二位审核意见"""
+
+    reviewer_id_3: int | None = None
+    """第三位审核人用户ID"""
+
+    reviewed_at_3: datetime | None = None
+    """第三位审核时间"""
+
+    review_comment_3: str | None = None
+    """第三位审核意见"""
+
+    @property
+    def review_count(self) -> int:
+        """已记录的不同管理批准人数（仅用于审核进度）。"""
+        return len({
+            reviewer for reviewer in (self.reviewer_id, self.reviewer_id_2, self.reviewer_id_3)
+            if reviewer is not None
+        })
