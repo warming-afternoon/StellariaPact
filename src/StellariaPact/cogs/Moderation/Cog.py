@@ -3,6 +3,7 @@ from typing import Awaitable, Callable
 
 import discord
 from discord import app_commands
+from discord.app_commands.errors import CommandLimitReached
 from discord.ext import commands
 
 from StellariaPact.cogs.Moderation.dto import ExecuteProposalResultDto
@@ -39,11 +40,7 @@ class Moderation(commands.Cog):
 
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
-        self.remove_objection_ctx = app_commands.ContextMenu(
-            name="提案组移除异议",
-            callback=self.remove_objections_from_message,
-            type=discord.AppCommandType.message,
-        )
+        # 异议移除使用斜杠命令，右键仅保留用户处罚历史查询。
         self.view_malicious_objections_ctx = app_commands.ContextMenu(
             name="查看恶意违规异议",
             callback=self.view_malicious_objections_for_user,
@@ -54,26 +51,29 @@ class Moderation(commands.Cog):
         """在 Cog 被添加到 Bot 后，进行依赖注入和初始化"""
         self.logic: ModerationLogic = ModerationLogic(self.bot)
         self.thread_manager = ProposalThreadManager(self.bot.config)
-        self.bot.tree.add_command(self.remove_objection_ctx)
-        self.bot.tree.add_command(self.view_malicious_objections_ctx)
+        # 菜单超限时保留其余命令，避免整个模块加载失败。
+        try:
+            self.bot.tree.add_command(self.view_malicious_objections_ctx)
+        except CommandLimitReached:
+            logger.warning(
+                "右键菜单 %s 超出全局上限未注册", self.view_malicious_objections_ctx.name
+            )
 
     async def cog_unload(self):
-        self.bot.tree.remove_command(
-            self.remove_objection_ctx.name,
-            type=self.remove_objection_ctx.type,
-        )
-        self.bot.tree.remove_command(
-            self.view_malicious_objections_ctx.name,
-            type=self.view_malicious_objections_ctx.type,
-        )
+        """卸载本模块注册的用户右键菜单。"""
+        # 未注册的菜单可直接跳过移除。
+        for menu in (self.view_malicious_objections_ctx,):
+            try:
+                self.bot.tree.remove_command(menu.name, type=menu.type)
+            except Exception:
+                logger.debug("卸载右键菜单 %s 失败（可能未注册）", menu.name)
 
-    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
-    async def remove_objections_from_message(
+    async def _open_objection_removal_modal(
         self,
         interaction: discord.Interaction,
-        message: discord.Message,
     ) -> None:
         """在提案帖内打开异议多选移除表单。"""
+        # 先校验调用位置，避免在普通频道查询提案异议。
         if not isinstance(interaction.channel, discord.Thread) or not interaction.guild:
             await interaction.response.send_message(
                 "此指令只能在提案帖子内使用。",
@@ -81,6 +81,7 @@ class Moderation(commands.Cog):
             )
             return
 
+        # 批量读取当前提案的有效异议，供表单一次性展示。
         try:
             options = await self.logic.get_latest_active_objections(
                 interaction.channel.id
@@ -96,6 +97,7 @@ class Moderation(commands.Cog):
             )
             return
 
+        # 仅在存在可移除异议时打开选择表单。
         modal = ObjectionRemovalModal(self, options)
         await self.bot.api_scheduler.submit(
             interaction.response.send_modal(modal),
@@ -127,6 +129,17 @@ class Moderation(commands.Cog):
             interaction.response.send_modal(modal),
             priority=1,
         )
+
+    @proposal_group.command(
+        name="移除异议",
+        description="[议事督导+执行监理] 打开当前提案帖的异议多选移除表单",
+    )
+    @RoleGuard.requireRoles("councilModerator", "executionAuditor")
+    @app_commands.guild_only()
+    async def remove_objections_command(self, interaction: discord.Interaction) -> None:
+        """通过提案斜杠命令打开异议多选移除表单。"""
+        # 使用当前提案上下文，不需要额外选择消息。
+        await self._open_objection_removal_modal(interaction)
 
     @proposal_group.command(
         name="进入执行", description="[议事督导+执行监理] 将讨论中的提案变更为执行中"

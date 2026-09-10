@@ -9,6 +9,9 @@ from StellariaPact.share import StellariaPactBot, safeDefer
 from StellariaPact.share.MessageForwardService import MessageForwardError
 
 from ..logic.PunishmentLogic import PunishmentLogic
+from ..logic.PunishmentPublicityService import PunishmentPublicityService
+from ..qo.PublishPunishmentQo import PublishPunishmentQo
+from ..qo.ResolvePublicityChannelQo import ResolvePublicityChannelQo
 from .PunishmentEmbedBuilder import PunishmentEmbedBuilder
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,7 @@ class PunishmentModal(discord.ui.Modal):
 
         self.bot = bot
         self.logic = PunishmentLogic(bot)
+        self.publicity_service = PunishmentPublicityService(bot)
         self.target_user = target_user
         self.target_message = target_message
 
@@ -120,8 +124,8 @@ class PunishmentModal(discord.ui.Modal):
             if not isinstance(thread, discord.Thread) or not isinstance(moderator, discord.Member):
                 return
 
-            publicity_channel, publicity_fallback_reason = await self._get_publicity_channel(
-                thread
+            publicity_channel, publicity_fallback_reason = (
+                await self._get_publicity_channel(thread)
             )
             files: list[discord.File] = []
             if publicity_channel is not None:
@@ -182,7 +186,9 @@ class PunishmentModal(discord.ui.Modal):
                         priority=5,
                     )
                     material_warning = (
-                        "；上传的处罚材料未发布" if self.evidence_upload.values else ""
+                        "；上传的处罚材料未发布"
+                        if self.evidence_upload.values
+                        else ""
                     )
                     await interaction.followup.send(
                         f"处罚已生效，并已降级为原帖单处公示{material_warning}。"
@@ -205,71 +211,26 @@ class PunishmentModal(discord.ui.Modal):
                 is_voting_allowed=is_voting_allowed,
                 mute_end_time=mute_end_time,
             )
-            original_thread_state: tuple[bool, bool] | None = None
-            unlocked_for_publicity = False
+            # 通过共享服务发送正式公示，附件由当前表单统一释放。
             try:
-                if (
-                    isinstance(publicity_channel, discord.Thread)
-                    and publicity_channel.locked is True
-                ):
-                    original_thread_state = (
-                        publicity_channel.archived,
-                        publicity_channel.locked,
+                publicity = await self.publicity_service.publish(
+                    PublishPunishmentQo(
+                        channel=publicity_channel,
+                        embed=public_embed,
+                        files=tuple(files),
                     )
-                    try:
-                        publicity_channel = await self.bot.api_scheduler.submit(
-                            publicity_channel.edit(
-                                locked=False,
-                                archived=False,
-                                reason="发送帖子内处罚正式公示",
-                            ),
-                            priority=5,
-                        )
-                        unlocked_for_publicity = True
-                    except Exception:
-                        logger.exception("帖子内处罚已生效，但处罚公示子区自动解锁失败。")
-                        await interaction.followup.send(
-                            "处罚已生效，但处罚公示子区自动解锁失败；"
-                            "原帖未发布无效跳转链接，请人工处理。",
-                            ephemeral=True,
-                        )
-                        return
-
-                send_kwargs: dict[str, object] = {"embed": public_embed}
-                if files:
-                    send_kwargs["files"] = files
-                public_message = await self.bot.api_scheduler.submit(
-                    publicity_channel.send(**send_kwargs),
-                    priority=5,
                 )
-            except Exception:
-                logger.exception("帖子内处罚已生效，但处罚公示区发送失败。")
-                state_recovery_message = ""
-                if unlocked_for_publicity and original_thread_state is not None:
-                    original_archived, original_locked = original_thread_state
-                    try:
-                        await self.bot.api_scheduler.submit(
-                            publicity_channel.edit(
-                                locked=original_locked,
-                                archived=original_archived,
-                                reason="处罚公示发送失败，恢复子区原状态",
-                            ),
-                            priority=5,
-                        )
-                        state_recovery_message = "；公示子区已恢复原来的锁定和归档状态"
-                    except Exception:
-                        logger.exception("处罚公示发送失败后，恢复子区原状态失败。")
-                        state_recovery_message = "；公示子区也未能恢复原来的锁定和归档状态"
-                await interaction.followup.send(
-                    f"处罚已生效，但处罚公示区发送失败{state_recovery_message}；"
-                    "原帖未发布无效跳转链接，请人工补发。",
-                    ephemeral=True,
-                )
-                return
             finally:
                 for file in files:
                     file.close()
+            if publicity.error is not None:
+                await interaction.followup.send(publicity.error, ephemeral=True)
+                return
+            publicity_channel = publicity.channel
+            public_message = publicity.message
+            assert public_message is not None
 
+            # 通过转发服务选择机器人身份，并保留结果不确定时的提示。
             evidence_forward_failed = False
             evidence_forward_uncertain = False
             if self.target_message is not None:
@@ -360,48 +321,8 @@ class PunishmentModal(discord.ui.Modal):
         thread: discord.Thread,
     ) -> tuple[discord.TextChannel | discord.Thread | None, str | None]:
         """解析并预检处罚公示区；失败时返回允许降级的原因。"""
-        configured = self.bot.config.get("channels", {}).get("punishment_publicity")
-        try:
-            channel_id = int(configured)
-        except (TypeError, ValueError):
-            return None, "未配置处罚公示区"
-
-        channel = thread.guild.get_channel_or_thread(channel_id)
-        if channel is None:
-            try:
-                channel = await thread.guild.fetch_channel(channel_id)
-            except (
-                discord.NotFound,
-                discord.Forbidden,
-                discord.HTTPException,
-                discord.InvalidData,
-            ):
-                logger.exception("无法获取处罚公示频道或子区。")
-                return None, "无法获取处罚公示频道或子区"
-
-        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            return None, "处罚公示区不是可用的文字频道或子区"
-
-        bot_member = thread.guild.me
-        if bot_member is None:
-            return None, "无法解析 Bot 的服务器成员身份"
-        permissions = channel.permissions_for(bot_member)
-        required_permissions = {
-            "view_channel": "查看频道",
-            "embed_links": "嵌入链接",
-            "attach_files": "上传附件",
-        }
-        if isinstance(channel, discord.Thread):
-            required_permissions["send_messages_in_threads"] = "在子区中发送消息"
-            if channel.locked is True and not getattr(permissions, "manage_threads", False):
-                return None, "处罚公示子区已锁定且 Bot 无管理子区权限"
-        else:
-            required_permissions["send_messages"] = "发送消息"
-        missing = [
-            label
-            for attribute, label in required_permissions.items()
-            if not getattr(permissions, attribute, False)
-        ]
-        if missing:
-            return None, f"Bot 缺少处罚公示区权限：{'、'.join(missing)}"
-        return channel, None
+        # 复用服务层权限预检，保留表单原有的降级分支。
+        result = await self.publicity_service.resolve_channel(
+            ResolvePublicityChannelQo(guild=thread.guild)
+        )
+        return result.channel, result.fallback_reason
