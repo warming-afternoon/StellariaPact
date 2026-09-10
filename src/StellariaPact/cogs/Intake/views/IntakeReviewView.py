@@ -195,7 +195,7 @@ class IntakeReviewView(View):
         await self._handle_review_action(interaction, "modification_requested")
 
     async def edit_proposal(self, interaction: discord.Interaction):
-        """处理提案人点击"修改提案"的事件"""
+        """处理提案人或管理组点击"修改提案"的事件"""
         async with UnitOfWork(self.bot.db_handler) as uow:
             if not interaction.channel_id:
                 return await interaction.response.send_message(
@@ -210,9 +210,11 @@ class IntakeReviewView(View):
 
             intake_dto = ProposalIntakeDto.model_validate(intake)
             # 身份校验
-            if interaction.user.id != intake.author_id:
+            if interaction.user.id != intake.author_id and not RoleGuard.hasRoles(
+                interaction, "stewards"
+            ):
                 return await interaction.response.send_message(
-                    "❌ 只有提案人可以修改该提案。", ephemeral=True
+                    "❌ 只有提案人或管理组可以修改该草案。", ephemeral=True
                 )
 
             # 状态校验

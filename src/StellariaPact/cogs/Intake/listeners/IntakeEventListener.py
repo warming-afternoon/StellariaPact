@@ -8,8 +8,10 @@ from discord.ext import commands
 
 from StellariaPact.cogs.Intake.IntakeModal import IntakeModal
 from StellariaPact.dto import ConfirmationSessionDto
+from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.BusinessRuleError import BusinessRuleError
 from StellariaPact.share.SafeDefer import safeDefer
+from StellariaPact.share.UnitOfWork import UnitOfWork
 
 if TYPE_CHECKING:
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -216,6 +218,16 @@ class IntakeEventListenerCog(commands.Cog):
         await safeDefer(interaction, ephemeral=True)
 
         try:
+            # 表单打开后身份组可能变化，提交时重新校验当前权限。
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                intake = await uow.intake.get_intake_by_id(intake_id)
+                if not intake:
+                    raise BusinessRuleError("找不到相关草案。")
+                if interaction.user.id != intake.author_id and not RoleGuard.hasRoles(
+                    interaction, "stewards"
+                ):
+                    raise BusinessRuleError("只有提案人或管理组可以修改该草案。")
+
             await self.intake_cog.logic.edit_intake(
                 intake_id,
                 dto,

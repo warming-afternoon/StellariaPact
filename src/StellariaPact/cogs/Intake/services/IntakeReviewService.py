@@ -12,7 +12,7 @@ from StellariaPact.cogs.Intake.views.IntakeReviewView import IntakeReviewView
 from StellariaPact.cogs.Intake.views.IntakeSupportView import IntakeSupportView
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.qo.vote_session import CreateVoteSessionQo
-from StellariaPact.share import DiscordUtils, StringUtils
+from StellariaPact.share import BusinessRuleError, DiscordUtils, StringUtils
 from StellariaPact.share.enums import IntakeStatus, LogOperationType, VoteSessionType
 from StellariaPact.share.UnitOfWork import UnitOfWork
 
@@ -229,7 +229,7 @@ class IntakeReviewService:
         operator_name: str = "",
         operator_display_name: str = "",
     ) -> ProposalIntakeDto:
-        """提案人修改草案"""
+        """提案人或管理组修改草案；DTO 提交者是实际修改人。"""
         StringUtils.validate_proposal_title(dto.title)
 
         # 更新提案内容
@@ -237,6 +237,11 @@ class IntakeReviewService:
             intake = await uow.intake.get_intake_by_id(intake_id)
             if not intake:
                 raise ValueError("未找到对应的草案。")
+
+            if intake.status not in (
+                IntakeStatus.PENDING_REVIEW, IntakeStatus.MODIFICATION_REQUIRED
+            ):
+                raise BusinessRuleError("提案已进入其他阶段，无法继续修改。")
 
             intake.title = dto.title
             intake.reason = dto.reason
@@ -269,7 +274,7 @@ class IntakeReviewService:
                 operator_name=operator_name,
                 operator_display_name=operator_display_name,
                 op_type=LogOperationType.INTAKE,
-                action="author_edit",
+                action="author_edit" if dto.author_id == intake_dto.author_id else "admin_edit",
                 target_type="intake",
                 target_id=intake_dto.id,
                 guild_id=dto.guild_id,
@@ -286,7 +291,7 @@ class IntakeReviewService:
             if isinstance(thread, discord.Thread):
                 embed = discord.Embed(
                     title="📝 提案内容已更新",
-                    description="提案人对草案内容进行了修改，请管理组重新审核。",
+                    description="草案内容已修改，请管理组重新审核。",
                     color=discord.Color.blue(),
                 )
                 embed.add_field(
@@ -294,7 +299,7 @@ class IntakeReviewService:
                     value=f"<t:{int(datetime.now(timezone.utc).timestamp())}:f>",
                     inline=False,
                 )
-                embed.add_field(name="修改人", value=f"<@{intake_dto.author_id}>", inline=False)
+                embed.add_field(name="修改人", value=f"<@{dto.author_id}>", inline=False)
                 await thread.send(embed=embed)
 
         # 修改审核帖标题和标签

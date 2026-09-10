@@ -118,7 +118,7 @@ class IntakeLogic:
         operator_name: str = "",
         operator_display_name: str = "",
     ):
-        """提案人修改草案"""
+        """提案人或管理组修改草案"""
         return await self.review_service.edit_intake(
             intake_id, dto,
             operator_name=operator_name,
