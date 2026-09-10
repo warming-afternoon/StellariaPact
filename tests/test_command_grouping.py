@@ -43,7 +43,8 @@ class CommandGroupingTests(unittest.TestCase):
         self.assertIsInstance(proposal_group, app_commands.Group)
         self.assertEqual(
             {command.name for command in proposal_group.commands},
-            {"进入执行", "完成", "废弃", "重新讨论"},
+            # 异议移除归入提案命令组，不再占用消息右键菜单名额。
+            {"进入执行", "完成", "废弃", "重新讨论", "移除异议"},
         )
         self.assertEqual(root_commands["自助废弃"].qualified_name, "自助废弃")
 
