@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class IntakeEditModal(Modal):
     """
-    用于提案人修改草案的模态框
+    用于提案人或管理组修改草案的模态框
     """
 
     def __init__(self, bot: "StellariaPactBot", intake: "ProposalIntakeDto"):
