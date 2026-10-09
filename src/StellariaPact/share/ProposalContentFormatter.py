@@ -6,8 +6,19 @@ if TYPE_CHECKING:
     from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 
 
+DEFAULT_PROPOSAL_RULES_URL = "https://discord.com/channels/1134557553011998840/1554736946780049450"
+
+
 class ProposalContentFormatter:
     """提案内容文本格式化工具，统一讨论帖和审核帖的文本模板。"""
+
+    @staticmethod
+    def append_proposal_rules_link(content: str, *, rules_url: str | None = None) -> str:
+        """首楼有足够空间时追加配置的规则链接，未配置时使用默认地址。"""
+        suffix = f"\n\n[提案规则]({rules_url or DEFAULT_PROPOSAL_RULES_URL})"
+        if len(content) + len(suffix) <= 2000:
+            return content + suffix
+        return content
 
     @staticmethod
     def format_discussion_body(

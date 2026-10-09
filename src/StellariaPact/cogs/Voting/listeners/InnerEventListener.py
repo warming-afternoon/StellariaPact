@@ -261,7 +261,7 @@ class InnerEventListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_panel_manage_vote_clicked(self, interaction: discord.Interaction):
-        """讨论帖内点击『投票管理』"""
+        """讨论帖内点击『投票』"""
         try:
             tid, mid = await self._resolve_context(interaction, "local")
             await self._internal_handle_manage_vote(interaction, tid, mid)
@@ -283,7 +283,7 @@ class InnerEventListener(commands.Cog):
         interaction: discord.Interaction,
         option_type: int,
     ):
-        """讨论帖内点击『创建普通/异议』"""
+        """讨论帖内点击『创建投票选项/创建异议』"""
         try:
             tid, mid = await self._resolve_context(interaction, "local")
             await self._internal_handle_create_option(interaction, tid, mid, option_type)

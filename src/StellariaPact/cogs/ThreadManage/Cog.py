@@ -20,6 +20,7 @@ from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.share import BusinessRuleError, StringUtils, UnitOfWork, safeDefer
 from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.enums.LogOperationType import LogOperationType
+from StellariaPact.share.ProposalContentFormatter import ProposalContentFormatter
 
 if TYPE_CHECKING:
     from StellariaPact.share.StellariaPactBot import StellariaPactBot
@@ -221,7 +222,10 @@ class ThreadManageCog(commands.Cog):
                 await thread.edit(name=new_thread_name)
 
             starter_message = await thread.fetch_message(thread.id)
-            new_content = f"{dto.format_content()}"
+            new_content = ProposalContentFormatter.append_proposal_rules_link(
+                dto.format_content(),
+                rules_url=self.bot.config.get("proposal_rules_url"),
+            )
             await starter_message.edit(content=new_content)
 
             # 发送变更记录（如果有变化）

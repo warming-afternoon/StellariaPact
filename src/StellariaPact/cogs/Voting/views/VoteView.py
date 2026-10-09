@@ -7,8 +7,8 @@ from StellariaPact.share import StellariaPactBot, safeDefer
 class VoteView(discord.ui.View):
     """
     投票面板的视图，包含四个按钮，分为两行。
-    第一行：投票管理、规则管理
-    第二行：创建普通投票、创建异议
+    第一行：投票、规则管理
+    第二行：创建投票选项、创建异议
     """
 
     def __init__(self, bot: StellariaPactBot, vote_details: VoteDetailDto | None = None):
@@ -24,7 +24,7 @@ class VoteView(discord.ui.View):
 
         # --- 第一行 ---
         btn_manage = discord.ui.Button(
-            label="投票管理",
+            label="投票",
             style=discord.ButtonStyle.primary,
             row=0,
             custom_id="btn_manage_vote",
@@ -44,8 +44,8 @@ class VoteView(discord.ui.View):
 
         # --- 第二行 ---
         btn_normal = discord.ui.Button(
-            label="创建普通投票",
-            style=discord.ButtonStyle.success,
+            label="创建投票选项",
+            style=discord.ButtonStyle.secondary,
             row=1,
             custom_id="btn_create_normal",
             disabled=not is_active,
@@ -55,7 +55,7 @@ class VoteView(discord.ui.View):
 
         btn_objection = discord.ui.Button(
             label="创建异议",
-            style=discord.ButtonStyle.danger,
+            style=discord.ButtonStyle.secondary,
             row=1,
             custom_id="btn_create_objection",
             disabled=not is_active,
