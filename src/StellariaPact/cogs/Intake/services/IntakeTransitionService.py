@@ -8,16 +8,16 @@ import discord
 from sqlalchemy import func, select
 
 from StellariaPact.cogs.Intake.views.IntakeEmbedBuilder import IntakeEmbedBuilder
-from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.dto import ConfirmationSessionDto, ProposalDto
 from StellariaPact.dto.ProposalIntakeDto import ProposalIntakeDto
 from StellariaPact.models.Proposal import Proposal
 from StellariaPact.models.UserVote import UserVote
 from StellariaPact.models.VoteSession import VoteSession
+from StellariaPact.qo.confirmation_session import CreateConfirmationSessionQo
 from StellariaPact.share import DiscordUtils
+from StellariaPact.share.enums import IntakeStatus, ProposalStatus, VoteSessionType
 from StellariaPact.share.ProposalContentFormatter import ProposalContentFormatter
 from StellariaPact.share.UnitOfWork import UnitOfWork
-from StellariaPact.share.enums import IntakeStatus, ProposalStatus, VoteDuration, VoteSessionType
 
 if TYPE_CHECKING:
     from StellariaPact.cogs.Intake.services.IntakeDiscordHelper import IntakeDiscordHelper
@@ -116,7 +116,10 @@ class IntakeTransitionService:
         if len(discussion_body) + len(boilerplate) > max_len:
             max_body_len = max_len - len(boilerplate) - len("……")
             discussion_body = discussion_body[:max_body_len] + "……"
-        discussion_content = f"{discussion_body}{boilerplate}"
+        discussion_content = ProposalContentFormatter.append_proposal_rules_link(
+            f"{discussion_body}{boilerplate}",
+            rules_url=self.bot.config.get("proposal_rules_url"),
+        )
         tags_config = self.bot.config.get("tags", {})
         discussion_tag = self.discord_helper.resolve_forum_tag(
             forum=discussion_forum,
@@ -237,13 +240,13 @@ class IntakeTransitionService:
             intake_dto = ProposalIntakeDto.model_validate(intake)
             required_votes = intake.required_votes
 
-        # 新流程：讨论帖已在支持票达标立案时建立并锁定，仅需解锁并创建投票面板
+        # 新流程：讨论帖已在支持票达标立案时建立并锁定，仅需解锁并同步转段状态
         if intake_dto.discussion_thread_id:
             thread = await DiscordUtils.fetch_thread(self.bot, intake_dto.discussion_thread_id)
             if isinstance(thread, discord.Thread):
                 await thread.edit(locked=False)
 
-            # 获取 Proposal 记录并派发投票面板创建事件
+            # 获取 Proposal 记录，供转段结果和支持者名单使用
             proposal_dto = None
             async with UnitOfWork(self.bot.db_handler) as uow_proposal:
                 proposal_stmt = select(Proposal).where(
@@ -253,19 +256,6 @@ class IntakeTransitionService:
                 proposal = result.scalars().one_or_none()
                 if proposal:
                     proposal_dto = ProposalDto.model_validate(proposal)
-                    self.bot.dispatch(
-                        "vote_session_created",
-                        proposal_dto=proposal_dto,
-                        options=[],
-                        duration_hours=VoteDuration.PROPOSAL_DEFAULT,
-                        anonymous=True,
-                        realtime=True,
-                        notify=True,
-                        create_in_voting_channel=True,
-                        notify_creation_role=False,
-                        thread=thread,
-                        intake_id=intake_dto.id,
-                    )
 
             # 更新公示消息状态为成功与解锁
             channels_config = self.bot.config.get("channels", {})
@@ -289,6 +279,16 @@ class IntakeTransitionService:
                 extra_note="✅ 讨论帖已解锁开放讨论！",
             )
             await self.discord_helper.update_review_thread_tags(intake_dto)
+            if proposal_dto:
+                self.bot.dispatch(
+                    "intake_founders_panel_requested",
+                    intake_id=intake_dto.id,
+                    proposal_title=proposal_dto.title,
+                    thread_url=(
+                        f"https://discord.com/channels/{intake_dto.guild_id}/"
+                        f"{intake_dto.discussion_thread_id}"
+                    ),
+                )
             return proposal_dto
 
         # 以下为向后兼容的旧流程：创建讨论帖
@@ -316,7 +316,10 @@ class IntakeTransitionService:
         if len(discussion_body) + len(boilerplate) > max_len:
             max_body_len = max_len - len(boilerplate) - len("……")
             discussion_body = discussion_body[:max_body_len] + "……"
-        discussion_content = f"{discussion_body}{boilerplate}"
+        discussion_content = ProposalContentFormatter.append_proposal_rules_link(
+            f"{discussion_body}{boilerplate}",
+            rules_url=self.bot.config.get("proposal_rules_url"),
+        )
         tags_config = self.bot.config.get("tags", {})
         discussion_tag = self.discord_helper.resolve_forum_tag(
             forum=discussion_forum,
@@ -379,21 +382,6 @@ class IntakeTransitionService:
             proposal_dto = ProposalDto.model_validate(created_proposal)
             await uow.commit()
 
-        # 派发事件创建投票面板
-        self.bot.dispatch(
-            "vote_session_created",
-            proposal_dto=proposal_dto,
-            options=[],
-            duration_hours=VoteDuration.PROPOSAL_DEFAULT,
-            anonymous=True,
-            realtime=True,
-            notify=True,
-            create_in_voting_channel=True,
-            notify_creation_role=False,
-            thread=thread_with_message.thread,
-            intake_id=intake_id,
-        )
-
         # 更新公示消息为成功状态
         voting_message_id = updated_intake_dto.voting_message_id
         if voting_message_id:
@@ -413,6 +401,14 @@ class IntakeTransitionService:
 
         await self.discord_helper.update_review_thread_message(updated_intake_dto, view=None)
         await self.discord_helper.update_review_thread_tags(updated_intake_dto)
+        self.bot.dispatch(
+            "intake_founders_panel_requested",
+            intake_id=intake_id,
+            proposal_title=proposal_dto.title,
+            thread_url=(
+                f"https://discord.com/channels/{intake_dto.guild_id}/{discussion_thread_id}"
+            ),
+        )
         return proposal_dto
 
     # -------------------------

@@ -4,11 +4,11 @@ from datetime import datetime, timezone
 import discord
 from discord.ext import commands
 
-from StellariaPact.dto.vote_session import OptionResult, VoteDetailDto
-from StellariaPact.qo.vote_session import CreateVoteSessionQo
 from StellariaPact.cogs.Voting.views import VoteEmbedBuilder, VoteView, VotingChannelView
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
 from StellariaPact.dto import ProposalDto
+from StellariaPact.dto.vote_session import OptionResult, VoteDetailDto
+from StellariaPact.qo.vote_session import CreateVoteSessionQo
 from StellariaPact.share import DiscordUtils, StellariaPactBot, TimeUtils, UnitOfWork
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,22 @@ class ModerationEventListener(commands.Cog):
                 exc_info=True,
             )
 
+    @commands.Cog.listener()
+    async def on_intake_founders_panel_requested(
+        self,
+        intake_id: int,
+        proposal_title: str,
+        thread_url: str,
+    ):
+        """转段后独立发送草案支持者名单，不创建投票会话或面板。"""
+        try:
+            await self._send_intake_founders_panel(intake_id, proposal_title, thread_url)
+        except Exception as e:
+            logger.error(
+                f"为草案 {intake_id} 发送支持者名单时发生非致命错误: {e}",
+                exc_info=True,
+            )
+
     async def _create_in_thread_vote(
         self,
         proposal_dto: ProposalDto,
@@ -138,8 +154,8 @@ class ModerationEventListener(commands.Cog):
         if end_time is None:
             end_time = TimeUtils.get_utc_end_time(duration_hours=duration_hours)
 
-        # 初始选项规则：若用户未传入 options，则使用默认项“支持提案”；否则使用用户传入项
-        all_option_texts = options if options else ["支持提案"]
+        # 空列表保留为空面板，供用户后续自行创建投票选项。
+        all_option_texts = options
         total_choices = len(all_option_texts)
 
         async with UnitOfWork(self.bot.db_handler) as uow:
