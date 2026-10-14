@@ -1,10 +1,14 @@
 import unittest
+from unittest.mock import MagicMock
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from StellariaPact.cogs.Punishment.logic.PunishmentLogic import PunishmentLogic
+from StellariaPact.cogs.Punishment.qo import (
+    ApplyThreadPunishmentQo,
+)
 from StellariaPact.models.PunishmentRecord import PunishmentRecord
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.models.UserVote import UserVote
@@ -24,6 +28,7 @@ class _TestDatabaseHandler:
 class _TestBot:
     def __init__(self, engine: AsyncEngine):
         self.db_handler = _TestDatabaseHandler(engine)
+        self.dispatch = MagicMock()
 
 
 class ThreadPunishmentVoteRevocationTests(unittest.IsolatedAsyncioTestCase):
@@ -140,14 +145,16 @@ class ThreadPunishmentVoteRevocationTests(unittest.IsolatedAsyncioTestCase):
 
     async def _apply_punishment(self, voting_allowed: bool):
         return await self.logic.apply_thread_punishment(
-            guild_id=1,
-            thread_id=self.target_thread_id,
-            target_user_id=self.target_user_id,
-            moderator_id=99,
-            reason="测试处罚",
-            source_message_url="https://discord.test/messages/1",
-            voting_allowed=voting_allowed,
-            mute_end_time=None,
+            ApplyThreadPunishmentQo(
+                guild_id=1,
+                thread_id=self.target_thread_id,
+                target_user_id=self.target_user_id,
+                moderator_id=99,
+                reason="测试处罚",
+                source_message_url="https://discord.test/messages/1",
+                voting_allowed=voting_allowed,
+                mute_end_time=None,
+            )
         )
 
     async def test_revocation_removes_only_active_votes_in_target_thread(self) -> None:

@@ -1,10 +1,16 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-from StellariaPact.cogs.Punishment.Cog import PunishmentCog
+from StellariaPact.cogs.Punishment.dto import ThreadPunishmentHistoryDto
 from StellariaPact.cogs.Punishment.dto.ThreadPunishmentResult import ThreadPunishmentResult
+from StellariaPact.cogs.Punishment.PunishmentCog import PunishmentCog
+from StellariaPact.cogs.Punishment.qo import (
+    SavePunishmentPanelQo,
+)
+from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.MessageForwardService import MessageForwardError, MessageForwardService
 
 
@@ -28,6 +34,8 @@ async def _submit_immediately(coroutine, priority):
         (True, True, True, "restore"),
         (True, True, True, "forward"),
         (True, True, True, "uncertain"),
+        (False, False, False, "source"),
+        (False, False, False, "location"),
     ],
 )
 async def test_quick_punishment_publicity_thread_lifecycle(
@@ -44,8 +52,20 @@ async def test_quick_punishment_publicity_thread_lifecycle(
     bot.config = {"channels": {"punishment_publicity": 99}}
     bot.api_scheduler.submit.side_effect = _submit_immediately
     cog = PunishmentCog(bot)
-    cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
-    cog.logic.set_thread_punishment_publicity_message = AsyncMock()
+    result = ThreadPunishmentResult(
+        7,
+        [],
+        reason="请不要歪楼滑坡",
+        mute_end_time=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    cog.logic.apply_thread_punishment = AsyncMock(return_value=result)
+    cog.logic.get_thread_history = AsyncMock(
+        return_value=ThreadPunishmentHistoryDto(0, 0, None, [])
+    )
+    cog.logic.save_publicity_panel = AsyncMock()
+    cog.logic.save_publicity_panel = AsyncMock()
+    if failure == "location":
+        cog.logic.save_publicity_panel.side_effect = RuntimeError("写回失败")
     target = MagicMock(id=50)
     cog._resolve_message_target = AsyncMock(return_value=target)
     cog._validate_context = AsyncMock(return_value=True)
@@ -53,11 +73,15 @@ async def test_quick_punishment_publicity_thread_lifecycle(
     source.id = 30
     source.guild = MagicMock(id=10)
     source.send = AsyncMock()
+    if failure == "source":
+        source.send.side_effect = RuntimeError("原帖发送失败")
     moderator = MagicMock(spec=discord.Member)
     moderator.id = 40
-    interaction = MagicMock(channel=source, user=moderator)
+    interaction = MagicMock(spec=discord.Interaction, channel=source, user=moderator)
+    interaction.channel_id = source.id
     interaction.followup.send = AsyncMock()
     message = MagicMock(jump_url="https://discord.com/channels/10/30/100")
+    message.channel = source
     # 分别模拟普通身份与特权身份的网络边界，确保入口真正使用转发服务。
     message.forward = AsyncMock(return_value=MagicMock(id=300))
     privileged_forward = AsyncMock(return_value=300)
@@ -120,9 +144,10 @@ async def test_quick_punishment_publicity_thread_lifecycle(
 
     # 跳过独立测试覆盖的角色装饰器，保留快速处罚到公示服务的完整调用链。
     with (
-        patch("StellariaPact.cogs.Punishment.Cog.safeDefer", new=AsyncMock()),
+        patch.object(RoleGuard, "hasRoles", return_value=True),
+        patch("StellariaPact.cogs.Punishment.PunishmentCog.safeDefer", new=AsyncMock()),
         patch(
-            "StellariaPact.cogs.Punishment.Cog.PunishmentEmbedBuilder.create_punishment_embed",
+            "StellariaPact.cogs.Punishment.PunishmentCog.PunishmentEmbedBuilder.create_punishment_embed",
             return_value=discord.Embed(),
         ),
     ):
@@ -130,12 +155,7 @@ async def test_quick_punishment_publicity_thread_lifecycle(
 
     # 公示异常不回滚已经写入的处罚，也不发送无效的原帖跳转链接。
     cog.logic.apply_thread_punishment.assert_awaited_once()
-    bot.dispatch.assert_any_call(
-        "thread_mute_updated",
-        source.id,
-        target.id,
-        cog.logic.apply_thread_punishment.await_args.kwargs["mute_end_time"],
-    )
+    assert cog.logic.apply_thread_punishment.await_args.args[0].quick_mode == "off_topic"
     response = interaction.followup.send.await_args.args[0]
     if locked and not manage_threads:
         assert events == []
@@ -143,7 +163,9 @@ async def test_quick_punishment_publicity_thread_lifecycle(
         source.send.assert_awaited_once()
         message.forward.assert_not_awaited()
         privileged_forward.assert_not_awaited()
-        cog.logic.set_thread_punishment_publicity_message.assert_not_awaited()
+        assert not any(
+            not call.args[0].is_source for call in cog.logic.save_publicity_panel.await_args_list
+        )
     elif failure in ("unlock", "send", "restore"):
         assert events == (["unlock"] if failure == "unlock" else ["unlock", "send", "restore"])
         expected = {
@@ -155,7 +177,9 @@ async def test_quick_punishment_publicity_thread_lifecycle(
         source.send.assert_not_awaited()
         message.forward.assert_not_awaited()
         privileged_forward.assert_not_awaited()
-        cog.logic.set_thread_punishment_publicity_message.assert_not_awaited()
+        assert not any(
+            not call.args[0].is_source for call in cog.logic.save_publicity_panel.await_args_list
+        )
     else:
         assert events == (["unlock", "send"] if locked else ["send"])
         if extra_token:
@@ -165,14 +189,18 @@ async def test_quick_punishment_publicity_thread_lifecycle(
             message.forward.assert_awaited_once_with(updated if locked else original)
             privileged_forward.assert_not_awaited()
         source.send.assert_awaited_once()
-        cog.logic.set_thread_punishment_publicity_message.assert_awaited_once_with(
-            7, guild_id=10, channel_id=99, message_id=200
-        )
+        cog.logic.save_publicity_panel.assert_any_await(SavePunishmentPanelQo(7, 10, 99, 200))
         if failure == "forward":
             assert "选中消息转发失败，请人工补发" in response
             assert "完成双区公示" not in response
         elif failure == "uncertain":
             assert "转发结果未确认，请先检查公示区" in response
+            assert "完成双区公示" not in response
+        elif failure == "source":
+            assert "原帖公示发送失败，请人工补发" in response
+            assert "完成双区公示" not in response
+        elif failure == "location":
+            assert "历史记录未能保存正式公示链接" in response
             assert "完成双区公示" not in response
         else:
             assert "完成双区公示" in response

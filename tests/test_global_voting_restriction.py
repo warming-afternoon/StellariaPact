@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Punishment.Cog import PunishmentCog
 from StellariaPact.cogs.Punishment.logic.PunishmentLogic import PunishmentLogic
+from StellariaPact.cogs.Punishment.PunishmentCog import PunishmentCog
 from StellariaPact.cogs.Punishment.views.PunishmentEmbedBuilder import PunishmentEmbedBuilder
 from StellariaPact.cogs.Voting.qo import DeleteVoteQo
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic

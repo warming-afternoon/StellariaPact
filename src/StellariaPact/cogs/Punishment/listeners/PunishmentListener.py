@@ -4,7 +4,7 @@ from typing import Dict, Optional
 
 import discord
 from discord.ext import commands, tasks
-from sqlalchemy import select
+from sqlmodel import select
 
 from StellariaPact.models.UserActivity import UserActivity
 from StellariaPact.share import StellariaPactBot, UnitOfWork
@@ -14,17 +14,19 @@ from ..logic.PunishmentLogic import PunishmentLogic
 
 logger = logging.getLogger(__name__)
 
+
 class PunishmentListener(commands.Cog):
     """
     负责维护禁言缓存，并拦截被禁言用户的发言。
     """
+
     def __init__(self, bot: StellariaPactBot):
         self.bot = bot
         # 缓存结构: {thread_id: {user_id: mute_end_time (aware datetime)}}
         self.active_mutes: Dict[int, Dict[int, datetime]] = {}
         # 缓存结构: {user_id: expires_at}
         self.active_proposal_violations: Dict[int, datetime] = {}
-        self.logic = PunishmentLogic(bot) # 初始化逻辑层
+        self.logic = PunishmentLogic(bot)  # 初始化逻辑层
         self.clear_expired_mutes.start()
 
     def cog_unload(self):
@@ -45,9 +47,9 @@ class PunishmentListener(commands.Cog):
 
         async with UnitOfWork(self.bot.db_handler) as uow:
             statement = select(UserActivity).where(
-                UserActivity.mute_end_time != None, # noqa: E711 # type: ignore
+                UserActivity.mute_end_time != None,  # noqa: E711 # type: ignore
             )
-            results = await uow.session.exec(statement) # type: ignore
+            results = await uow.session.exec(statement)  # type: ignore
 
             for activity in results.all():
                 if not activity.mute_end_time:
@@ -113,15 +115,6 @@ class PunishmentListener(commands.Cog):
             )
 
     @commands.Cog.listener()
-    async def on_punishment_remove_request(
-        self, interaction, thread, moderator, target_user, reason
-    ):
-        """解除提案内处罚"""
-        await self.logic.handle_remove_punishment(
-            interaction, thread, moderator, target_user, reason
-        )
-
-    @commands.Cog.listener()
     async def on_thread_mute_updated(
         self,
         thread_id: int,
@@ -135,8 +128,7 @@ class PunishmentListener(commands.Cog):
         if mute_end_time and mute_end_time > datetime.now(timezone.utc):
             self.active_mutes[thread_id][user_id] = mute_end_time
             logger.debug(
-                f"Punishment: 缓存更新 -> 用户 {user_id} "
-                f"在帖子 {thread_id} 禁言至 {mute_end_time}"
+                f"Punishment: 缓存更新 -> 用户 {user_id} 在帖子 {thread_id} 禁言至 {mute_end_time}"
             )
         elif user_id in self.active_mutes[thread_id]:
             del self.active_mutes[thread_id][user_id]

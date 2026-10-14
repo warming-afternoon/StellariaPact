@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.cogs.Punishment.Cog import PunishmentCog
+from StellariaPact.cogs.Punishment.PunishmentCog import PunishmentCog
 from StellariaPact.cogs.Punishment.views.GlobalProposalPunishmentHistoryModal import (
     GlobalProposalPunishmentHistoryModal,
 )
@@ -289,7 +289,7 @@ class GlobalProposalPunishmentContextMenuTests(unittest.IsolatedAsyncioTestCase)
         member = SimpleNamespace(id=10)
 
         with patch(
-            "StellariaPact.cogs.Punishment.Cog.RoleGuard.hasRoles",
+            "StellariaPact.cogs.Punishment.PunishmentCog.RoleGuard.hasRoles",
             return_value=True,
         ) as has_roles:
             await self.cog.query_global_proposal_punishment_user(

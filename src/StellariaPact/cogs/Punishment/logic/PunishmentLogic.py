@@ -1,94 +1,226 @@
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-import discord
-
 from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
-from StellariaPact.dto.UserActivityDto import UserActivityDto
-from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.share import StellariaPactBot, UnitOfWork
+from StellariaPact.share.BusinessRuleError import BusinessRuleError
 from StellariaPact.share.enums import LogOperationType, PunishmentType
 
-from ..dto import ThreadPunishmentResult
-from ..views.PunishmentEmbedBuilder import PunishmentEmbedBuilder
+from ..constants import OFF_TOPIC_REASON, PERMANENT_THREAD_MUTE, chinese_number
+from ..dto import PunishmentRecordDto, ThreadPunishmentHistoryDto, ThreadPunishmentResult
+from ..qo import (
+    ApplyThreadPunishmentQo,
+    LiftThreadPunishmentQo,
+    QueryThreadPunishmentQo,
+    ResolvePunishmentPanelQo,
+    SavePunishmentPanelQo,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class PunishmentLogic:
     def __init__(self, bot: StellariaPactBot):
+        """保存数据库依赖及跨业务层实例共享的帖子处罚锁。"""
         self.bot = bot
+        self._user_locks = bot.__dict__.setdefault("_thread_punishment_locks", {})
 
-    async def apply_thread_punishment(
-        self,
-        *,
-        guild_id: int,
-        thread_id: int,
-        target_user_id: int,
-        moderator_id: int,
-        reason: str,
-        source_message_url: str | None,
-        voting_allowed: bool,
-        mute_end_time: datetime | None,
-    ) -> ThreadPunishmentResult:
-        """
-        应用帖子内处罚，并在剥夺投票资格时清除该用户仍在进行中的投票。
-
-        资格状态、处罚记录和活动票删除在同一事务内完成。返回处罚记录 ID
-        以及需要同步刷新的投票详情。
-        """
+    async def get_thread_history(self, qo: QueryThreadPunishmentQo) -> ThreadPunishmentHistoryDto:
+        """查询处罚摘要，并在事务内将 ORM 记录转换为界面快照。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.user_activity.update_user_validation_status(
-                user_id=target_user_id,
-                thread_id=thread_id,
-                is_valid=voting_allowed,
-                mute_end_time=mute_end_time,
+            # 以记录 ID 确定最新状态，解除预检不依赖显示记录的时间排序。
+            latest = await uow.punishment_record.get_latest(
+                thread_id=qo.thread_id, target_user_id=qo.target_user_id
             )
-            record = await uow.punishment_record.create_record(
-                guild_id=guild_id,
-                thread_id=thread_id,
-                target_user_id=target_user_id,
-                moderator_id=moderator_id,
-                reason=reason,
-                source_message_url=source_message_url,
-                voting_allowed=voting_allowed,
-                mute_end_time=mute_end_time,
-            )
-            if record.id is None:
-                raise RuntimeError("帖子内处罚记录缺少数据库主键。")
-            record_id = record.id
+            if qo.for_removal:
+                if latest is None:
+                    raise BusinessRuleError("该用户在当前帖子中没有处罚记录。")
+                if qo.selected_record_id is not None and qo.selected_record_id != latest.id:
+                    raise BusinessRuleError("该处罚已被后续处罚覆盖，请对最新处罚重新操作。")
+                if latest.lifted_at is not None:
+                    raise BusinessRuleError("该处罚已经解除，无需重复操作。")
 
-            vote_details_to_update: list[VoteDetailDto] = []
-            if not voting_allowed:
-                vote_details_to_update = await VotingLogic.remove_active_user_votes_in_thread(
-                    uow=uow,
-                    user_id=target_user_id,
-                    thread_id=thread_id,
+            # 仓储按帖子和用户一次性取得最近记录，不逐条追加数据库查询。
+            total, records = await uow.punishment_record.get_summary(
+                thread_id=qo.thread_id, target_user_id=qo.target_user_id
+            )
+            count = await uow.punishment_record.get_cumulative_count(
+                thread_id=qo.thread_id, target_user_id=qo.target_user_id
+            )
+            return ThreadPunishmentHistoryDto(
+                total=total,
+                cumulative_count=count,
+                latest=PunishmentRecordDto.model_validate(latest) if latest is not None else None,
+                records=[PunishmentRecordDto.model_validate(record) for record in records],
+            )
+
+    async def resolve_punishment_panel(
+        self, qo: ResolvePunishmentPanelQo
+    ) -> PunishmentRecordDto | None:
+        """从已登记的面板位置或可信旧面板链接解析处罚快照。"""
+        async with UnitOfWork(self.bot.db_handler) as uow:
+            # 优先匹配数据库登记的原帖或正式公示位置。
+            record = await uow.punishment_record.find_by_panel(
+                guild_id=qo.guild_id, channel_id=qo.channel_id, message_id=qo.message_id
+            )
+            if (
+                record is None
+                and qo.legacy_channel_id is not None
+                and qo.legacy_message_id is not None
+            ):
+                # 临时兼容旧原帖面板，只能关联同一原帖的记录。
+                # TODO: 新版本运行一段时间后，与控制器 URL 解析、legacy_* 字段及兼容测试一并移除。
+                record = await uow.punishment_record.find_by_panel(
+                    guild_id=qo.guild_id,
+                    channel_id=qo.legacy_channel_id,
+                    message_id=qo.legacy_message_id,
                 )
+                if record is not None and record.thread_id != qo.channel_id:
+                    record = None
+            return PunishmentRecordDto.model_validate(record) if record is not None else None
 
-            await uow.commit()
-            return ThreadPunishmentResult(
-                punishment_record_id=record_id,
-                vote_details_to_update=vote_details_to_update,
+    async def apply_thread_punishment(self, qo: ApplyThreadPunishmentQo) -> ThreadPunishmentResult:
+        """原子地计算累计档位、更新处罚状态和历史，并同步缓存。"""
+        # 在共享锁内完成档位计算、数据库写入和缓存同步。
+        reason, voting_allowed, mute_end_time = qo.reason, qo.voting_allowed, qo.mute_end_time
+        quick_mode = qo.quick_mode
+        if quick_mode not in (None, "cumulative", "off_topic"):
+            raise ValueError("不支持的快速处罚类型。")
+        lock = self._user_locks.setdefault((qo.thread_id, qo.target_user_id), asyncio.Lock())
+        async with lock:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                count = await uow.punishment_record.get_cumulative_count(
+                    thread_id=qo.thread_id, target_user_id=qo.target_user_id
+                )
+                # 累计次数与处罚历史在同一事务中读取和写入。
+                counts_toward_cumulative = not voting_allowed or mute_end_time is not None
+                if quick_mode is not None:
+                    counts_toward_cumulative = quick_mode == "cumulative"
+                    now = datetime.now(timezone.utc)
+                    if quick_mode == "cumulative":
+                        ordinal = count + 1
+                        minutes = {1: 5, 2: 10, 3: 30}.get(ordinal)
+                        mute_end_time = (
+                            now + timedelta(minutes=minutes)
+                            if minutes is not None
+                            else PERMANENT_THREAD_MUTE
+                        )
+                        reason = f"{OFF_TOPIC_REASON}，{chinese_number(ordinal)}次处罚"
+                    else:
+                        if count and not qo.off_topic_confirmed:
+                            raise BusinessRuleError(
+                                f"该用户已有 {count} 次累计处罚，请重新使用指令确认处罚方式。"
+                            )
+                        mute_end_time = now + timedelta(minutes=5)
+                        reason = OFF_TOPIC_REASON
+                    # 快速处罚不会缩短已有禁言或恢复已被剥夺的投票权。
+                    voting_allowed = True
+                    existing = await uow.user_activity.get_user_activity(
+                        qo.target_user_id, qo.thread_id
+                    )
+                    if existing is not None:
+                        voting_allowed = existing.validation != 0
+                        if existing.mute_end_time is not None:
+                            mute_end_time = max(existing.mute_end_time, mute_end_time)
+
+                # 更新资格状态并记录实际生效的处罚结果。
+                await uow.user_activity.update_user_validation_status(
+                    user_id=qo.target_user_id,
+                    thread_id=qo.thread_id,
+                    is_valid=voting_allowed,
+                    mute_end_time=mute_end_time,
+                )
+                record = await uow.punishment_record.create_record(
+                    guild_id=qo.guild_id,
+                    thread_id=qo.thread_id,
+                    target_user_id=qo.target_user_id,
+                    moderator_id=qo.moderator_id,
+                    reason=reason,
+                    source_message_url=qo.source_message_url,
+                    voting_allowed=voting_allowed,
+                    mute_end_time=mute_end_time,
+                    counts_toward_cumulative=counts_toward_cumulative,
+                )
+                if record.id is None:
+                    raise RuntimeError("帖子内处罚记录缺少数据库主键。")
+                result = ThreadPunishmentResult(
+                    punishment_record_id=record.id,
+                    vote_details_to_update=[],
+                    reason=reason,
+                    cumulative_count=count + int(counts_toward_cumulative),
+                    voting_allowed=voting_allowed,
+                    mute_end_time=mute_end_time,
+                )
+                # 剥夺投票权时同步清理仍在进行中的投票。
+                if not voting_allowed:
+                    result.vote_details_to_update = (
+                        await VotingLogic.remove_active_user_votes_in_thread(
+                            uow=uow, user_id=qo.target_user_id, thread_id=qo.thread_id
+                        )
+                    )
+                await uow.commit()
+            # 在共享锁内派发，避免旧操作的事件覆盖新操作的缓存。
+            self.bot.dispatch(
+                "thread_mute_updated", qo.thread_id, qo.target_user_id, mute_end_time
             )
+            for details in result.vote_details_to_update:
+                self.bot.dispatch("vote_details_updated", details)
+            return result
 
-    async def set_thread_punishment_publicity_message(
-        self,
-        punishment_record_id: int,
-        *,
-        guild_id: int,
-        channel_id: int,
-        message_id: int,
-    ) -> None:
-        """在独立事务中保存帖子内处罚正式公示消息的位置。"""
+    async def lift_thread_punishment(self, qo: LiftThreadPunishmentQo) -> int:
+        """仅解除打开表单时的最新处罚，返回解除后的累计次数。"""
+        if not qo.reason.strip():
+            raise BusinessRuleError("请输入解除理由。")
+        lock = self._user_locks.setdefault((qo.thread_id, qo.target_user_id), asyncio.Lock())
+        async with lock:
+            async with UnitOfWork(self.bot.db_handler) as uow:
+                # 提交时重新验证最新记录，阻止过期表单及重复解除。
+                latest = await uow.punishment_record.get_latest(
+                    thread_id=qo.thread_id, target_user_id=qo.target_user_id
+                )
+                if latest is None or latest.id != qo.expected_record_id:
+                    raise BusinessRuleError("该处罚已被后续处罚覆盖，请对最新处罚重新操作。")
+                if latest.lifted_at is not None:
+                    raise BusinessRuleError("该处罚已经解除，无需重复操作。")
+                activity = await uow.user_activity.get_user_activity(
+                    qo.target_user_id, qo.thread_id
+                )
+                now = datetime.now(timezone.utc)
+                if activity is None or (
+                    activity.validation != 0
+                    and (activity.mute_end_time is None or activity.mute_end_time <= now)
+                ):
+                    raise BusinessRuleError("该用户在当前帖子中没有生效中的处罚。")
+                # 同时解除当前状态并登记解除记录，原处罚快照保持可查询。
+                await uow.user_activity.clear_punishment(qo.target_user_id, qo.thread_id)
+                await uow.punishment_record.mark_lifted(
+                    latest, moderator_id=qo.moderator_id, reason=qo.reason.strip()
+                )
+                count = await uow.punishment_record.get_cumulative_count(
+                    thread_id=qo.thread_id, target_user_id=qo.target_user_id
+                )
+                await uow.commit()
+            # 提交成功后在共享锁内同步缓存，避免事件次序倒置。
+            self.bot.dispatch("thread_mute_updated", qo.thread_id, qo.target_user_id, None)
+            return count
+
+    async def save_publicity_panel(self, qo: SavePunishmentPanelQo) -> None:
+        """在独立事务中登记已发送面板的位置，不回滚原处罚。"""
         async with UnitOfWork(self.bot.db_handler) as uow:
-            await uow.punishment_record.set_publicity_message(
-                punishment_record_id,
-                guild_id=guild_id,
-                channel_id=channel_id,
-                message_id=message_id,
-            )
+            # 正式公示保留完整位置，原帖公示只保存消息 ID。
+            if qo.is_source:
+                await uow.punishment_record.set_source_publicity_message(
+                    qo.record_id, qo.message_id
+                )
+            else:
+                await uow.punishment_record.set_publicity_message(
+                    qo.record_id,
+                    guild_id=qo.guild_id,
+                    channel_id=qo.channel_id,
+                    message_id=qo.message_id,
+                )
             await uow.commit()
 
     async def apply_permanent_restriction(
@@ -360,54 +492,3 @@ class PunishmentLogic:
             guild_id=guild_id,
             detail=json.dumps(detail, ensure_ascii=False),
         )
-
-    async def handle_remove_punishment(
-        self,
-        interaction: discord.Interaction,
-        thread: discord.Thread,
-        moderator: discord.Member,
-        target_user: discord.User | discord.Member,
-        reason: str,
-    ):
-        """执行解除处罚的完整业务流程"""
-        try:
-            # 查询是否有记录
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                activity = await uow.user_activity.get_user_activity(target_user.id, thread.id)
-                if not activity:
-                    # 没有记录，直接返回错误信息
-                    await interaction.followup.send(
-                        f"用户 {target_user.mention} 在当前帖子中没有处罚记录。", ephemeral=True
-                    )
-                    return
-
-                # 转换为DTO以便在UOW生命周期外使用
-                activity_dto = UserActivityDto.model_validate(activity)
-
-            # 检查是否有处罚（validation=0 或 mute_end_time 不为空）
-            has_punishment = (activity_dto.validation == 0) or (
-                activity_dto.mute_end_time is not None
-            )
-            if not has_punishment:
-                # 没有处罚，发送提示信息
-                await interaction.followup.send(
-                    f"用户 {target_user.mention} 在当前帖子中没有处罚记录。", ephemeral=True
-                )
-                return
-
-            # 清空处罚
-            async with UnitOfWork(self.bot.db_handler) as uow:
-                await uow.user_activity.clear_punishment(target_user.id, thread.id)
-                await uow.commit()
-
-            # 内存缓存同步（通知监听器更新 active_mutes）
-            self.bot.dispatch("thread_mute_updated", thread.id, target_user.id, None)
-
-            # 发送公示
-            embed = PunishmentEmbedBuilder.create_unpunish_embed(moderator, target_user, reason)
-            await self.bot.api_scheduler.submit(thread.send(embed=embed), priority=5)
-
-        except Exception as e:
-            logger.error(f"执行解除处罚逻辑失败: {e}", exc_info=True)
-            # 发送错误信息
-            await interaction.followup.send(f"解除处罚过程中发生错误: {str(e)}", ephemeral=True)

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import discord
 
-from StellariaPact.models.PunishmentRecord import PunishmentRecord
+from ..constants import format_thread_mute
+from ..dto import PunishmentRecordDto, ThreadPunishmentHistoryDto
 
 
 class PunishmentHistoryModal(discord.ui.Modal):
@@ -11,44 +12,53 @@ class PunishmentHistoryModal(discord.ui.Modal):
     def __init__(
         self,
         target_user: discord.User | discord.Member,
-        total: int,
-        records: list[PunishmentRecord],
+        history: ThreadPunishmentHistoryDto,
     ):
         """构造模态框，生成摘要信息与逐条处罚记录的只读展示项。"""
         # 优先使用服务器昵称作为标题前缀
         display_name = getattr(target_user, "display_name", target_user.name)
         super().__init__(title=f"本帖处罚记录 — {display_name}"[:45], timeout=300)
 
-        # 根据是否有处罚记录生成不同的摘要文本
-        if total == 0:
-            summary = f"👤 用户：{target_user.mention}\n📊 该用户在本帖暂无处罚记录。"
-        else:
-            summary = (
-                f"👤 用户：{target_user.mention}\n"
-                f"📊 本帖累计处罚：**{total} 次**\n"
-                f"以下显示最近 {len(records)} 条"
-            )
+        summary = self.format_summary(target_user, history)
         self.add_item(discord.ui.TextDisplay(summary))
 
         # 逐条渲染处罚记录为只读文本展示
-        for index, record in enumerate(records, start=1):
-            self.add_item(discord.ui.TextDisplay(self._format_record(index, record)))
+        for index, record in enumerate(history.records, start=1):
+            self.add_item(discord.ui.TextDisplay(self.format_record(index, record)))
 
     @staticmethod
-    def _format_record(index: int, record: PunishmentRecord) -> str:
+    def format_summary(
+        target_user: discord.User | discord.Member,
+        history: ThreadPunishmentHistoryDto,
+    ) -> str:
+        """区分历史记录总数与用于升级处罚的当前累计次数。"""
+        # 摘要明确区分所有历史记录与尚未解除的累计次数。
+        summary_lines = [
+            f"👤 用户：{target_user.mention}",
+            f"📊 历史记录总数：**{history.total} 次**；"
+            f"当前累计处罚：**{history.cumulative_count} 次**",
+        ]
+        if history.total == 0:
+            summary_lines.append("该用户在本帖暂无处罚记录。")
+        else:
+            summary_lines.append(f"以下显示最近 {len(history.records)} 条记录")
+        return "\n".join(summary_lines)
+
+    @staticmethod
+    def format_record(index: int, record: PunishmentRecordDto) -> str:
         """将单条处罚记录格式化为带序号、时间戳与处理结果的 Markdown 文本。"""
         # 将创建时间转换为 Unix 时间戳供 Discord 时间戳渲染
         created_timestamp = int(record.created_at.timestamp())
         # 投票权与禁言状态的可读描述
         voting = "保留投票资格" if record.voting_allowed else "剥夺投票资格"
-        if record.mute_end_time is None:
-            mute = "未禁言"
-        else:
-            mute_timestamp = int(record.mute_end_time.timestamp())
-            mute = f"禁言至 <t:{mute_timestamp}:F>"
+        mute = format_thread_mute(record.mute_end_time)
 
         # 转义原因中的 Markdown 字符，防止格式注入
-        reason = discord.utils.escape_markdown(record.reason)
+        reason = discord.utils.escape_markdown(record.reason[:200])
+        if len(record.reason) > 200:
+            reason += "…"
+        state = "已解除" if record.lifted_at is not None else "未登记解除"
+        counted = "计入累计" if record.counts_toward_cumulative else "不计入累计"
         # 新记录优先跳转正式处罚面板，旧记录和降级记录回退到违规消息。
         if (
             record.publicity_guild_id is not None
@@ -60,6 +70,11 @@ class PunishmentHistoryModal(discord.ui.Modal):
                 f"{record.publicity_channel_id}/{record.publicity_message_id}"
             )
             message_link = f"[查看处罚公示]({publicity_url})"
+        elif record.source_publicity_message_id is not None:
+            message_link = (
+                f"[查看处罚公示](https://discord.com/channels/{record.guild_id}/"
+                f"{record.thread_id}/{record.source_publicity_message_id})"
+            )
         elif record.source_message_url:
             message_link = f"[查看违规消息]({record.source_message_url})"
         else:
@@ -68,6 +83,7 @@ class PunishmentHistoryModal(discord.ui.Modal):
             f"### {index}. <t:{created_timestamp}:F>\n"
             f"**原因：** {reason}\n"
             f"**处理：** {voting}；{mute}\n"
+            f"**记录状态：** {state}；{counted}\n"
             f"{message_link}"
         )
 

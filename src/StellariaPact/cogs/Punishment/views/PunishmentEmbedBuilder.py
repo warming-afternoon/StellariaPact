@@ -5,11 +5,12 @@ import discord
 
 from StellariaPact.share.enums import PunishmentType
 
+from ..constants import format_thread_mute
+
 
 class PunishmentEmbedBuilder:
     PROPOSAL_VIOLATION_SCOPE = (
-        "普通投票、异议投票、草案支持票、异议创建与附议、"
-        "正式提案讨论帖发言、创建提案"
+        "普通投票、异议投票、草案支持票、异议创建与附议、正式提案讨论帖发言、创建提案"
     )
 
     _PERMANENT_RESTRICTION_COPY = {
@@ -207,8 +208,7 @@ class PunishmentEmbedBuilder:
             color = discord.Color.red()
 
         if mute_end_time:
-            ts = int(mute_end_time.timestamp())
-            description_lines.append(f"**禁言至**: <t:{ts}:F> (<t:{ts}:R>)")
+            description_lines.append(f"**禁言状态**: {format_thread_mute(mute_end_time)}")
         else:
             description_lines.append("**禁言状态**: 无禁言 / 已解除")
 
