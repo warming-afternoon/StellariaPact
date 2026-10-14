@@ -1,5 +1,6 @@
 import copy
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 import discord
@@ -22,17 +23,30 @@ from StellariaPact.repository.GlobalProposalPunishmentNotFoundError import (
 )
 from StellariaPact.share import StellariaPactBot, UnitOfWork
 from StellariaPact.share.auth import RoleGuard
+from StellariaPact.share.BusinessRuleError import BusinessRuleError
 from StellariaPact.share.enums import PunishmentType
 from StellariaPact.share.MessageForwardService import MessageForwardError
 from StellariaPact.share.SafeDefer import safeDefer
 
+from .constants import format_thread_mute
 from .logic.PunishmentLogic import PunishmentLogic
 from .logic.PunishmentPublicityService import PunishmentPublicityService
+from .qo import (
+    ApplyThreadPunishmentQo,
+    LiftThreadPunishmentQo,
+    QueryThreadPunishmentQo,
+    ResolvePunishmentPanelQo,
+    SavePunishmentPanelQo,
+    SubmitPunishmentRemovalQo,
+    SubmitQuickPunishmentQo,
+    SubmitThreadPunishmentQo,
+)
 from .qo.PublishPunishmentQo import PublishPunishmentQo
 from .qo.ResolvePublicityChannelQo import ResolvePublicityChannelQo
 from .views.GlobalProposalPunishmentHistoryModal import (
     GlobalProposalPunishmentHistoryModal,
 )
+from .views.OffTopicConfirmationModal import OffTopicConfirmationModal
 from .views.PunishmentEmbedBuilder import PunishmentEmbedBuilder
 from .views.PunishmentHistoryModal import PunishmentHistoryModal
 from .views.PunishmentModal import PunishmentModal
@@ -55,11 +69,11 @@ class PunishmentCog(
         PunishmentType.PERMANENT_OBJECTION_CREATION: "异议创建与附议",
     }
 
-    # 快速处罚使用固定理由和禁言时长。
+    # 快速处罚的档位由业务层在事务内计算。
     _QUICK_PUNISH_OFF_TOPIC_REASON = "请不要歪楼滑坡"
-    _QUICK_PUNISH_OFF_TOPIC_MUTE_MINUTES = 5
 
     def __init__(self, bot: StellariaPactBot):
+        """初始化处罚业务依赖并定义消息和用户菜单。"""
         self.bot = bot
         self.logic = PunishmentLogic(bot)
         self.publicity_service = PunishmentPublicityService(bot)
@@ -71,10 +85,15 @@ class PunishmentCog(
             callback=self.kick_proposal_message,
             type=discord.AppCommandType.message,
         )
-        # 注册无需填写表单的歪楼滑坡处罚入口。
+        # 歪楼滑坡入口在有累计记录时需要确认处罚方式。
         self.quick_punish_off_topic_ctx = app_commands.ContextMenu(
             name="快速处罚-歪楼滑坡",
             callback=self.quick_punish_off_topic_message,
+            type=discord.AppCommandType.message,
+        )
+        self.quick_punish_cumulative_ctx = app_commands.ContextMenu(
+            name="快速处罚-累计处罚",
+            callback=self.quick_punish_cumulative_message,
             type=discord.AppCommandType.message,
         )
         # # 用户右键菜单：管理处罚 (针对特定用户)
@@ -92,8 +111,8 @@ class PunishmentCog(
 
         self.query_punishment_ctx = app_commands.ContextMenu(
             name="查询提案内处罚记录",
-            callback=self.query_punishment_message,
-            type=discord.AppCommandType.message,
+            callback=self.query_punishment_user,
+            type=discord.AppCommandType.user,
         )
 
         self.query_global_proposal_punishment_ctx = app_commands.ContextMenu(
@@ -104,13 +123,14 @@ class PunishmentCog(
 
     def cog_load(self) -> None:
         """注册处罚右键菜单，并隔离菜单超限导致的加载失败。"""
-        # 本模块占四个消息菜单，结构化发言回复占剩余一个；用户菜单单独计数。
+        # 本模块占四个消息菜单，结构化发言回复占剩余一个；两个用户菜单单独计数。
         self._add_ctx_menus_safe(
             self.kick_proposal_ctx,
             self.remove_punishment_ctx,
             self.query_punishment_ctx,
             self.query_global_proposal_punishment_ctx,
             self.quick_punish_off_topic_ctx,
+            self.quick_punish_cumulative_ctx,
         )
         # self.bot.tree.add_command(self.manage_punishment_ctx)
 
@@ -135,6 +155,7 @@ class PunishmentCog(
             self.query_punishment_ctx,
             self.query_global_proposal_punishment_ctx,
             self.quick_punish_off_topic_ctx,
+            self.quick_punish_cumulative_ctx,
         ):
             try:
                 self.bot.tree.remove_command(menu.name, type=menu.type)
@@ -648,17 +669,131 @@ class PunishmentCog(
         self, interaction: discord.Interaction, message: discord.Message
     ):
         """[议事督导/管理组] 解除该消息作者在当前帖子的处罚"""
-        # Webhook 结构化消息需要先还原为原提交用户。
-        target_member = await self._resolve_message_target(interaction, message)
-        if target_member is None:
+        try:
+            # 仅提取本 Bot 面板中的正式公示链接，身份解析交给业务层。
+            legacy_channel_id = legacy_message_id = None
+            if message.author.id == self.bot.user.id and message.webhook_id is None:
+                for embed in message.embeds:
+                    if embed.title != "议事成员资格及处罚变动公示":
+                        continue
+                    for field in embed.fields:
+                        if field.name != "处罚公示":
+                            continue
+                        match = re.search(
+                            r"https://discord\.com/channels/(\d+)/(\d+)/(\d+)", field.value
+                        )
+                        if match and int(match[1]) == interaction.guild_id:
+                            legacy_channel_id, legacy_message_id = int(match[2]), int(match[3])
+                    break
+            panel = await self.logic.resolve_punishment_panel(
+                ResolvePunishmentPanelQo(
+                    guild_id=interaction.guild_id,
+                    channel_id=message.channel.id,
+                    message_id=message.id,
+                    legacy_channel_id=legacy_channel_id,
+                    legacy_message_id=legacy_message_id,
+                )
+            )
+
+            # 面板操作定位原提案帖；普通和模板发言仍解析真实作者。
+            if panel is not None:
+                guild = interaction.guild
+                if guild is None:
+                    raise BusinessRuleError("此指令只能在服务器中使用。")
+                thread = guild.get_channel_or_thread(panel.thread_id)
+                if thread is None:
+                    thread = await self.bot.api_scheduler.submit(
+                        self.bot.fetch_channel(panel.thread_id), priority=1
+                    )
+                if not isinstance(thread, discord.Thread) or thread.guild.id != guild.id:
+                    raise BusinessRuleError("找不到该处罚对应的提案帖子。")
+                target_member = guild.get_member(panel.target_user_id) or self.bot.get_user(
+                    panel.target_user_id
+                )
+                if target_member is None:
+                    target_member = await self.bot.api_scheduler.submit(
+                        self.bot.fetch_user(panel.target_user_id), priority=1
+                    )
+                if target_member.bot or interaction.user.id == target_member.id:
+                    raise BusinessRuleError("不能对机器人或自己执行此操作。")
+            else:
+                if message.author.bot and message.webhook_id is None:
+                    raise BusinessRuleError("无法可靠关联该处罚面板，请改用被处罚用户的发言消息。")
+                target_member = await self._resolve_message_target(interaction, message)
+                if target_member is None or not await self._validate_context(
+                    interaction, target_member
+                ):
+                    return
+                thread = interaction.channel
+
+            # 业务层校验最新记录，Modal 只接收已经脱离会话的历史快照。
+            history = await self.logic.get_thread_history(
+                QueryThreadPunishmentQo(
+                    thread_id=thread.id,
+                    target_user_id=target_member.id,
+                    for_removal=True,
+                    selected_record_id=panel.id if panel is not None else None,
+                )
+            )
+            modal = RemovePunishmentModal(self, target_member, thread=thread, history=history)
+            await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
+        except BusinessRuleError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+        except Exception:
+            logger.exception("定位提案内处罚失败。")
+            await interaction.response.send_message(
+                "无法加载处罚记录，请稍后重试。", ephemeral=True
+            )
+
+    async def submit_remove_punishment(
+        self,
+        interaction: discord.Interaction,
+        qo: SubmitPunishmentRemovalQo,
+    ) -> None:
+        """处理解除表单交互，并根据业务层结果发送解除公示。"""
+        # 读取表单绑定的对象，并重新验证当前管理员权限。
+        thread, target_user = qo.thread, qo.target_user
+        reason, expected_record_id = qo.reason, qo.expected_record_id
+        # 表单提交时再次校验权限和服务器，避免沿用打开时的权限。
+        if not RoleGuard.hasRoles(interaction, "councilModerator", "stewards"):
+            await interaction.response.send_message("你没有解除处罚的权限。", ephemeral=True)
+            return
+        if interaction.guild_id != thread.guild.id:
+            await interaction.response.send_message("无法跨服务器解除提案处罚。", ephemeral=True)
+            return
+        await safeDefer(interaction, ephemeral=True)
+
+        # 业务层只接收解除条件，数据库失败和过期表单由控制器回应。
+        try:
+            count = await self.logic.lift_thread_punishment(
+                LiftThreadPunishmentQo(
+                    thread_id=thread.id,
+                    target_user_id=target_user.id,
+                    expected_record_id=expected_record_id,
+                    moderator_id=interaction.user.id,
+                    reason=reason,
+                )
+            )
+        except BusinessRuleError as error:
+            await interaction.followup.send(str(error), ephemeral=True)
+            return
+        except Exception:
+            logger.exception("执行解除提案内处罚失败。")
+            await interaction.followup.send("解除处罚失败，请稍后重试。", ephemeral=True)
             return
 
-        if not await self._validate_context(interaction, target_member):
+        # 已完成的解除不因公示发送失败回滚。
+        embed = PunishmentEmbedBuilder.create_unpunish_embed(interaction.user, target_user, reason)
+        embed.add_field(name="当前累计处罚", value=f"{count} 次", inline=False)
+        try:
+            await self.bot.api_scheduler.submit(thread.send(embed=embed), priority=5)
+        except Exception:
+            logger.exception("处罚已解除，但原帖解除公示发送失败。")
+            await interaction.followup.send(
+                f"处罚已解除，当前累计处罚 {count} 次；公示发送失败，请人工补发。", ephemeral=True
+            )
             return
-
-        # 弹出 Modal，传入目标作者
-        modal = RemovePunishmentModal(self.bot, target_member)
-        await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
+        await interaction.followup.send(f"处罚已解除，当前累计处罚 {count} 次。", ephemeral=True)
 
     @RoleGuard.requireRoles("councilModerator", "stewards")
     async def kick_proposal_message(
@@ -676,7 +811,7 @@ class PunishmentCog(
 
         # 对于新触发的处罚，不查询历史，直接弹出默认表单
         modal = PunishmentModal(
-            bot=self.bot,
+            cog=self,
             target_user=target_user,
             target_message=message,
         )
@@ -699,38 +834,327 @@ class PunishmentCog(
         if not await self._validate_context(interaction, target_user):
             return
 
-        # 提前确认交互，为处罚写入和公示发送留出处理时间。
+        # 通过历史快照读取累计次数，控制器不持有数据库会话。
+        history = await self.logic.get_thread_history(
+            QueryThreadPunishmentQo(
+                thread_id=interaction.channel.id, target_user_id=target_user.id
+            )
+        )
+        count = history.cumulative_count
+        if count:
+            modal = OffTopicConfirmationModal(self, target_user, message, count)
+            await self.bot.api_scheduler.submit(interaction.response.send_modal(modal), priority=1)
+            return
+        await self.execute_quick_punishment(
+            interaction, SubmitQuickPunishmentQo(message, target_user, cumulative=False)
+        )
+
+    @RoleGuard.requireRoles("councilModerator", "stewards")
+    async def quick_punish_cumulative_message(
+        self,
+        interaction: discord.Interaction,
+        message: discord.Message,
+    ) -> None:
+        """对选中消息的真实作者执行累计处罚。"""
+        target_user = await self._resolve_message_target(interaction, message)
+        if target_user is None or not await self._validate_context(interaction, target_user):
+            return
+        await self.execute_quick_punishment(
+            interaction, SubmitQuickPunishmentQo(message, target_user, cumulative=True)
+        )
+
+    async def submit_manual_punishment(
+        self,
+        interaction: discord.Interaction,
+        qo: SubmitThreadPunishmentQo,
+    ) -> None:
+        """校验人工处罚表单，并协调业务事务、证据转发及双区公示。"""
+        if not RoleGuard.hasRoles(interaction, "councilModerator", "stewards"):
+            await interaction.response.send_message("你没有执行处罚的权限。", ephemeral=True)
+            return
         await safeDefer(interaction, ephemeral=True)
 
-        thread = interaction.channel
-        moderator = interaction.user
+        try:
+            # 解析数据
+            allow_voting_str = qo.voting_input.strip()
+            if allow_voting_str == "是":
+                is_voting_allowed = True
+            elif allow_voting_str == "否":
+                is_voting_allowed = False
+            else:
+                return await interaction.followup.send(
+                    "“是否保留投票权”字段必须输入“是”或“否”。",
+                    ephemeral=True,
+                )
+
+            try:
+                mute_minutes = int(qo.mute_minutes_input)
+                if mute_minutes < 0:
+                    raise ValueError()
+            except ValueError:
+                return await interaction.followup.send(
+                    "禁言时长必须是一个有效的非负整数。",
+                    ephemeral=True,
+                )
+
+            reason = qo.reason
+            thread = interaction.channel
+            moderator = interaction.user
+
+            if not isinstance(thread, discord.Thread) or not isinstance(moderator, discord.Member):
+                return
+
+            # 公示预检及附件读取在提交处罚前完成，失败时不产生半成品记录。
+            resolved = await self.publicity_service.resolve_channel(
+                ResolvePublicityChannelQo(guild=thread.guild)
+            )
+            publicity_channel, publicity_fallback_reason = (
+                resolved.channel,
+                resolved.fallback_reason,
+            )
+            files: list[discord.File] = []
+            if publicity_channel is not None:
+                try:
+                    for attachment in qo.evidence:
+                        files.append(await attachment.to_file())
+                except Exception:
+                    for file in files:
+                        file.close()
+                    raise
+
+            # 计算截止时间（UTC aware datetime）
+            mute_end_time = None
+            if mute_minutes > 0:
+                mute_end_time = datetime.now(timezone.utc) + timedelta(minutes=mute_minutes)
+
+            # 资格状态、处罚记录和进行中投票的清理在同一事务内完成。
+            try:
+                result = await self.logic.apply_thread_punishment(
+                    ApplyThreadPunishmentQo(
+                        guild_id=thread.guild.id,
+                        thread_id=thread.id,
+                        target_user_id=qo.target_user.id,
+                        moderator_id=moderator.id,
+                        reason=reason,
+                        source_message_url=(
+                            qo.target_message.jump_url if qo.target_message is not None else None
+                        ),
+                        voting_allowed=is_voting_allowed,
+                        mute_end_time=mute_end_time,
+                    )
+                )
+            except Exception:
+                for file in files:
+                    file.close()
+                raise
+
+            if publicity_channel is None:
+                fallback_embed = PunishmentEmbedBuilder.create_punishment_embed(
+                    moderator=moderator,
+                    target_user=qo.target_user,
+                    reason=reason,
+                    target_message=qo.target_message,
+                    is_voting_allowed=is_voting_allowed,
+                    mute_end_time=mute_end_time,
+                )
+                try:
+                    source_message = await self.bot.api_scheduler.submit(
+                        thread.send(embed=fallback_embed),
+                        priority=5,
+                    )
+                    await self._save_panel_location(
+                        SavePunishmentPanelQo(
+                            record_id=result.punishment_record_id,
+                            guild_id=thread.guild.id,
+                            channel_id=thread.id,
+                            message_id=source_message.id,
+                            is_source=True,
+                        )
+                    )
+                    material_warning = "；上传的处罚材料未发布" if qo.evidence else ""
+                    await interaction.followup.send(
+                        f"处罚已生效，并已降级为原帖单处公示{material_warning}。"
+                        f"原因：{publicity_fallback_reason}",
+                        ephemeral=True,
+                    )
+                except Exception:
+                    logger.exception("帖子内处罚已生效，但降级公示发送失败。")
+                    await interaction.followup.send(
+                        "处罚已生效，但处罚公示区不可用且原帖公示发送失败，请人工补发。",
+                        ephemeral=True,
+                    )
+                return
+
+            public_embed = PunishmentEmbedBuilder.create_punishment_embed(
+                moderator=moderator,
+                target_user=qo.target_user,
+                reason=reason,
+                target_message=None,
+                is_voting_allowed=is_voting_allowed,
+                mute_end_time=mute_end_time,
+            )
+            # 通过共享服务发送正式公示，附件由当前表单统一释放。
+            try:
+                publicity = await self.publicity_service.publish(
+                    PublishPunishmentQo(
+                        channel=publicity_channel,
+                        embed=public_embed,
+                        files=tuple(files),
+                    )
+                )
+            finally:
+                for file in files:
+                    file.close()
+            if publicity.error is not None:
+                await interaction.followup.send(publicity.error, ephemeral=True)
+                return
+            publicity_channel = publicity.channel
+            public_message = publicity.message
+            assert public_message is not None
+
+            # 通过转发服务选择机器人身份，并保留结果不确定时的提示。
+            evidence_forward_failed = False
+            evidence_forward_uncertain = False
+            if qo.target_message is not None:
+                try:
+                    forwarded_id = await self.bot.api_scheduler.submit(
+                        self.bot.message_forward_service.forward(
+                            qo.target_message, publicity_channel
+                        ),
+                        priority=5,
+                    )
+                    logger.info(
+                        "处罚证据转发成功 record=%s source_channel=%s source_message=%s "
+                        "destination=%s forwarded_message=%s",
+                        result.punishment_record_id,
+                        qo.target_message.channel.id,
+                        qo.target_message.id,
+                        publicity_channel.id,
+                        forwarded_id,
+                    )
+                except Exception as error:
+                    evidence_forward_failed = True
+                    evidence_forward_uncertain = (
+                        isinstance(error, MessageForwardError) and error.uncertain
+                    )
+                    logger.warning(
+                        "处罚证据转发失败 record=%s source_channel=%s source_message=%s "
+                        "destination=%s status=%s code=%s uncertain=%s",
+                        result.punishment_record_id,
+                        qo.target_message.channel.id,
+                        qo.target_message.id,
+                        publicity_channel.id,
+                        getattr(error, "status", None),
+                        getattr(error, "code", None),
+                        evidence_forward_uncertain,
+                    )
+
+            # 正式公示和原帖公示统一通过位置 Qo 登记。
+            location_saved = await self._save_panel_location(
+                SavePunishmentPanelQo(
+                    record_id=result.punishment_record_id,
+                    guild_id=thread.guild.id,
+                    channel_id=publicity_channel.id,
+                    message_id=public_message.id,
+                )
+            )
+
+            source_embed = PunishmentEmbedBuilder.create_punishment_embed(
+                moderator=moderator,
+                target_user=qo.target_user,
+                reason=reason,
+                target_message=None,
+                is_voting_allowed=is_voting_allowed,
+                mute_end_time=mute_end_time,
+                publicity_message_url=public_message.jump_url,
+            )
+            source_sent = True
+            try:
+                source_message = await self.bot.api_scheduler.submit(
+                    thread.send(embed=source_embed), priority=5
+                )
+                await self._save_panel_location(
+                    SavePunishmentPanelQo(
+                        record_id=result.punishment_record_id,
+                        guild_id=thread.guild.id,
+                        channel_id=thread.id,
+                        message_id=source_message.id,
+                        is_source=True,
+                    )
+                )
+            except Exception:
+                source_sent = False
+                logger.exception("帖子内处罚正式公示已发送，但原帖公示发送失败。")
+
+            warnings: list[str] = []
+            if evidence_forward_uncertain:
+                warnings.append("证据消息转发结果未确认，请先检查公示区，缺失时人工补发")
+            elif evidence_forward_failed:
+                warnings.append("选中消息转发失败，请人工补发")
+            if not location_saved:
+                warnings.append("历史记录未能保存正式公示链接")
+            if not source_sent:
+                warnings.append("原帖公示发送失败")
+            if warnings:
+                await interaction.followup.send(
+                    f"处罚已生效，正式公示已发送；{'；'.join(warnings)}，请人工检查。",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send("已成功处罚并完成双区公示。", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"处理处罚模态框时发生错误: {e}", exc_info=True)
+            await interaction.followup.send("处理请求时发生错误，请联系技术人员。", ephemeral=True)
+
+    async def execute_quick_punishment(
+        self,
+        interaction: discord.Interaction,
+        qo: SubmitQuickPunishmentQo,
+    ) -> None:
+        """统一执行快速处罚及双区公示，表单提交时再次验证上下文。"""
+        # 消息菜单和确认表单共用独立输入参数，后续流程保持一致。
+        message, target_user = qo.message, qo.target_user
+        if not RoleGuard.hasRoles(interaction, "councilModerator", "stewards"):
+            await interaction.response.send_message("你没有执行处罚的权限。", ephemeral=True)
+            return
+        if interaction.channel_id != message.channel.id:
+            await interaction.response.send_message("处罚表单与原消息帖子不一致。", ephemeral=True)
+            return
+        if not await self._validate_context(interaction, target_user):
+            return
+        await safeDefer(interaction, ephemeral=True)
+        thread, moderator = interaction.channel, interaction.user
         assert isinstance(thread, discord.Thread) and isinstance(moderator, discord.Member)
-
-        mute_end_time = datetime.now(timezone.utc) + timedelta(
-            minutes=self._QUICK_PUNISH_OFF_TOPIC_MUTE_MINUTES
+        try:
+            result = await self.logic.apply_thread_punishment(
+                ApplyThreadPunishmentQo(
+                    guild_id=thread.guild.id,
+                    thread_id=thread.id,
+                    target_user_id=target_user.id,
+                    moderator_id=moderator.id,
+                    reason=self._QUICK_PUNISH_OFF_TOPIC_REASON,
+                    source_message_url=message.jump_url,
+                    voting_allowed=True,
+                    mute_end_time=None,
+                    quick_mode="cumulative" if qo.cumulative else "off_topic",
+                    off_topic_confirmed=qo.off_topic_confirmed,
+                )
+            )
+        except BusinessRuleError as error:
+            await interaction.followup.send(str(error), ephemeral=True)
+            return
+        except Exception:
+            logger.exception("执行快速处罚失败。")
+            await interaction.followup.send("快速处罚失败，请稍后重试。", ephemeral=True)
+            return
+        reason, mute_end_time = result.reason, result.mute_end_time
+        voting_allowed = result.voting_allowed
+        treatment = "保留本帖投票权" if voting_allowed else "保留已有的本帖投票权限制"
+        summary = (
+            f"快速处罚已生效：{treatment}；{format_thread_mute(mute_end_time)}；"
+            f"理由「{reason}」；当前累计处罚 {result.cumulative_count} 次"
         )
-
-        # 通过业务层事务写入处罚，控制器只接收结果数据。
-        result = await self.logic.apply_thread_punishment(
-            guild_id=thread.guild.id,
-            thread_id=thread.id,
-            target_user_id=target_user.id,
-            moderator_id=moderator.id,
-            reason=self._QUICK_PUNISH_OFF_TOPIC_REASON,
-            source_message_url=message.jump_url,
-            voting_allowed=True,
-            mute_end_time=mute_end_time,
-        )
-
-        # 同步内存禁言缓存（voting_allowed=True 不会产生需要刷新的投票面板）
-        self.bot.dispatch(
-            "thread_mute_updated",
-            thread.id,
-            target_user.id,
-            mute_end_time,
-        )
-        for vote_details in result.vote_details_to_update:
-            self.bot.dispatch("vote_details_updated", vote_details)
 
         # 公示区无法使用时，仅在原帖发布处罚信息。
         resolved = await self.publicity_service.resolve_channel(
@@ -742,19 +1166,27 @@ class PunishmentCog(
             fallback_embed = PunishmentEmbedBuilder.create_punishment_embed(
                 moderator=moderator,
                 target_user=target_user,
-                reason=self._QUICK_PUNISH_OFF_TOPIC_REASON,
+                reason=reason,
                 target_message=message,
-                is_voting_allowed=True,
+                is_voting_allowed=voting_allowed,
                 mute_end_time=mute_end_time,
             )
             try:
-                await self.bot.api_scheduler.submit(
+                source_message = await self.bot.api_scheduler.submit(
                     thread.send(embed=fallback_embed),
                     priority=5,
                 )
+                await self._save_panel_location(
+                    SavePunishmentPanelQo(
+                        record_id=result.punishment_record_id,
+                        guild_id=thread.guild.id,
+                        channel_id=thread.id,
+                        message_id=source_message.id,
+                        is_source=True,
+                    )
+                )
                 await interaction.followup.send(
-                    f"快速处罚已生效（保留投票权 + 禁言 5 分钟），"
-                    f"并已降级为原帖单处公示。原因：{publicity_fallback_reason}",
+                    f"{summary}，并已降级为原帖单处公示。原因：{publicity_fallback_reason}",
                     ephemeral=True,
                 )
             except Exception:
@@ -768,9 +1200,9 @@ class PunishmentCog(
         public_embed = PunishmentEmbedBuilder.create_punishment_embed(
             moderator=moderator,
             target_user=target_user,
-            reason=self._QUICK_PUNISH_OFF_TOPIC_REASON,
+            reason=reason,
             target_message=None,
-            is_voting_allowed=True,
+            is_voting_allowed=voting_allowed,
             mute_end_time=mute_end_time,
         )
         # 复用正式公示发送流程，自动解锁子区并在发送失败时恢复状态。
@@ -808,53 +1240,80 @@ class PunishmentCog(
                 else "选中消息转发失败，请人工补发"
             )
 
+        warnings: list[str] = []
         # 将正式消息位置写回处罚记录，供历史查询使用。
-        try:
-            await self.logic.set_thread_punishment_publicity_message(
-                result.punishment_record_id,
+        if not await self._save_panel_location(
+            SavePunishmentPanelQo(
+                record_id=result.punishment_record_id,
                 guild_id=thread.guild.id,
                 channel_id=publicity_channel.id,
                 message_id=public_message.id,
             )
-        except Exception:
-            logger.exception("保存快速处罚正式公示位置失败。")
+        ):
+            warnings.append("历史记录未能保存正式公示链接")
 
         # 正式公示成功后，再在原帖发布有效的跳转链接。
         source_embed = PunishmentEmbedBuilder.create_punishment_embed(
             moderator=moderator,
             target_user=target_user,
-            reason=self._QUICK_PUNISH_OFF_TOPIC_REASON,
+            reason=reason,
             target_message=None,
-            is_voting_allowed=True,
+            is_voting_allowed=voting_allowed,
             mute_end_time=mute_end_time,
             publicity_message_url=public_message.jump_url,
         )
         try:
-            await self.bot.api_scheduler.submit(thread.send(embed=source_embed), priority=5)
+            source_message = await self.bot.api_scheduler.submit(
+                thread.send(embed=source_embed), priority=5
+            )
+            await self._save_panel_location(
+                SavePunishmentPanelQo(
+                    record_id=result.punishment_record_id,
+                    guild_id=thread.guild.id,
+                    channel_id=thread.id,
+                    message_id=source_message.id,
+                    is_source=True,
+                )
+            )
         except Exception:
             logger.exception("快速处罚正式公示已发送，但原帖公示发送失败。")
+            warnings.append("原帖公示发送失败，请人工补发")
 
         # 证据转发异常时提示管理员核查，避免误报材料已完整发布。
         if evidence_warning is not None:
+            warnings.append(evidence_warning)
+        if warnings:
             await interaction.followup.send(
-                f"快速处罚已生效，正式公示已发送；{evidence_warning}。",
+                f"{summary}；正式公示已发送；{'；'.join(warnings)}。",
                 ephemeral=True,
             )
             return
 
         await interaction.followup.send(
-            "快速处罚已生效：保留本帖投票权 + 禁言 5 分钟 + 理由「请不要歪楼滑坡」，"
-            "并已完成双区公示。",
+            f"{summary}，并已完成双区公示。",
             ephemeral=True,
         )
 
+    async def _save_panel_location(self, qo: SavePunishmentPanelQo) -> bool:
+        """统一登记两处处罚面板，保存失败时保留已发送的公示。"""
+        # 两类面板共用事务入口，避免控制器重复组织数据库操作。
+        try:
+            await self.logic.save_publicity_panel(qo)
+        except Exception:
+            # 返回保存结果，由当前公示流程决定对管理员的提示。
+            logger.exception(
+                "保存处罚面板位置失败，记录 %s，原帖面板 %s。", qo.record_id, qo.is_source
+            )
+            return False
+        return True
+
     @RoleGuard.requireRoles("councilModerator", "stewards")
-    async def query_punishment_message(
+    async def query_punishment_user(
         self,
         interaction: discord.Interaction,
-        message: discord.Message,
+        member: discord.Member,
     ):
-        """[议事督导/管理组] 查询消息作者在当前帖子中的处罚历史。"""
+        """[议事督导/管理组] 查询头像选中用户在当前帖子的处罚历史。"""
         thread = interaction.channel
         if not isinstance(thread, discord.Thread):
             await self.bot.api_scheduler.submit(
@@ -866,17 +1325,13 @@ class PunishmentCog(
             )
             return
 
-        # 查询同样使用结构化消息记录中的真实用户身份。
-        target_user = await self._resolve_message_target(interaction, message)
-        if target_user is None:
-            return
+        target_user = member
 
-        async with UnitOfWork(self.bot.db_handler) as uow:
-            total, records = await uow.punishment_record.get_summary(
-                thread_id=thread.id,
-                target_user_id=target_user.id,
-            )
-            modal = PunishmentHistoryModal(target_user, total, records)
+        # 在业务层完成查询和快照转换，视图只负责展示。
+        history = await self.logic.get_thread_history(
+            QueryThreadPunishmentQo(thread_id=thread.id, target_user_id=target_user.id)
+        )
+        modal = PunishmentHistoryModal(target_user, history)
 
         await self.bot.api_scheduler.submit(
             interaction.response.send_modal(modal),

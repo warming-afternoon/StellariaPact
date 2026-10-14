@@ -360,19 +360,35 @@ class StructuredSpeechCog(commands.Cog):
         try:
             await self.bot.api_scheduler.submit(message.delete(), priority=1)
         except discord.NotFound:
-            pass
+            return
         except discord.Forbidden:
             logger.warning(
                 "无法删除模板发言帖子 %s 中绕过 Bot 的消息 %s。",
                 message.channel.id,
                 message.id,
             )
+            return
         except discord.HTTPException:
             logger.exception(
                 "删除模板发言帖子 %s 中绕过 Bot 的消息 %s 失败。",
                 message.channel.id,
                 message.id,
             )
+            return
+        try:
+            await self.bot.api_scheduler.submit(
+                message.channel.send(
+                    f"{message.author.mention} 本帖已开启模板发言模式，请使用 /提案发言 "
+                    "或右键消息 → APP → 提案发言(回复)。直接发送的消息已删除。",
+                    delete_after=180,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=False, users=[message.author], replied_user=False
+                    ),
+                ),
+                priority=5,
+            )
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            logger.exception("模板发言违规提示发送失败，帖子 %s。", message.channel.id)
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:

@@ -17,7 +17,7 @@ def test_structured_speech_migration_round_trip() -> None:
         config.set_main_option("sqlalchemy.url", database_url)
 
         command.stamp(config, "d5a7c9e1f3b6")
-        command.upgrade(config, "head")
+        command.upgrade(config, "f7a9c2e4b6d8")
 
         engine = create_engine(database_url)
         inspector = inspect(engine)
