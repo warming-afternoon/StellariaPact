@@ -670,7 +670,10 @@ class PunishmentCog(
     ):
         """[议事督导/管理组] 解除该消息作者在当前帖子的处罚"""
         try:
-            # 仅提取本 Bot 面板中的正式公示链接，身份解析交给业务层。
+            # 临时兼容措施：旧原帖面板未登记消息 ID，需要从正式公示链接关联处罚记录。
+            # TODO: 新版本运行一段时间、旧面板过渡期结束后，移除此 URL 解析及业务层回退分支。
+            # 清理时同时移除 ResolvePunishmentPanelQo 的 legacy_* 字段和旧面板兼容测试。
+            # 仅提取本 Bot 面板中的同服务器正式公示链接，身份解析交给业务层。
             legacy_channel_id = legacy_message_id = None
             if message.author.id == self.bot.user.id and message.webhook_id is None:
                 for embed in message.embeds:

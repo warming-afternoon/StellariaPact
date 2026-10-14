@@ -70,7 +70,8 @@ class PunishmentLogic:
                 and qo.legacy_channel_id is not None
                 and qo.legacy_message_id is not None
             ):
-                # 旧链接只能关联同一原帖的记录，不能借用其他帖子的公示。
+                # 临时兼容旧原帖面板，只能关联同一原帖的记录。
+                # TODO: 新版本运行一段时间后，与控制器 URL 解析、legacy_* 字段及兼容测试一并移除。
                 record = await uow.punishment_record.find_by_panel(
                     guild_id=qo.guild_id,
                     channel_id=qo.legacy_channel_id,
