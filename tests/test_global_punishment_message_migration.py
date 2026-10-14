@@ -50,7 +50,7 @@ class GlobalPunishmentMessageMigrationTests(unittest.TestCase):
             engine.dispose()
             command.stamp(config, "c4e8a1f3b6d2")
 
-            command.upgrade(config, "head")
+            command.upgrade(config, "d5a7c9e1f3b6")
             engine = create_engine(database_url)
             upgraded_columns = {
                 column["name"]

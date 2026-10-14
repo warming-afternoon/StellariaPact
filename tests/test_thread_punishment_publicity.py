@@ -4,13 +4,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from StellariaPact.cogs.Punishment.dto import ThreadPunishmentResult
+from StellariaPact.cogs.Punishment.dto import (
+    ThreadPunishmentResult,
+)
+from StellariaPact.cogs.Punishment.dto.PublicityChannelDto import PublicityChannelDto
+from StellariaPact.cogs.Punishment.PunishmentCog import PunishmentCog
+from StellariaPact.cogs.Punishment.qo import (
+    SavePunishmentPanelQo,
+)
+from StellariaPact.cogs.Punishment.qo.ResolvePublicityChannelQo import ResolvePublicityChannelQo
 from StellariaPact.cogs.Punishment.views.PunishmentModal import (
     MAX_PUNISHMENT_EVIDENCE_FILES,
     PunishmentModal,
 )
+from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.HttpClient import HttpClient
 from StellariaPact.share.MessageForwardService import MessageForwardError, MessageForwardService
+
+
+@pytest.fixture(autouse=True)
+def authorized_moderator(monkeypatch):
+    """公示测试只隔离权限检查，权限撤销另由交互测试覆盖。"""
+    monkeypatch.setattr(RoleGuard, "hasRoles", lambda *args: True)
 
 
 async def _submit_immediately(coroutine, priority):
@@ -27,7 +42,8 @@ def _create_modal():
         jump_url="https://discord.com/channels/10/30/100",
     )
     target_message.forward = AsyncMock(return_value=MagicMock())
-    modal = PunishmentModal(bot, target_user, target_message)
+    modal = PunishmentModal(PunishmentCog(bot), target_user, target_message)
+    modal.cog.logic.save_publicity_panel = AsyncMock()
     modal.allow_voting_input._value = "否"
     modal.mute_duration_input._value = "60"
     modal.reason_input._value = "测试处罚"
@@ -93,9 +109,11 @@ async def test_configured_publicity_sends_files_then_source_link(extra_token, mo
     attachment = MagicMock()
     attachment.to_file = AsyncMock(return_value=file)
     modal.evidence_upload._values = [attachment]
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
-    modal.logic.set_thread_punishment_publicity_message = AsyncMock()
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_channel, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.logic.save_publicity_panel = AsyncMock()
 
     with (
         patch(
@@ -107,7 +125,7 @@ async def test_configured_publicity_sends_files_then_source_link(extra_token, mo
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
@@ -123,11 +141,8 @@ async def test_configured_publicity_sends_files_then_source_link(extra_token, mo
     source_embed = source_kwargs["embed"]
     publicity_field = next(field for field in source_embed.fields if field.name == "处罚公示")
     assert public_message.jump_url in publicity_field.value
-    modal.logic.set_thread_punishment_publicity_message.assert_awaited_once_with(
-        7,
-        guild_id=10,
-        channel_id=99,
-        message_id=200,
+    modal.cog.logic.save_publicity_panel.assert_any_await(
+        SavePunishmentPanelQo(record_id=7, guild_id=10, channel_id=99, message_id=200)
     )
     if extra_token:
         target_message.forward.assert_not_awaited()
@@ -149,8 +164,10 @@ async def test_missing_publicity_config_falls_back_without_reading_files() -> No
     attachment = MagicMock()
     attachment.to_file = AsyncMock()
     modal.evidence_upload._values = [attachment]
-    modal._get_publicity_channel = AsyncMock(return_value=(None, "未配置处罚公示区"))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=None, fallback_reason="未配置处罚公示区")
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
 
     with (
         patch(
@@ -162,7 +179,7 @@ async def test_missing_publicity_config_falls_back_without_reading_files() -> No
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
@@ -189,8 +206,10 @@ async def test_runtime_publicity_failure_keeps_punishment_and_suppresses_source_
     attachment = MagicMock()
     attachment.to_file = AsyncMock(return_value=file)
     modal.evidence_upload._values = [attachment]
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_channel, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
 
     with (
         patch(
@@ -202,13 +221,13 @@ async def test_runtime_publicity_failure_keeps_punishment_and_suppresses_source_
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
         await modal.on_submit(interaction)
 
-    modal.logic.apply_thread_punishment.assert_awaited_once()
+    modal.cog.logic.apply_thread_punishment.assert_awaited_once()
     target_message.forward.assert_not_awaited()
     thread.send.assert_not_awaited()
     file.close.assert_called_once_with()
@@ -231,9 +250,11 @@ async def test_evidence_forward_failure_keeps_publicity_and_reports_warning(unce
     target_message.forward.side_effect = MessageForwardError(uncertain=uncertain)
     thread.send = AsyncMock(return_value=MagicMock())
     modal.evidence_upload._values = []
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
-    modal.logic.set_thread_punishment_publicity_message = AsyncMock()
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_channel, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.logic.save_publicity_panel = AsyncMock()
 
     with (
         patch(
@@ -245,18 +266,15 @@ async def test_evidence_forward_failure_keeps_publicity_and_reports_warning(unce
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
         await modal.on_submit(interaction)
 
     target_message.forward.assert_awaited_once_with(publicity_channel)
-    modal.logic.set_thread_punishment_publicity_message.assert_awaited_once_with(
-        7,
-        guild_id=10,
-        channel_id=99,
-        message_id=200,
+    modal.cog.logic.save_publicity_panel.assert_any_await(
+        SavePunishmentPanelQo(record_id=7, guild_id=10, channel_id=99, message_id=200)
     )
     thread.send.assert_awaited_once()
     source_embed = thread.send.await_args.kwargs["embed"]
@@ -285,9 +303,11 @@ async def test_publicity_without_target_message_does_not_attempt_forward() -> No
     publicity_channel.send = AsyncMock(return_value=public_message)
     thread.send = AsyncMock(return_value=MagicMock())
     modal.evidence_upload._values = []
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
-    modal.logic.set_thread_punishment_publicity_message = AsyncMock()
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_channel, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.logic.save_publicity_panel = AsyncMock()
 
     with (
         patch(
@@ -299,7 +319,7 @@ async def test_publicity_without_target_message_does_not_attempt_forward() -> No
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
@@ -321,8 +341,10 @@ async def test_attachment_read_failure_happens_before_punishment() -> None:
     attachment = MagicMock()
     attachment.to_file = AsyncMock(side_effect=RuntimeError("attachment unavailable"))
     modal.evidence_upload._values = [attachment]
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock()
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_channel, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock()
 
     with (
         patch(
@@ -334,13 +356,13 @@ async def test_attachment_read_failure_happens_before_punishment() -> None:
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
         await modal.on_submit(interaction)
 
-    modal.logic.apply_thread_punishment.assert_not_awaited()
+    modal.cog.logic.apply_thread_punishment.assert_not_awaited()
     interaction.followup.send.assert_awaited_once_with(
         "处理请求时发生错误，请联系技术人员。",
         ephemeral=True,
@@ -359,9 +381,11 @@ async def test_location_writeback_failure_still_sends_source_with_direct_link() 
     publicity_channel.send = AsyncMock(return_value=public_message)
     thread.send = AsyncMock(return_value=MagicMock())
     modal.evidence_upload._values = []
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
-    modal.logic.set_thread_punishment_publicity_message = AsyncMock(
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_channel, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.logic.save_publicity_panel = AsyncMock(
         side_effect=RuntimeError("database unavailable")
     )
 
@@ -375,7 +399,7 @@ async def test_location_writeback_failure_still_sends_source_with_direct_link() 
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
@@ -400,9 +424,11 @@ async def test_source_notice_failure_preserves_publicity_and_reports_partial_fai
     publicity_channel.send = AsyncMock(return_value=public_message)
     thread.send = AsyncMock(side_effect=RuntimeError("thread unavailable"))
     modal.evidence_upload._values = []
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_channel, None))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
-    modal.logic.set_thread_punishment_publicity_message = AsyncMock()
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_channel, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.logic.save_publicity_panel = AsyncMock()
 
     with (
         patch(
@@ -414,14 +440,16 @@ async def test_source_notice_failure_preserves_publicity_and_reports_partial_fai
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
         await modal.on_submit(interaction)
 
     publicity_channel.send.assert_awaited_once()
-    modal.logic.set_thread_punishment_publicity_message.assert_awaited_once()
+    assert any(
+        not call.args[0].is_source for call in modal.cog.logic.save_publicity_panel.await_args_list
+    )
     response = interaction.followup.send.await_args.args[0]
     assert "原帖公示发送失败" in response
 
@@ -433,7 +461,9 @@ async def test_publicity_channel_validation_requires_text_channel_and_permission
     thread = MagicMock(guild=guild)
 
     bot.config = {"channels": {"punishment_publicity": None}}
-    assert await modal._get_publicity_channel(thread) == (None, "未配置处罚公示区")
+    assert (
+        await modal.cog.publicity_service.resolve_channel(ResolvePublicityChannelQo(thread.guild))
+    ).fallback_reason == "未配置处罚公示区"
 
     channel = MagicMock()
     guild.get_channel_or_thread.return_value = channel
@@ -450,7 +480,10 @@ async def test_publicity_channel_validation_requires_text_channel_and_permission
         "StellariaPact.cogs.Punishment.views.PunishmentModal.discord.TextChannel",
         type(channel),
     ):
-        resolved, reason = await modal._get_publicity_channel(thread)
+        result = await modal.cog.publicity_service.resolve_channel(
+            ResolvePublicityChannelQo(thread.guild)
+        )
+        resolved, reason = result.channel, result.fallback_reason
 
     assert resolved is None
     assert "上传附件" in reason
@@ -479,7 +512,10 @@ async def test_archived_publicity_thread_is_fetched_and_uses_thread_permissions(
         "StellariaPact.cogs.Punishment.views.PunishmentModal.discord.Thread",
         type(publicity_thread),
     ):
-        resolved, reason = await modal._get_publicity_channel(source_thread)
+        result = await modal.cog.publicity_service.resolve_channel(
+            ResolvePublicityChannelQo(source_thread.guild)
+        )
+        resolved, reason = result.channel, result.fallback_reason
 
     assert resolved is publicity_thread
     assert reason is None
@@ -508,7 +544,10 @@ async def test_locked_publicity_thread_without_manage_permission_falls_back() ->
         "StellariaPact.cogs.Punishment.views.PunishmentModal.discord.Thread",
         type(publicity_thread),
     ):
-        resolved, reason = await modal._get_publicity_channel(source_thread)
+        result = await modal.cog.publicity_service.resolve_channel(
+            ResolvePublicityChannelQo(source_thread.guild)
+        )
+        resolved, reason = result.channel, result.fallback_reason
 
     assert resolved is None
     assert reason == "处罚公示子区已锁定且 Bot 无管理子区权限"
@@ -528,9 +567,11 @@ async def test_locked_publicity_thread_is_unlocked_and_left_active_after_success
     publicity_thread.send = AsyncMock(return_value=public_message)
     source_thread.send = AsyncMock(return_value=MagicMock())
     modal.evidence_upload._values = []
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_thread, None))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
-    modal.logic.set_thread_punishment_publicity_message = AsyncMock()
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_thread, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.logic.save_publicity_panel = AsyncMock()
 
     with (
         patch(
@@ -542,7 +583,7 @@ async def test_locked_publicity_thread_is_unlocked_and_left_active_after_success
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
@@ -570,8 +611,10 @@ async def test_publicity_thread_unlock_failure_keeps_punishment_and_closes_files
     attachment = MagicMock()
     attachment.to_file = AsyncMock(return_value=file)
     modal.evidence_upload._values = [attachment]
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_thread, None))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_thread, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
 
     with (
         patch(
@@ -583,13 +626,13 @@ async def test_publicity_thread_unlock_failure_keeps_punishment_and_closes_files
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):
         await modal.on_submit(interaction)
 
-    modal.logic.apply_thread_punishment.assert_awaited_once()
+    modal.cog.logic.apply_thread_punishment.assert_awaited_once()
     publicity_thread.send.assert_not_awaited()
     source_thread.send.assert_not_awaited()
     file.close.assert_called_once_with()
@@ -610,8 +653,10 @@ async def test_send_failure_after_unlock_attempts_to_restore_original_state(
     publicity_thread.send = AsyncMock(side_effect=RuntimeError("cannot send"))
     source_thread.send = AsyncMock()
     modal.evidence_upload._values = []
-    modal._get_publicity_channel = AsyncMock(return_value=(publicity_thread, None))
-    modal.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
+    modal.cog.publicity_service.resolve_channel = AsyncMock(
+        return_value=PublicityChannelDto(channel=publicity_thread, fallback_reason=None)
+    )
+    modal.cog.logic.apply_thread_punishment = AsyncMock(return_value=ThreadPunishmentResult(7, []))
 
     with (
         patch(
@@ -623,7 +668,7 @@ async def test_send_failure_after_unlock_attempts_to_restore_original_state(
             type(moderator),
         ),
         patch(
-            "StellariaPact.cogs.Punishment.views.PunishmentModal.safeDefer",
+            "StellariaPact.cogs.Punishment.PunishmentCog.safeDefer",
             new=AsyncMock(),
         ),
     ):

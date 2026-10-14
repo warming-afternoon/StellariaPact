@@ -5,7 +5,7 @@ from discord import app_commands
 
 from StellariaPact.cogs.Intake.Cog import IntakeCog
 from StellariaPact.cogs.Moderation.Cog import Moderation
-from StellariaPact.cogs.Punishment.Cog import PunishmentCog
+from StellariaPact.cogs.Punishment.PunishmentCog import PunishmentCog
 from StellariaPact.cogs.ThreadManage.Cog import ThreadManageCog
 
 

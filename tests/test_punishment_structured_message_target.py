@@ -4,7 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from StellariaPact.cogs.Punishment.Cog import PunishmentCog
+from StellariaPact.cogs.Punishment.PunishmentCog import PunishmentCog
+from StellariaPact.models.PunishmentRecord import PunishmentRecord
 
 
 async def _submit_immediately(coroutine=None, priority=None, *, coro=None):
@@ -47,65 +48,70 @@ async def test_structured_message_target_falls_back_to_departed_discord_user() -
 
 @pytest.mark.asyncio
 async def test_message_punishment_commands_use_resolved_real_user() -> None:
-    """验证处罚、解除和历史查询均使用结构化消息对应的真实用户。"""
+    """处罚和解除解析模板真实作者；头像历史查询直接使用选中用户。"""
     cog, bot = _create_cog()
     real_user = MagicMock(id=600, bot=False)
     message = MagicMock(id=300, webhook_id=400)
     message.jump_url = "https://discord.com/channels/1/100/300"
     thread = MagicMock(id=100)
-    interaction = MagicMock(channel=thread)
+    message.channel = thread
+    interaction = MagicMock(channel=thread, guild_id=1)
     interaction.response.send_modal = AsyncMock()
     cog._resolve_message_target = AsyncMock(return_value=real_user)
     cog._validate_context = AsyncMock(return_value=True)
 
-    # 绕过角色装饰器，直接验证三个右键入口的业务目标传递。
     await cog.kick_proposal_message.__wrapped__(cog, interaction, message)
     punishment_modal = interaction.response.send_modal.await_args.args[0]
     assert punishment_modal.target_user is real_user
     assert punishment_modal.target_message is message
 
-    interaction.response.send_modal.reset_mock()
-    await cog.remove_punishment_message.__wrapped__(cog, interaction, message)
-    removal_modal = interaction.response.send_modal.await_args.args[0]
-    assert removal_modal.target_user is real_user
-
-    punishment_record_repository = SimpleNamespace(
-        get_summary=AsyncMock(return_value=(0, [])),
+    record = PunishmentRecord(
+        id=7,
+        guild_id=1,
+        thread_id=100,
+        target_user_id=600,
+        moderator_id=99,
+        reason="测试处罚",
+        voting_allowed=False,
+        counts_toward_cumulative=True,
     )
-    fake_uow = SimpleNamespace(punishment_record=punishment_record_repository)
+    repository = SimpleNamespace(
+        get_summary=AsyncMock(return_value=(1, [record])),
+        get_latest=AsyncMock(return_value=record),
+        get_cumulative_count=AsyncMock(return_value=1),
+        find_by_panel=AsyncMock(return_value=None),
+    )
+    fake_uow = SimpleNamespace(punishment_record=repository)
 
     class UnitOfWorkContext:
-        """为处罚历史查询提供测试工作单元。"""
-
         async def __aenter__(self):
-            """返回测试工作单元。"""
             return fake_uow
 
         async def __aexit__(self, exc_type, exc_value, traceback):
-            """结束测试工作单元上下文。"""
             return False
 
-    interaction.response.send_modal.reset_mock()
     with (
+        patch("StellariaPact.cogs.Punishment.PunishmentCog.discord.Thread", type(thread)),
         patch(
-            "StellariaPact.cogs.Punishment.Cog.discord.Thread",
-            type(thread),
-        ),
-        patch(
-            "StellariaPact.cogs.Punishment.Cog.UnitOfWork",
+            "StellariaPact.cogs.Punishment.logic.PunishmentLogic.UnitOfWork",
             return_value=UnitOfWorkContext(),
         ),
     ):
-        await cog.query_punishment_message.__wrapped__(cog, interaction, message)
+        interaction.response.send_modal.reset_mock()
+        await cog.remove_punishment_message.__wrapped__(cog, interaction, message)
+        modal = interaction.response.send_modal.await_args.args[0]
+        assert modal.target_user is real_user
+        assert modal.expected_record_id == 7
+        assert len(modal.children) == 3
+        assert "当前累计处罚：**1 次**" in modal.children[0].content
 
-    punishment_record_repository.get_summary.assert_awaited_once_with(
-        thread_id=100,
-        target_user_id=600,
-    )
-    history_modal = interaction.response.send_modal.await_args.args[0]
-    assert history_modal.children[0].content.startswith(f"👤 用户：{real_user.mention}")
-    assert cog._resolve_message_target.await_count == 3
-    assert bot.api_scheduler.submit.call_count == 3
+        interaction.response.send_modal.reset_mock()
+        await cog.query_punishment_user.__wrapped__(cog, interaction, real_user)
+        history_modal = interaction.response.send_modal.await_args.args[0]
+        assert history_modal.children[0].content.startswith(f"👤 用户：{real_user.mention}")
+
+    assert cog._resolve_message_target.await_count == 2
+    repository.get_summary.assert_awaited_with(thread_id=100, target_user_id=600)
 
 
 @pytest.mark.asyncio
@@ -119,7 +125,7 @@ async def test_resolved_self_target_is_rejected() -> None:
     thread = MagicMock()
     interaction.channel = thread
 
-    with patch("StellariaPact.cogs.Punishment.Cog.discord.Thread", type(thread)):
+    with patch("StellariaPact.cogs.Punishment.PunishmentCog.discord.Thread", type(thread)):
         valid = await cog._validate_context(interaction, target_user)
 
     assert valid is False

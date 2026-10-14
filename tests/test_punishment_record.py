@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from StellariaPact.cogs.Punishment.dto import PunishmentRecordDto, ThreadPunishmentHistoryDto
 from StellariaPact.cogs.Punishment.views.PunishmentHistoryModal import (
     PunishmentHistoryModal,
 )
@@ -76,6 +77,7 @@ class PunishmentRecordTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(display_name="测试用户", name="test", mention="<@20>"),
         )
         record = PunishmentRecord(
+            id=1,
             guild_id=1,
             thread_id=10,
             target_user_id=20,
@@ -86,7 +88,15 @@ class PunishmentRecordTests(unittest.IsolatedAsyncioTestCase):
             created_at=datetime.now(timezone.utc),
         )
 
-        modal = PunishmentHistoryModal(target_user, 1, [record])
+        modal = PunishmentHistoryModal(
+            target_user,
+            ThreadPunishmentHistoryDto(
+                1,
+                0,
+                PunishmentRecordDto.model_validate(record),
+                [PunishmentRecordDto.model_validate(record)],
+            ),
+        )
 
         # 摘要行与详情行共两个子组件，且均为 TextDisplay
         self.assertEqual(len(modal.children), 2)
@@ -124,7 +134,15 @@ class PunishmentRecordTests(unittest.IsolatedAsyncioTestCase):
             discord.User | discord.Member,
             SimpleNamespace(display_name="测试用户", name="test", mention="<@20>"),
         )
-        modal = PunishmentHistoryModal(target_user, 1, records)
+        modal = PunishmentHistoryModal(
+            target_user,
+            ThreadPunishmentHistoryDto(
+                1,
+                0,
+                PunishmentRecordDto.model_validate(records[0]),
+                [PunishmentRecordDto.model_validate(record) for record in records],
+            ),
+        )
         detail_display = cast(discord.ui.TextDisplay, modal.children[1])
         self.assertIn("查看处罚公示", detail_display.content)
         self.assertIn("https://discord.com/channels/1/99/200", detail_display.content)
@@ -138,7 +156,7 @@ class PunishmentRecordTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(display_name="测试用户", name="test", mention="<@20>"),
         )
 
-        modal = PunishmentHistoryModal(target_user, 0, [])
+        modal = PunishmentHistoryModal(target_user, ThreadPunishmentHistoryDto(0, 0, None, []))
 
         # 仅有一个摘要子组件，且内容提示暂无记录
         self.assertEqual(len(modal.children), 1)

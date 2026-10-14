@@ -1,11 +1,11 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from StellariaPact.qo.user_activity import UpdateUserActivityQo
 from StellariaPact.models.UserActivity import UserActivity
+from StellariaPact.qo.user_activity import UpdateUserActivityQo
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ class UserActivityRepository:
         """
         user_activity = await self.get_user_activity(user_id, thread_id)
         if user_activity:
-            user_activity.validation = 1        # 恢复投票权
+            user_activity.validation = 1  # 恢复投票权
             user_activity.mute_end_time = None  # 解除禁言
             self.session.add(user_activity)
             await self.session.flush()
@@ -125,12 +125,15 @@ class UserActivityRepository:
         批量清理过期的禁言记录（供 Task 调用）。
         """
         from sqlalchemy import update
+
         for user_id, thread_id in expired_list:
             stmt = (
                 update(UserActivity)
                 .where(
-                    UserActivity.user_id == user_id, # type: ignore
-                    UserActivity.context_thread_id == thread_id, # type: ignore
+                    UserActivity.user_id == user_id,  # type: ignore
+                    UserActivity.context_thread_id == thread_id,  # type: ignore
+                    # 清理任务读取缓存后可能已有新处罚，不能清除新的截止时间。
+                    UserActivity.mute_end_time <= datetime.now(timezone.utc),  # type: ignore
                 )
                 .values(mute_end_time=None)
             )

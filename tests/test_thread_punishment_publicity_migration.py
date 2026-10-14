@@ -58,7 +58,7 @@ def test_thread_punishment_publicity_migration_round_trip() -> None:
         engine.dispose()
         command.stamp(config, "e6b8c1d4f2a0")
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "f7a9c2e4b6d8")
         engine = create_engine(database_url)
         inspector = inspect(engine)
         assert {
@@ -68,9 +68,7 @@ def test_thread_punishment_publicity_migration_round_trip() -> None:
         }.issubset({column["name"] for column in inspector.get_columns("punishment_record")})
         with engine.connect() as connection:
             exempt = connection.execute(
-                text(
-                    "SELECT proposer_cooldown_exempt FROM structured_speech_mode WHERE id = 1"
-                )
+                text("SELECT proposer_cooldown_exempt FROM structured_speech_mode WHERE id = 1")
             ).scalar_one()
             reason = connection.execute(
                 text("SELECT reason FROM punishment_record WHERE id = 1")
