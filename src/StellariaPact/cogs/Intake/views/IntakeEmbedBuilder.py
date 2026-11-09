@@ -62,6 +62,8 @@ class IntakeEmbedBuilder:
         )
 
         embed.add_field(name="草案ID", value=f"`{intake.id}`", inline=True)
+        if intake.is_special:
+            embed.add_field(name="类型", value="特殊提案", inline=True)
         embed.add_field(name="状态", value=status_text, inline=True)
         if intake.status == IntakeStatus.PENDING_REVIEW or intake.reviewer_id_3:
             embed.add_field(name="审核进度", value=f"{intake.review_count}/3", inline=True)

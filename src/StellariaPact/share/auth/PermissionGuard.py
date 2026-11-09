@@ -32,7 +32,10 @@ class PermissionGuard:
 
     @staticmethod
     async def can_manage_rules_or_options(
-        interaction: discord.Interaction, thread_id: int | None = None
+        interaction: discord.Interaction,
+        thread_id: int | None = None,
+        *,
+        private_panel_guild_id: int | None = None,
     ) -> bool:
         """
         检查用户是否可以管理投票规则或创建投票选项。
@@ -40,8 +43,22 @@ class PermissionGuard:
         1. 用户有 councilModerator、executionAuditor 或 stewards 身份。
         2. 用户是当前帖子关联提案的发起人。
         """
-        if RoleGuard.hasRoles(interaction, "councilModerator", "executionAuditor", "stewards"):
+        roles = ("councilModerator", "executionAuditor", "stewards")
+        if RoleGuard.hasRoles(interaction, *roles):
             return True
+
+        bot: StellariaPactBot = interaction.client  # type: ignore
+        # 私信没有成员角色，查询面板来源服务器中的当前身份。
+        if interaction.guild_id is None and private_panel_guild_id is not None:
+            guild = bot.get_guild(private_panel_guild_id)
+            if guild is not None:
+                try:
+                    member = await guild.fetch_member(interaction.user.id)
+                except discord.HTTPException:
+                    pass
+                else:
+                    if RoleGuard._check_roles(member, bot.config.get("roles", {}), roles):
+                        return True
 
         # 如果未传入 thread_id，则尝试从交互频道获取（兼容讨论帖内操作）
         target_thread_id = thread_id
@@ -51,7 +68,6 @@ class PermissionGuard:
         if target_thread_id is None:
             return False
 
-        bot: StellariaPactBot = interaction.client # type: ignore
         async with UnitOfWork(bot.db_handler) as uow:
             proposal = await uow.proposal.get_proposal_by_thread_id(target_thread_id)
             if proposal and proposal.proposer_id == interaction.user.id:

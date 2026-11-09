@@ -3,7 +3,6 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 
 
@@ -46,8 +45,7 @@ def test_cumulative_migration_backfills_and_downgrades_without_losing_history():
             )
         engine.dispose()
         command.stamp(config, "08b1d3f5a7c9")
-        assert ScriptDirectory.from_config(config).get_heads() == ["a8b0d2e4f6c1"]
-        command.upgrade(config, "head")
+        command.upgrade(config, "a8b0d2e4f6c1")
         engine = create_engine(url)
         with engine.connect() as connection:
             rows = connection.execute(

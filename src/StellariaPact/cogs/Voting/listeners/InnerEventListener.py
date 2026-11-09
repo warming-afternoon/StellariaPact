@@ -820,11 +820,12 @@ class InnerEventListener(commands.Cog):
 
 
         vote_details = await self.logic.get_vote_details(message_id)
-        jump_url = f"https://discord.com/channels/{vote_details.guild_id}/{thread_id}/{message_id}"
-
-        view = RuleManagementView(self.bot, vote_details)
-        embed = VoteEmbedBuilder.create_rule_management_embed(jump_url, vote_details)
-        await DiscordUtils.send_private_panel(self.bot, interaction, embed=embed, view=view)
+        view = RuleManagementView(
+            self.bot, vote_details, source_guild_id=interaction.guild_id
+        )
+        await DiscordUtils.send_private_panel(
+            self.bot, interaction, embed=view.build_embed(vote_details), view=view
+        )
 
     async def _internal_handle_create_option(
         self,
@@ -942,19 +943,8 @@ class InnerEventListener(commands.Cog):
             )
 
             # 原地更新私有的 RuleManagementView 面板
-            if rule_view and rule_view.message:
-                jump_url = (
-                    f"https://discord.com/channels/{updated_vote_details.guild_id}/"
-                    f"{thread_id}/{message_id}"
-                )
-                embed = VoteEmbedBuilder.create_rule_management_embed(
-                    jump_url,
-                    updated_vote_details,
-                )
-
-                await self.bot.api_scheduler.submit(
-                    rule_view.message.edit(embed=embed), priority=2
-                )
+            if rule_view:
+                await rule_view.refresh_panel()
         except Exception as e:
             logger.error(f"处理切换 {setting_name} 时出错: {e}", exc_info=True)
             await self.bot.api_scheduler.submit(

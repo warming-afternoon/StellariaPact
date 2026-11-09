@@ -50,7 +50,9 @@ class ProposalContentFormatter:
         id_label: str = "草案ID",
     ) -> str:
         """生成审核帖正文（表情符号标签格式），不含状态行和审核意见行。"""
+        special_label = "📌 **类型：** 特殊提案\n" if intake.is_special else ""
         return (
+            f"{special_label}"
             f"👤 **提案人：** <@{intake.author_id}>\n"
             f"📅 **提交时间：** <t:{submitted_ts}:f>\n"
             f"🆔 **{id_label}：** `{intake.id}`\n\n"

@@ -69,7 +69,11 @@ class IntakeDraftService:
             seen_thread_ids: set[int] = set()
             filtered_pending: list[ProposalIntake] = []
             for intake in pending_intakes:
-                if intake.review_thread_id and intake.review_thread_id not in seen_thread_ids:
+                if (
+                    not intake.is_special
+                    and intake.review_thread_id
+                    and intake.review_thread_id not in seen_thread_ids
+                ):
                     seen_thread_ids.add(intake.review_thread_id)
                     filtered_pending.append(intake)
 
@@ -112,8 +116,12 @@ class IntakeDraftService:
         discord_helper: "IntakeDiscordHelper",
         operator_name: str = "",
         operator_display_name: str = "",
+        *,
+        special_authorized: bool = False,
     ) -> ProposalIntakeDto:
         """草案提交"""
+        if dto.is_special and not special_authorized:
+            raise BusinessRuleError("你没有权限提交特殊提案草案。")
         StringUtils.validate_proposal_title(dto.title)
 
         async with UnitOfWork(self.bot.db_handler) as uow:
@@ -122,9 +130,11 @@ class IntakeDraftService:
             ):
                 raise BusinessRuleError("你当前受到提案违规处罚，无法创建或提交提案草案。")
 
-        allowed, message = await self.check_submission_limit(dto.guild_id)
-        if not allowed:
-            raise BusinessRuleError(message)
+        # 特殊草案仍需通过标题和处罚检查，只豁免名额限制。
+        if not dto.is_special:
+            allowed, message = await self.check_submission_limit(dto.guild_id)
+            if not allowed:
+                raise BusinessRuleError(message)
 
         max_retries = 3
         retry_delay = 0.8
@@ -143,6 +153,7 @@ class IntakeDraftService:
                         motion=dto.motion,
                         implementation=dto.implementation,
                         executor=dto.executor,
+                        is_special=dto.is_special,
                         status=IntakeStatus.PENDING_REVIEW,
                         required_votes=2,
                     )
@@ -160,7 +171,9 @@ class IntakeDraftService:
                         target_type="intake",
                         target_id=intake_dto.id,
                         guild_id=dto.guild_id,
-                        detail=f"标题: {dto.title[:50]}",
+                        detail=(
+                            f"{'特殊提案草案；' if dto.is_special else ''}标题: {dto.title[:50]}"
+                        ),
                     )
 
                     await uow.commit()
@@ -197,10 +210,16 @@ class IntakeDraftService:
         title_prefix = discord_helper.get_title_prefix_for_status(IntakeStatus.PENDING_REVIEW)
         thread_name = f"{title_prefix} {intake_dto.title}" if title_prefix else intake_dto.title
 
+        # 正文超过 Discord 消息上限时，使用审核 Embed 保留完整表单。
+        review_message = (
+            {"content": content}
+            if len(content) <= 2000
+            else {"embed": IntakeEmbedBuilder.build_review_embed(intake_dto)}
+        )
         try:
             thread_with_message = await review_forum.create_thread(
-                name=thread_name,
-                content=content,
+                name=thread_name[:100],
+                **review_message,
                 view=IntakeReviewView(self.bot, intake_dto),
                 applied_tags=applied_tags,
             )

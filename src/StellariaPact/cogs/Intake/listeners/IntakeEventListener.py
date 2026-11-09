@@ -64,8 +64,10 @@ class IntakeEventListenerCog(commands.Cog):
         self.intake_cog.logic.save_draft(dto.author_id, dto)
 
         try:
+            special_authorized = dto.is_special and RoleGuard.hasRoles(interaction, "stewards")
             intake_dto = await self.intake_cog.logic.process_submit_intake(
                 dto,
+                special_authorized=special_authorized,
                 operator_name=interaction.user.name,
                 operator_display_name=(
                     interaction.user.display_name or interaction.user.name

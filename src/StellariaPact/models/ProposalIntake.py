@@ -20,6 +20,9 @@ class ProposalIntake(BaseModel, table=True):
     author_id: int = Field(index=True, description="提案提出者的用户ID")
     """提案提出者的用户ID"""
 
+    is_special: bool = Field(default=False, description="是否为特殊提案草案")
+    """是否为特殊提案草案"""
+
     # 提案核心字段
     title: str = Field(description="标题")
     """标题"""

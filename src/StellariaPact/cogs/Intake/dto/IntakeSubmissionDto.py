@@ -26,3 +26,6 @@ class IntakeSubmissionDto(BaseModel):
 
     executor: str = Field(..., max_length=100, description="执行人")
     """执行人"""
+
+    is_special: bool = False
+    """是否为特殊提案草案"""

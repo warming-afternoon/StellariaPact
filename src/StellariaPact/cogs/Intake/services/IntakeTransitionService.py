@@ -178,6 +178,7 @@ class IntakeTransitionService:
             new_proposal = Proposal(
                 discussion_thread_id=discussion_thread_id,
                 proposer_id=intake_dto.author_id,
+                is_special=intake_dto.is_special,
                 title=intake_dto.title,
                 content=proposal_content,
                 status=ProposalStatus.DISCUSSION,
@@ -365,6 +366,7 @@ class IntakeTransitionService:
             new_proposal = Proposal(
                 discussion_thread_id=discussion_thread_id,
                 proposer_id=intake_dto.author_id,
+                is_special=intake_dto.is_special,
                 title=intake_dto.title,
                 content=proposal_content,
                 status=ProposalStatus.DISCUSSION,
