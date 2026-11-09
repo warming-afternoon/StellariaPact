@@ -108,7 +108,7 @@ class ProposalRulesLinkFlowTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.engine.dispose()
 
-    async def seed_intake(self, reason="原因"):
+    async def seed_intake(self, reason="原因", *, is_special=False):
         async with AsyncSession(self.engine) as session:
             intake = ProposalIntake(
                 guild_id=1,
@@ -119,6 +119,7 @@ class ProposalRulesLinkFlowTests(unittest.IsolatedAsyncioTestCase):
                 implementation="方案",
                 executor="执行人",
                 status=IntakeStatus.APPROVED,
+                is_special=is_special,
             )
             session.add(intake)
             await session.flush()
@@ -134,8 +135,10 @@ class ProposalRulesLinkFlowTests(unittest.IsolatedAsyncioTestCase):
             if intake:
                 self.assertNotIn("[提案规则](", intake.reason)
 
-    async def create_discussion(self, *, legacy=False, long=False):
-        intake_id = await self.seed_intake("文" * 2100 if long else "原因")
+    async def create_discussion(self, *, legacy=False, long=False, is_special=False):
+        intake_id = await self.seed_intake(
+            "文" * 2100 if long else "原因", is_special=is_special
+        )
         with patch(
             "StellariaPact.cogs.Intake.services.IntakeTransitionService."
             "DiscordUtils.fetch_channel",
@@ -236,6 +239,16 @@ class ProposalRulesLinkFlowTests(unittest.IsolatedAsyncioTestCase):
         await self.assert_no_automatic_vote()
         self.helper.update_review_thread_message.assert_awaited()
         self.helper.update_review_thread_tags.assert_awaited()
+
+    async def test_special_flag_survives_current_transition(self):
+        await self.create_discussion(is_special=True)
+        async with AsyncSession(self.engine) as session:
+            self.assertTrue((await session.exec(select(Proposal))).one().is_special)
+
+    async def test_special_flag_survives_legacy_transition(self):
+        await self.create_discussion(legacy=True, is_special=True)
+        async with AsyncSession(self.engine) as session:
+            self.assertTrue((await session.exec(select(Proposal))).one().is_special)
 
     async def test_current_creation_uses_configured_rules_url(self):
         self.bot.config["proposal_rules_url"] = CUSTOM_RULES_URL

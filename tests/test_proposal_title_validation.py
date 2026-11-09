@@ -53,6 +53,7 @@ class ProposalTitleEntryPointTests(unittest.IsolatedAsyncioTestCase):
         return SimpleNamespace(
             author_id=1,
             guild_id=2,
+            is_special=False,
             title=title,
             reason="reason",
             motion="motion",

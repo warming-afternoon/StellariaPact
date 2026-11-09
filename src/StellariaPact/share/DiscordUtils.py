@@ -139,10 +139,12 @@ class DiscordUtils:
 
         except discord.Forbidden:
             # 私信被屏蔽，回退到发送私密消息
-            await bot.api_scheduler.submit(
-                interaction.followup.send(embed=embed, view=view, ephemeral=True),
+            message = await bot.api_scheduler.submit(
+                interaction.followup.send(embed=embed, view=view, ephemeral=True, wait=True),
                 priority=1,
             )
+            if hasattr(view, "message"):
+                view.message = message  # type: ignore
         except Exception as e:
             # 处理其他可能的异常
             logger.error(f"发送私密面板时发生未知错误: {e}", exc_info=True)

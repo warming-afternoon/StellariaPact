@@ -4,6 +4,7 @@ import logging
 
 import discord
 
+from StellariaPact.share.auth.RoleGuard import RoleGuard
 from StellariaPact.share.SafeDefer import safeDefer
 
 from .dto.IntakeSubmissionDto import IntakeSubmissionDto
@@ -16,8 +17,9 @@ class IntakeModal(discord.ui.Modal, title="起草一份新的议案"):
     收集用户提交的新草案。
     """
 
-    def __init__(self, draft: IntakeSubmissionDto | None = None):
-        super().__init__()
+    def __init__(self, draft: IntakeSubmissionDto | None = None, *, is_special: bool = False):
+        super().__init__(title="起草一份特殊提案" if is_special else self.title)
+        self.is_special = is_special
 
         self.title_input = discord.ui.TextInput(
             label="标题",
@@ -70,6 +72,10 @@ class IntakeModal(discord.ui.Modal, title="起草一份新的议案"):
         """
         当用户提交表单时被调用。
         """
+        if self.is_special and not RoleGuard.hasRoles(interaction, "stewards"):
+            await interaction.response.send_message("你没有权限提交特殊提案草案。", ephemeral=True)
+            return
+
         dto = IntakeSubmissionDto(
             author_id=interaction.user.id,
             guild_id=interaction.guild_id or 0,
@@ -78,6 +84,7 @@ class IntakeModal(discord.ui.Modal, title="起草一份新的议案"):
             motion=self.motion_input.value,
             implementation=self.implementation_input.value,
             executor=self.executor_input.value,
+            is_special=self.is_special,
         )
 
         await safeDefer(interaction, ephemeral=True)

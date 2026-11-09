@@ -21,7 +21,8 @@ class ProposalRepository:
         self.session = session
 
     async def create_proposal(
-        self, thread_id: int, proposer_id: int, title: str, content: str = ""
+        self, thread_id: int, proposer_id: int, title: str, content: str = "", *,
+        is_special: bool = False,
     ) -> Optional[Proposal]:
         """
         尝试创建一个新的提案，如果因唯一性约束而失败，则静默处理。
@@ -40,6 +41,7 @@ class ProposalRepository:
             proposer_id=proposer_id,
             title=title,
             content=content,
+            is_special=is_special,
             status=ProposalStatus.DISCUSSION,
         )
         self.session.add(new_proposal)

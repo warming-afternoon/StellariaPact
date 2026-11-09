@@ -1,11 +1,13 @@
+import asyncio
 import logging
 
 import discord
 
-from StellariaPact.dto.vote_session import VoteDetailDto
 from StellariaPact.cogs.Voting.views import AdjustTimeModal, ConfirmationView, ReopenVoteModal
 from StellariaPact.cogs.Voting.views.VoteEmbedBuilder import VoteEmbedBuilder
-from StellariaPact.share import StellariaPactBot, safeDefer
+from StellariaPact.cogs.Voting.VotingLogic import VotingLogic
+from StellariaPact.dto.vote_session import VoteDetailDto
+from StellariaPact.share import PermissionGuard, StellariaPactBot, safeDefer
 
 logger = logging.getLogger(__name__)
 
@@ -16,20 +18,84 @@ class RuleManagementView(discord.ui.View):
     # 用于记录自身的 message 实例，方便后续原地更新 Embed
     message: discord.Message | None = None
 
-    def __init__(self, bot: StellariaPactBot, vote_details: VoteDetailDto):
+    PAGE_SIZE = 10
+
+    def __init__(
+        self,
+        bot: StellariaPactBot,
+        vote_details: VoteDetailDto,
+        *,
+        source_guild_id: int | None = None,
+    ):
         super().__init__(timeout=900)
         self.bot = bot
-        self.vote_details = vote_details
+        self.logic = VotingLogic(bot)
+        self.source_guild_id = source_guild_id or vote_details.guild_id
+        self.page = 0
+        self._refresh_lock = asyncio.Lock()
         self.thread_id = vote_details.context_thread_id
         # 确保 message_id 不为 None
         self.message_id = vote_details.context_message_id or 0
         self._build_ui(vote_details)
 
-    def _build_ui(self, vote_details: VoteDetailDto):
-        """根据投票状态创建按钮。"""
+    def build_embed(self, vote_details: VoteDetailDto) -> discord.Embed:
+        """构建当前页的私有票数统计。"""
+        jump_url = (
+            f"https://discord.com/channels/{vote_details.guild_id}/"
+            f"{self.thread_id}/{self.message_id}"
+        )
+        return VoteEmbedBuilder.create_rule_management_embed(
+            jump_url, vote_details, self.page, self.PAGE_SIZE
+        )
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """交互前重新确认规则管理权限。"""
+        if await PermissionGuard.can_manage_rules_or_options(
+            interaction, self.thread_id, private_panel_guild_id=self.source_guild_id
+        ):
+            return True
+
+        message = "你没有权限管理此投票的规则。"
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+        return False
+
+    async def refresh_panel(self, page_delta: int = 0) -> None:
+        """重新读取投票数据并在原消息中更新当前页。"""
+        async with self._refresh_lock:
+            if self.message is None:
+                return
+
+            vote_details = await self.logic.get_vote_details(self.message_id)
+            self._build_ui(vote_details, page_delta)
+            await self.bot.api_scheduler.submit(
+                self.message.edit(embed=self.build_embed(vote_details), view=self), priority=2
+            )
+
+    async def previous_page(self, interaction: discord.Interaction) -> None:
+        """显示最新的上一页票数。"""
+        await interaction.response.defer()
+        await self.refresh_panel(-1)
+
+    async def next_page(self, interaction: discord.Interaction) -> None:
+        """显示最新的下一页票数。"""
+        await interaction.response.defer()
+        await self.refresh_panel(1)
+
+    def _build_ui(self, vote_details: VoteDetailDto, page_delta: int = 0):
+        """根据投票状态和当前页创建按钮。"""
         self.clear_items()
 
-        is_closed = (vote_details.status == 0)
+        is_closed = vote_details.status == 0
+        option_count = (
+            len(vote_details.normal_options) + len(vote_details.objection_options)
+            or len(vote_details.options)
+        )
+
+        last_page = max(0, (option_count - 1) // self.PAGE_SIZE)
+        self.page = min(max(0, self.page + page_delta), last_page)
 
         # 第一行
         btn_anonymous = discord.ui.Button(
@@ -84,6 +150,21 @@ class RuleManagementView(discord.ui.View):
             reopen_btn.callback = self.reopen_vote_callback
             self.add_item(reopen_btn)
 
+        # 票数分页使用独立按钮行，已结束的投票仍可查看。
+        previous = discord.ui.Button(
+            label="上一页", row=3, disabled=self.page == 0, custom_id="rule_stats_previous"
+        )
+        previous.callback = self.previous_page
+        self.add_item(previous)
+        following = discord.ui.Button(
+            label="下一页",
+            row=3,
+            disabled=(self.page + 1) * self.PAGE_SIZE >= option_count,
+            custom_id="rule_stats_next",
+        )
+        following.callback = self.next_page
+        self.add_item(following)
+
     async def reopen_vote_callback(self, interaction: discord.Interaction):
         """重新开启投票按钮的回调"""
         modal = ReopenVoteModal(
@@ -121,6 +202,9 @@ class RuleManagementView(discord.ui.View):
         embed = VoteEmbedBuilder.create_confirmation_embed(title, description)
 
         async def on_confirm_handler(inner_interaction: discord.Interaction):
+            if not await self.interaction_check(inner_interaction):
+                return
+
             # 将当前视图自身 (rule_view=self) 传递出去，方便监听器拿到它并更新
             self.bot.dispatch(
                 event_name,

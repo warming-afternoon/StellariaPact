@@ -241,9 +241,16 @@ class VoteEmbedBuilder:
     def create_rule_management_embed(
         jump_url: str,
         vote_details: VoteDetailDto,
+        page: int = 0,
+        page_size: int = 10,
     ) -> discord.Embed:
-        """创建规则管理面板的 Embed。"""
-        embed = discord.Embed(title=f"对 {jump_url} 的规则管理", color=discord.Color.blue())
+        """创建含私有票数统计的规则管理面板。"""
+        embed = discord.Embed(
+            title="规则管理",
+            url=jump_url,
+            description="以下票数仅在此私有面板中显示。",
+            color=discord.Color.blue(),
+        )
         embed.add_field(
             name="匿名投票",
             value="✅ 是" if vote_details.is_anonymous else "❌ 否",
@@ -267,6 +274,36 @@ class VoteEmbedBuilder:
             end_time_value = "手动结束"
 
         embed.add_field(name="投票截止时间", value=end_time_value, inline=False)
+
+        # 每个选项仅占一个字段，截取正文以满足 Embed 字段和总长度限制。
+        normal_options = vote_details.normal_options
+        if not normal_options and not vote_details.objection_options:
+            normal_options = vote_details.options
+        options = [(False, option) for option in normal_options]
+        options += [(True, option) for option in vote_details.objection_options]
+        start = page * page_size
+        for is_objection, option in options[start:start + page_size]:
+            label = "异议" if is_objection else "普通选项"
+            closed = "（已结束）" if not option.is_active or vote_details.status == 0 else ""
+            escaped_text = discord.utils.escape_markdown(option.choice_text)
+            preview = escaped_text if len(escaped_text) <= 240 else escaped_text[:239] + "…"
+            if vote_details.ui_style == 2 and not is_objection:
+                counts = f"支持人数 {option.approve_votes}"
+            else:
+                counts = (
+                    f"赞成 {option.approve_votes} · 反对 {option.reject_votes}"
+                    f" · 总票数 {option.total_votes}"
+                )
+            embed.add_field(
+                name=f"{label} {option.choice_index}{closed}",
+                value=f"{counts}\n{preview}" if preview else counts,
+                inline=False,
+            )
+        if not options:
+            embed.add_field(name="票数统计", value="暂无投票选项。", inline=False)
+
+        page_count = max(1, (len(options) + page_size - 1) // page_size)
+        embed.set_footer(text=f"票数统计 · 第 {page + 1}/{page_count} 页")
         return embed
 
     @staticmethod

@@ -178,14 +178,19 @@ class ProposalPunishmentEnforcementTests(unittest.IsolatedAsyncioTestCase):
         )
         uow = _FakeUnitOfWork(global_proposal_punishment=punishment_repository)
         service = IntakeDraftService(SimpleNamespace(db_handler=object()))  # type: ignore
-        dto = SimpleNamespace(author_id=10, guild_id=20, title="合法提案标题")
-
         with patch(
             "StellariaPact.cogs.Intake.services.IntakeDraftService.UnitOfWork",
             return_value=uow,
         ):
-            with self.assertRaisesRegex(PermissionError, "无法创建或提交"):
-                await service.process_submit_intake(dto, SimpleNamespace())  # type: ignore
+            for is_special in (False, True):
+                with self.subTest(is_special=is_special):
+                    dto = SimpleNamespace(
+                        author_id=10, guild_id=20, title="合法提案标题", is_special=is_special
+                    )
+                    with self.assertRaisesRegex(PermissionError, "无法创建或提交"):
+                        await service.process_submit_intake(  # type: ignore
+                            dto, SimpleNamespace(), special_authorized=is_special
+                        )
 
     async def test_new_intake_support_is_blocked_before_insert(self) -> None:
         """受罚用户不能新增草案支持票，且拦截必须发生在数据库写入前。"""

@@ -69,12 +69,15 @@ class IntakeLogic:
         dto: "IntakeSubmissionDto",
         operator_name: str = "",
         operator_display_name: str = "",
+        *,
+        special_authorized: bool = False,
     ):
         """草案提交"""
         return await self.draft_service.process_submit_intake(
             dto, self.discord_helper,
             operator_name=operator_name,
             operator_display_name=operator_display_name,
+            special_authorized=special_authorized,
         )
 
     # -------------------------

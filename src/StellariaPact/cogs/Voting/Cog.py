@@ -125,7 +125,7 @@ class Voting(commands.Cog):
         duration_hours="投票持续时间（小时），默认72小时",
         description="对整个投票的详细说明（选填）",
         anonymous="是否匿名投票，默认是",
-        realtime="是否实时显示票数，默认是",
+        realtime="是否实时公开票数，默认否；投票结束后公开结果",
         notify="结束时是否通知提案组，默认是",
         max_choices_per_user="单个用户最多可支持的选项数量，默认为1",
         ui_style="投票面板样式, 默认简洁样式",
@@ -150,7 +150,7 @@ class Voting(commands.Cog):
         duration_hours: int = 72,
         description: str | None = None,
         anonymous: bool = True,
-        realtime: bool = True,
+        realtime: bool = False,
         notify: bool = True,
         max_choices_per_user: int = 1,
         ui_style: app_commands.Choice[int] | None = None,
@@ -300,7 +300,8 @@ class Voting(commands.Cog):
                     thread_id=thread.id,
                     proposer_id=intake.author_id,
                     title=intake.title,
-                    content=content
+                    content=content,
+                    is_special=intake.is_special,
                 )
                 logger.info(f"根据 Intake (ID: {intake.id}) 为帖子 {thread.id} 补全了 Proposal。")
             else:
@@ -328,8 +329,9 @@ class Voting(commands.Cog):
                 logger.info(f"根据首楼解析为帖子 {thread.id} 补全了 Proposal。")
 
             if proposal:
+                proposal_dto = ProposalDto.model_validate(proposal)
                 await uow.commit()
-                return ProposalDto.model_validate(proposal)
+                return proposal_dto
             return None
 
     @app_commands.command(

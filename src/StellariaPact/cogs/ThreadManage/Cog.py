@@ -9,6 +9,8 @@ import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
 
+from StellariaPact.cogs.Intake.Cog import IntakeCog
+from StellariaPact.cogs.Intake.IntakeModal import IntakeModal
 from StellariaPact.cogs.ThreadManage.dto.UpdateProposalContentDto import (
     UpdateProposalContentDto,
 )
@@ -35,7 +37,7 @@ class ThreadManageCog(commands.Cog):
 
     special_proposal_group = app_commands.Group(
         name="特殊提案",
-        description="特殊提案标记管理",
+        description="特殊提案草案提交与标记管理",
     )
 
     def __init__(self, bot: "StellariaPactBot"):
@@ -88,6 +90,29 @@ class ThreadManageCog(commands.Cog):
             intake=intake_dto,
         )
         await interaction.response.send_modal(modal)
+
+    @special_proposal_group.command(
+        name="创建",
+        description="[管理组]提交一份特殊提案草案（不占用待审和讨论名额）",
+    )
+    @app_commands.guild_only()
+    @RoleGuard.requireRoles("stewards")
+    async def create_special_proposal(self, interaction: Interaction):
+        """打开特殊提案草案表单。"""
+        intake_cog = self.bot.get_cog(IntakeCog.__cog_name__)
+        if not isinstance(intake_cog, IntakeCog):
+            await interaction.response.send_message("草案提交功能暂不可用。", ephemeral=True)
+            return
+
+        if await intake_cog.logic.is_submission_restricted(interaction.user.id):
+            await interaction.response.send_message(
+                "你当前受到提案违规处罚，无法创建或提交提案草案。",
+                ephemeral=True,
+            )
+            return
+
+        draft = intake_cog.logic.get_draft(interaction.user.id)
+        await interaction.response.send_modal(IntakeModal(draft, is_special=True))
 
     @special_proposal_group.command(
         name="设置",

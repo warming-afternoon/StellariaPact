@@ -57,7 +57,7 @@ class CommandGroupingTests(unittest.TestCase):
         self.assertIsInstance(special_group, app_commands.Group)
         self.assertEqual(
             {command.name for command in special_group.commands},
-            {"设置", "取消"},
+            {"创建", "设置", "取消"},
         )
         self.assertEqual(root_commands["修改提案内容"].qualified_name, "修改提案内容")
 

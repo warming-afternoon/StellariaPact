@@ -33,6 +33,9 @@ class ProposalIntakeDto(BaseDto):
     executor: str
     """执行人"""
 
+    is_special: bool = False
+    """是否为特殊提案草案"""
+
     status: IntakeStatus
     """审核状态，0=待审核，1=支持票收集中，2=已发布，3=已拒绝，4=需要修改"""
 
